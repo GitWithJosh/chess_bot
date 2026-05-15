@@ -6,22 +6,14 @@ from engines.engine import ChessEngine
 
 
 class HumanInputEngine(ChessEngine):
-    """Engine that waits for human input from GUI."""
-
-    def __init__(self):
-        self.pending_move: Move | None = None
+    """Engine that represents a human player controlled via GUI."""
 
     def get_best_move(self, board_state: BoardState) -> Move | None:
-        """Return move set via set_move(), or None if not set."""
-        return self.pending_move
-
-    def set_move(self, move: Move):
-        """Set the move to be played (called by GUI)."""
-        self.pending_move = move
-
-    def clear_move(self):
-        """Clear pending move."""
-        self.pending_move = None
+        """
+        Human moves are handled directly by the GUI/game layer,
+        so this engine does not generate or store moves.
+        """
+        return None
 
     def name(self) -> str:
         return "Human"
