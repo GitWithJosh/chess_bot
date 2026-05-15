@@ -1,6 +1,7 @@
 """Pygame-based chess GUI - Complete redesign with promotion, game over screen, and improved UI."""
 
 import os
+import sys
 import pygame
 from typing import Optional
 from board.board import BoardState
@@ -366,8 +367,8 @@ class ChessGUI:
         """Handle pygame events."""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                self.running = False
-                self.show_menu = False
+                pygame.quit()
+                sys.exit()
 
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 self._handle_mouse_down(event.pos)
