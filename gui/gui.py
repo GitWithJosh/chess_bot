@@ -9,6 +9,7 @@ from move_generation.move import Move
 from move_generation.generator import MoveGenerator
 from game.game import Game, GameStatus
 from engines.engine import ChessEngine
+from engines.human_engine import HumanInputEngine
 from utils.coordinates import indices_to_algebraic
 
 
@@ -385,6 +386,11 @@ class ChessGUI:
                 if event.key == pygame.K_ESCAPE:
                     self._request_menu()
 
+    def _is_human_turn(self) -> bool:
+        """Return True if the active player is a human."""
+        engine = self.white_engine if self.game.board.active_color == 'white' else self.black_engine
+        return isinstance(engine, HumanInputEngine)
+
     def _handle_mouse_down(self, pos: tuple[int, int]):
         """Handle mouse down."""
         # Menu button (far right, top)
@@ -395,6 +401,9 @@ class ChessGUI:
         # Flip board button (far right, below menu)
         if 1030 <= pos[0] <= 1080 and 90 <= pos[1] <= 140:
             self.board_flipped = not self.board_flipped
+            return
+
+        if not self._is_human_turn():
             return
 
         col = (pos[0] - self.BOARD_START_X) // self.SQUARE_SIZE
@@ -492,23 +501,21 @@ class ChessGUI:
 
     def _update_game(self):
         """Update game state."""
-        engine = (
-            self.white_engine
-            if self.game.board.active_color == 'white'
-            else self.black_engine
-        )
+        if self._is_human_turn():
+            return
 
         position_key = self.game.board.to_fen()
         if self.last_engine_polled_position == position_key:
             return
-        self.last_engine_polled_position = position_key
 
+        engine = self.white_engine if self.game.board.active_color == 'white' else self.black_engine
         move = engine.get_best_move(self.game.board)
-        if move:
-            if self.game.make_move(move):
-                self.last_move = move
-                self.selected_square = None
-                self.legal_moves_from_selected = []
+        if move and self.game.make_move(move):
+            self.last_move = move
+            self.selected_square = None
+            self.legal_moves_from_selected = []
+
+        self.last_engine_polled_position = position_key
 
     def _draw_coordinates(self):
         """Draw file (a-h) and rank (1-8) labels around the board."""

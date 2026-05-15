@@ -102,7 +102,7 @@ class StockfishEngine(ChessEngine):
             try:
                 line = self._stdout_queue.get(timeout=wait_timeout)
             except queue.Empty:
-                break
+                continue
 
             lines.append(line)
             if marker in line:
