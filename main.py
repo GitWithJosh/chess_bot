@@ -3,12 +3,13 @@
 from gui.menu import MenuScreen, GameMode, GameConfig
 from gui.gui import ChessGUI
 from game.game import Game
+from engines.chess_engine import ChessEngine
 from engines.human_engine import HumanInputEngine
 from engines.random_engine import RandomEngine
 from engines.stockfish_engine import StockfishEngine
 
 
-def create_engine(engine_name: str) -> StockfishEngine:
+def create_engine(engine_name: str) -> ChessEngine:
     """Create engine from name."""
     if engine_name == "human":
         return HumanInputEngine()
