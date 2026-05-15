@@ -76,9 +76,9 @@ class StockfishEngine(ChessEngine):
             if not line:
                 break
             try:
-                self._stdout_queue.put_nowait(line.strip())
+                self._stdout_queue.put(line.strip(), timeout=0.1)
             except queue.Full:
-                pass
+                continue
 
     def _wait_for_response(self, marker: str, timeout=5) -> list[str]:
         """Read lines until marker found or timeout expires."""
@@ -158,12 +158,12 @@ class StockfishEngine(ChessEngine):
 
     def __del__(self):
         """Cleanup Stockfish process."""
-        self._stop_reader.set()
         if self.process:
             try:
                 self._send_command('quit')
                 self.process.wait(timeout=1)
             except:
                 self.process.terminate()
+        self._stop_reader.set()
         if self._stdout_reader_thread:
             self._stdout_reader_thread.join(timeout=self.READER_JOIN_TIMEOUT)
