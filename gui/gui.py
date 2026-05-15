@@ -10,7 +10,6 @@ from move_generation.generator import MoveGenerator
 from game.game import Game, GameStatus
 from engines.engine import ChessEngine
 from utils.coordinates import indices_to_algebraic
-import os
 
 
 # Color scheme
