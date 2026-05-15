@@ -14,6 +14,9 @@ from engines.engine import ChessEngine
 class StockfishEngine(ChessEngine):
     """Interface to Stockfish UCI chess engine."""
 
+    STDOUT_QUEUE_MAXSIZE = 1000
+    READER_JOIN_TIMEOUT = 0.2
+
     def __init__(self, depth=10, elo=None):
         """Initialize Stockfish engine.
 
@@ -24,7 +27,7 @@ class StockfishEngine(ChessEngine):
         self.depth = depth
         self.elo = elo
         self.process = None
-        self._stdout_queue = queue.Queue()
+        self._stdout_queue = queue.Queue(maxsize=self.STDOUT_QUEUE_MAXSIZE)
         self._stdout_reader_thread = None
         self._stop_reader = threading.Event()
 
@@ -72,7 +75,10 @@ class StockfishEngine(ChessEngine):
             line = self.process.stdout.readline()
             if not line:
                 break
-            self._stdout_queue.put(line.strip())
+            try:
+                self._stdout_queue.put_nowait(line.strip())
+            except queue.Full:
+                pass
 
     def _wait_for_response(self, marker: str, timeout=5) -> list[str]:
         """Read lines until marker found or timeout expires."""
@@ -85,8 +91,6 @@ class StockfishEngine(ChessEngine):
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                break
-            if remaining < 0.01:
                 break
 
             try:
@@ -162,4 +166,4 @@ class StockfishEngine(ChessEngine):
             except:
                 self.process.terminate()
         if self._stdout_reader_thread:
-            self._stdout_reader_thread.join(timeout=0.2)
+            self._stdout_reader_thread.join(timeout=self.READER_JOIN_TIMEOUT)
