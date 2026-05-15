@@ -6,6 +6,7 @@ A production-ready, modular chess application with GUI, menu system, and Stockfi
 
 ```bash
 cd chess_bot
+python -m venv venv
 source venv/bin/activate
 python main.py
 ```
