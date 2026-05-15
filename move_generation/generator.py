@@ -182,21 +182,56 @@ class MoveGenerator:
         return moves
 
     def _can_castle_kingside(self, color: str) -> bool:
-        """Check if kingside castling is possible (path must be clear)."""
+        """Check if kingside castling is possible."""
         row = 0 if color == 'black' else 7
-        return (
-            self.board.get_piece(row, 5) is None
-            and self.board.get_piece(row, 6) is None
-        )
+        king = self.board.get_piece(row, 4)
+        rook = self.board.get_piece(row, 7)
+        if king != (color, 'king') or rook != (color, 'rook'):
+            return False
+
+        if self.board.get_piece(row, 5) is not None or self.board.get_piece(row, 6) is not None:
+            return False
+
+        if self._is_king_attacked(self.board, color):
+            return False
+
+        through_board = self.board.copy()
+        through_board.set_piece(row, 4, None)
+        through_board.set_piece(row, 5, (color, 'king'))
+        if self._is_king_attacked(through_board, color):
+            return False
+
+        destination_board = self.board.copy()
+        self._apply_move_to_board(destination_board, Move(row, 4, row, 6))
+        return not self._is_king_attacked(destination_board, color)
 
     def _can_castle_queenside(self, color: str) -> bool:
         """Check if queenside castling is possible."""
         row = 0 if color == 'black' else 7
-        return (
-            self.board.get_piece(row, 1) is None
-            and self.board.get_piece(row, 2) is None
-            and self.board.get_piece(row, 3) is None
-        )
+        king = self.board.get_piece(row, 4)
+        rook = self.board.get_piece(row, 0)
+        if king != (color, 'king') or rook != (color, 'rook'):
+            return False
+
+        if (
+            self.board.get_piece(row, 1) is not None
+            or self.board.get_piece(row, 2) is not None
+            or self.board.get_piece(row, 3) is not None
+        ):
+            return False
+
+        if self._is_king_attacked(self.board, color):
+            return False
+
+        through_board = self.board.copy()
+        through_board.set_piece(row, 4, None)
+        through_board.set_piece(row, 3, (color, 'king'))
+        if self._is_king_attacked(through_board, color):
+            return False
+
+        destination_board = self.board.copy()
+        self._apply_move_to_board(destination_board, Move(row, 4, row, 2))
+        return not self._is_king_attacked(destination_board, color)
 
     def _is_legal(self, move: Move) -> bool:
         """Check if move is legal (doesn't leave king in check)."""
@@ -210,6 +245,14 @@ class MoveGenerator:
         target = board.get_piece(move.to_row, move.to_col)
         board.set_piece(move.from_row, move.from_col, None)
         board.set_piece(move.to_row, move.to_col, piece)
+
+        # Castling: move rook as well
+        if piece and piece[1] == 'king' and abs(move.to_col - move.from_col) == 2:
+            rook_from_col = 7 if move.to_col > move.from_col else 0
+            rook_to_col = 5 if move.to_col > move.from_col else 3
+            rook = board.get_piece(move.to_row, rook_from_col)
+            board.set_piece(move.to_row, rook_from_col, None)
+            board.set_piece(move.to_row, rook_to_col, rook)
 
         # En passant: remove the captured pawn (it sits on the same row as the
         # moving pawn, not on the destination square)
