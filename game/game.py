@@ -7,12 +7,12 @@ from move_generation.generator import MoveGenerator
 
 
 class GameStatus(Enum):
-    ONGOING = 'ongoing'
-    CHECKMATE = 'checkmate'
-    STALEMATE = 'stalemate'
-    THREEFOLD = 'threefold_repetition'
-    FIFTY_MOVE = 'fifty_move_rule'
-    INSUFFICIENT = 'insufficient_material'
+    ONGOING = "ongoing"
+    CHECKMATE = "checkmate"
+    STALEMATE = "stalemate"
+    THREEFOLD = "threefold_repetition"
+    FIFTY_MOVE = "fifty_move_rule"
+    INSUFFICIENT = "insufficient_material"
 
 
 class Game:
@@ -50,18 +50,20 @@ class Game:
         target = self.board.get_piece(move.to_row, move.to_col)
 
         # Handle castling
-        if piece[1] == 'king' and abs(move.to_col - move.from_col) == 2:
+        if piece[1] == "king" and abs(move.to_col - move.from_col) == 2:
             self._handle_castling(move)
         else:
             self.board.set_piece(move.from_row, move.from_col, None)
             self.board.set_piece(move.to_row, move.to_col, piece)
 
         # Handle pawn promotion
-        if piece[1] == 'pawn' and move.promotion_piece:
-            self.board.set_piece(move.to_row, move.to_col, (piece[0], move.promotion_piece))
+        if piece[1] == "pawn" and move.promotion_piece:
+            self.board.set_piece(
+                move.to_row, move.to_col, (piece[0], move.promotion_piece)
+            )
 
         # Handle en passant
-        if piece[1] == 'pawn' and target is None and move.from_col != move.to_col:
+        if piece[1] == "pawn" and target is None and move.from_col != move.to_col:
             ep_capture_row = move.from_row
             self.board.set_piece(ep_capture_row, move.to_col, None)
 
@@ -87,39 +89,40 @@ class Game:
         color = piece[0]
         new_rights = self.board.castling_rights
 
-        if piece[1] == 'king':
-            if color == 'white':
-                new_rights = new_rights.replace('K', '').replace('Q', '')
+        if piece[1] == "king":
+            if color == "white":
+                new_rights = new_rights.replace("K", "").replace("Q", "")
             else:
-                new_rights = new_rights.replace('k', '').replace('q', '')
-        elif piece[1] == 'rook':
-            if color == 'white':
+                new_rights = new_rights.replace("k", "").replace("q", "")
+        elif piece[1] == "rook":
+            if color == "white":
                 if move.from_col == 0:
-                    new_rights = new_rights.replace('Q', '')
+                    new_rights = new_rights.replace("Q", "")
                 elif move.from_col == 7:
-                    new_rights = new_rights.replace('K', '')
+                    new_rights = new_rights.replace("K", "")
             else:
                 if move.from_col == 0:
-                    new_rights = new_rights.replace('q', '')
+                    new_rights = new_rights.replace("q", "")
                 elif move.from_col == 7:
-                    new_rights = new_rights.replace('k', '')
+                    new_rights = new_rights.replace("k", "")
 
-        self.board.castling_rights = new_rights if new_rights else '-'
+        self.board.castling_rights = new_rights if new_rights else "-"
 
         self.board.en_passant_square = None
-        if piece[1] == 'pawn' and abs(move.to_row - move.from_row) == 2:
+        if piece[1] == "pawn" and abs(move.to_row - move.from_row) == 2:
             from utils.coordinates import indices_to_algebraic
+
             ep_row = (move.from_row + move.to_row) // 2
             ep_col = move.to_col
             self.board.en_passant_square = indices_to_algebraic(ep_row, ep_col)
 
-        if piece[1] == 'pawn' or target:
+        if piece[1] == "pawn" or target:
             self.board.halfmove_clock = 0
         else:
             self.board.halfmove_clock += 1
 
-        self.board.active_color = 'black' if color == 'white' else 'white'
-        if color == 'black':
+        self.board.active_color = "black" if color == "white" else "white"
+        if color == "black":
             self.board.fullmove_number += 1
 
     def get_status(self) -> GameStatus:
@@ -148,10 +151,20 @@ class Game:
 
     def _check_threefold_repetition(self) -> bool:
         """Check if position repeated 3 times."""
-        if len(self.position_history) < 9:
+        # Threefold repetition compares piece placement, side to move,
+        # castling rights and en-passant square — ignore halfmove/fullmove clocks.
+        if len(self.position_history) < 3:
             return False
-        current = self.position_history[-1]
-        count = sum(1 for pos in self.position_history if pos == current)
+
+        def _repetition_key(fen: str) -> str:
+            parts = fen.split()
+            # FEN format: placement, active, castling, en-passant, halfmove, fullmove
+            return " ".join(parts[:4])
+
+        current_key = _repetition_key(self.position_history[-1])
+        keys = (_repetition_key(f) for f in self.position_history)
+        count = sum(1 for k in keys if k == current_key)
+        print(f"Position {current_key} has occurred {count} times.")
         return count >= 3
 
     def _is_insufficient_material(self) -> bool:
@@ -162,20 +175,22 @@ class Game:
             for col in range(8):
                 piece = self.board.get_piece(row, col)
                 if piece:
-                    if piece[0] == 'white':
+                    if piece[0] == "white":
                         white_pieces.append(piece[1])
                     else:
                         black_pieces.append(piece[1])
 
-        white_non_king = [p for p in white_pieces if p != 'king']
-        black_non_king = [p for p in black_pieces if p != 'king']
+        white_non_king = [p for p in white_pieces if p != "king"]
+        black_non_king = [p for p in black_pieces if p != "king"]
 
         if not white_non_king or not black_non_king:
             return len(white_non_king) == 0 and len(black_non_king) == 0
 
         if len(white_non_king) == 1 and len(black_non_king) == 1:
-            return (white_non_king[0] in ['bishop', 'knight'] and
-                    black_non_king[0] in ['bishop', 'knight'])
+            return white_non_king[0] in ["bishop", "knight"] and black_non_king[0] in [
+                "bishop",
+                "knight",
+            ]
 
         return False
 
@@ -194,14 +209,14 @@ class Game:
         """Pretty print board."""
         lines = []
         for row in range(8):
-            line = ''
+            line = ""
             for col in range(8):
                 piece = self.board.get_piece(row, col)
                 if piece is None:
-                    line += '. '
+                    line += ". "
                 else:
                     color, piece_type = piece
-                    char = piece_type[0].upper() if color == 'white' else piece_type[0]
-                    line += char + ' '
+                    char = piece_type[0].upper() if color == "white" else piece_type[0]
+                    line += char + " "
             lines.append(line)
-        return '\n'.join(lines)
+        return "\n".join(lines)
