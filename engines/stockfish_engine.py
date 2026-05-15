@@ -2,7 +2,8 @@
 
 import subprocess
 import os
-import select
+import queue
+import threading
 import time
 from board.board import BoardState
 from move_generation.move import Move
@@ -23,6 +24,8 @@ class StockfishEngine(ChessEngine):
         self.depth = depth
         self.elo = elo
         self.process = None
+        self._stdout_queue = queue.Queue()
+        self._stdout_reader_thread = None
 
         try:
             self.process = subprocess.Popen(
@@ -33,6 +36,11 @@ class StockfishEngine(ChessEngine):
                 text=True,
                 bufsize=1,
             )
+            self._stdout_reader_thread = threading.Thread(
+                target=self._read_stdout,
+                daemon=True,
+            )
+            self._stdout_reader_thread.start()
             self._send_command('uci')
             self._wait_for_response('uciok')
             self._configure()
@@ -55,10 +63,20 @@ class StockfishEngine(ChessEngine):
             self.process.stdin.write(cmd + '\n')
             self.process.stdin.flush()
 
+    def _read_stdout(self):
+        """Continuously read Stockfish stdout into a queue."""
+        if not self.process or not self.process.stdout:
+            return
+        while True:
+            line = self.process.stdout.readline()
+            if not line:
+                break
+            self._stdout_queue.put(line.strip())
+
     def _wait_for_response(self, marker: str, timeout=5) -> list[str]:
         """Read lines until marker found or timeout expires."""
         lines = []
-        if not self.process or not self.process.stdout:
+        if not self.process:
             return lines
 
         deadline = time.monotonic() + timeout
@@ -68,15 +86,11 @@ class StockfishEngine(ChessEngine):
             if remaining <= 0:
                 break
 
-            ready, _, _ = select.select([self.process.stdout], [], [], remaining)
-            if not ready:
+            try:
+                line = self._stdout_queue.get(timeout=remaining)
+            except queue.Empty:
                 break
 
-            line = self.process.stdout.readline()
-            if not line:
-                break
-
-            line = line.strip()
             lines.append(line)
             if marker in line:
                 break
