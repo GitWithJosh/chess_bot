@@ -1,0 +1,136 @@
+"""Stockfish chess engine wrapper."""
+
+import subprocess
+import os
+from board.board import BoardState
+from move_generation.move import Move
+from move_generation.generator import MoveGenerator
+from engines.engine import ChessEngine
+
+
+class StockfishEngine(ChessEngine):
+    """Interface to Stockfish UCI chess engine."""
+
+    def __init__(self, depth=10, elo=None):
+        """Initialize Stockfish engine.
+
+        Args:
+            depth: Search depth (higher = stronger)
+            elo: ELO rating to limit strength (1320-3190), None = full strength
+        """
+        self.depth = depth
+        self.elo = elo
+        self.process = None
+        self.skill_level = self._elo_to_skill(elo) if elo else 20
+
+        try:
+            self.process = subprocess.Popen(
+                ['stockfish'],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+            self._send_command('uci')
+            self._wait_for_response('uciok')
+            self._configure()
+        except FileNotFoundError:
+            raise RuntimeError(
+                "Stockfish not found. Install with: brew install stockfish"
+            )
+
+    def _configure(self):
+        """Configure Stockfish settings."""
+        if self.skill_level < 20:
+            self._send_command(f'setoption name Skill Level value {self.skill_level}')
+
+    def _send_command(self, cmd: str):
+        """Send command to Stockfish."""
+        if self.process:
+            self.process.stdin.write(cmd + '\n')
+            self.process.stdin.flush()
+
+    def _wait_for_response(self, marker: str, timeout=5) -> list[str]:
+        """Read lines until marker found."""
+        lines = []
+        try:
+            while True:
+                line = self.process.stdout.readline()
+                if not line:
+                    break
+                lines.append(line.strip())
+                if marker in line:
+                    break
+        except:
+            pass
+        return lines
+
+    def get_best_move(self, board_state: BoardState) -> Move | None:
+        """Get best move using Stockfish."""
+        if not self.process:
+            return None
+
+        legal_moves = MoveGenerator(board_state).get_legal_moves()
+        if not legal_moves:
+            return None
+
+        fen = board_state.to_fen()
+        self._send_command(f'position fen {fen}')
+        self._send_command(f'go depth {self.depth}')
+
+        best_move_uci = None
+        for line in self._wait_for_response('bestmove'):
+            if line.startswith('bestmove'):
+                parts = line.split()
+                if len(parts) >= 2:
+                    best_move_uci = parts[1]
+                break
+
+        if not best_move_uci or best_move_uci == '(none)':
+            return None
+
+        return self._uci_to_move(best_move_uci, board_state)
+
+    def _uci_to_move(self, uci: str, board_state: BoardState) -> Move | None:
+        """Convert UCI notation (e2e4) to Move object."""
+        if len(uci) < 4:
+            return None
+
+        from utils.coordinates import algebraic_to_indices
+
+        try:
+            from_row, from_col = algebraic_to_indices(uci[:2])
+            to_row, to_col = algebraic_to_indices(uci[2:4])
+
+            promotion = None
+            if len(uci) > 4:
+                # Convert single character to full piece name
+                piece_map = {'q': 'queen', 'r': 'rook', 'b': 'bishop', 'n': 'knight'}
+                promotion = piece_map.get(uci[4], uci[4])
+
+            return Move(from_row, from_col, to_row, to_col, promotion)
+        except (ValueError, IndexError):
+            return None
+
+    def _elo_to_skill(self, elo: int) -> int:
+        """Convert ELO to Stockfish skill level (0-20)."""
+        if elo < 1320:
+            return 0
+        if elo > 3190:
+            return 20
+        return max(0, min(20, (elo - 1320) // 94))
+
+    def name(self) -> str:
+        """Return engine name with strength."""
+        elo_str = f" ({self.elo})" if self.elo else ""
+        return f"Stockfish{elo_str}"
+
+    def __del__(self):
+        """Cleanup Stockfish process."""
+        if self.process:
+            try:
+                self._send_command('quit')
+                self.process.wait(timeout=1)
+            except:
+                self.process.terminate()
