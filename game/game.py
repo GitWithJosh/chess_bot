@@ -164,7 +164,7 @@ class Game:
         current_key = _repetition_key(self.position_history[-1])
         keys = (_repetition_key(f) for f in self.position_history)
         count = sum(1 for k in keys if k == current_key)
-        print(f"Position {current_key} has occurred {count} times.")
+
         return count >= 3
 
     def _is_insufficient_material(self) -> bool:
