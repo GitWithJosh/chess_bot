@@ -15,6 +15,8 @@ class StockfishEngine(ChessEngine):
     """Interface to Stockfish UCI chess engine."""
 
     STDOUT_QUEUE_MAXSIZE = 1000
+    QUEUE_PUT_TIMEOUT = 0.1
+    MIN_POLL_INTERVAL = 0.01
     READER_JOIN_TIMEOUT = 0.2
 
     def __init__(self, depth=10, elo=None):
@@ -78,7 +80,7 @@ class StockfishEngine(ChessEngine):
             line = line.strip()
             while not self._stop_reader.is_set():
                 try:
-                    self._stdout_queue.put(line, timeout=0.1)
+                    self._stdout_queue.put(line, timeout=self.QUEUE_PUT_TIMEOUT)
                     break
                 except queue.Full:
                     continue
@@ -95,7 +97,7 @@ class StockfishEngine(ChessEngine):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
-            wait_timeout = max(remaining, 0.01)
+            wait_timeout = max(remaining, self.MIN_POLL_INTERVAL)
 
             try:
                 line = self._stdout_queue.get(timeout=wait_timeout)
