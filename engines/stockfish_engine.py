@@ -21,7 +21,6 @@ class StockfishEngine(ChessEngine):
         self.depth = depth
         self.elo = elo
         self.process = None
-        self.skill_level = self._elo_to_skill(elo) if elo else 20
 
         try:
             self.process = subprocess.Popen(
@@ -42,8 +41,11 @@ class StockfishEngine(ChessEngine):
 
     def _configure(self):
         """Configure Stockfish settings."""
-        if self.skill_level < 20:
-            self._send_command(f'setoption name Skill Level value {self.skill_level}')
+        if self.elo is not None:
+            self._send_command('setoption name UCI_LimitStrength value true')
+            self._send_command(f'setoption name UCI_Elo value {self.elo}')
+        else:
+            self._send_command('setoption name UCI_LimitStrength value false')
 
     def _send_command(self, cmd: str):
         """Send command to Stockfish."""
@@ -112,14 +114,6 @@ class StockfishEngine(ChessEngine):
             return Move(from_row, from_col, to_row, to_col, promotion)
         except (ValueError, IndexError):
             return None
-
-    def _elo_to_skill(self, elo: int) -> int:
-        """Convert ELO to Stockfish skill level (0-20)."""
-        if elo < 1320:
-            return 0
-        if elo > 3190:
-            return 20
-        return max(0, min(20, (elo - 1320) // 94))
 
     def name(self) -> str:
         """Return engine name with strength."""
