@@ -97,7 +97,7 @@ class StockfishEngine(ChessEngine):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
-            wait_timeout = max(remaining, self.MIN_POLL_INTERVAL)
+            wait_timeout = min(remaining, self.MIN_POLL_INTERVAL)
 
             try:
                 line = self._stdout_queue.get(timeout=wait_timeout)
