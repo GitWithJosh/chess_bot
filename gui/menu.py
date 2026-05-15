@@ -287,7 +287,6 @@ class MenuScreen:
             self.screen.blit(text, (42, 38))
 
         # Engine options
-        engine_names = list(self.engines.keys())
         for i, (name, eid) in enumerate(self.engines.items()):
             y = 150 + i * 70
             is_selected = self.selected_engines[self.engine_selection] == eid
