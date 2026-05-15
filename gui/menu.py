@@ -64,7 +64,7 @@ class MenuScreen:
 
     def _load_button_image(self, filename: str, size: tuple) -> pygame.Surface | None:
         """Load button image."""
-        path = f"/Users/meyer/Desktop/coding/chess_bot/pieces-basic-png/{filename}"
+        path = os.path.join(os.path.dirname(__file__), "..", "pieces-basic-png", filename)
         try:
             if os.path.exists(path):
                 img = pygame.image.load(path)

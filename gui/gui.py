@@ -1,5 +1,6 @@
 """Pygame-based chess GUI - Complete redesign with promotion, game over screen, and improved UI."""
 
+import os
 import pygame
 from typing import Optional
 from board.board import BoardState
@@ -302,7 +303,7 @@ class ChessGUI:
     def _load_piece_images(self) -> dict:
         """Load PNG piece images."""
         pieces = {}
-        pieces_dir = "/Users/meyer/Desktop/coding/chess_bot/pieces-basic-png"
+        pieces_dir = os.path.join(os.path.dirname(__file__), "..", "pieces-basic-png")
 
         piece_files = {
             ('white', 'pawn'): 'white-pawn.png',
@@ -329,7 +330,7 @@ class ChessGUI:
 
     def _load_button_image(self, filename: str, size: tuple) -> pygame.Surface | None:
         """Load button image."""
-        path = f"/Users/meyer/Desktop/coding/chess_bot/pieces-basic-png/{filename}"
+        path = os.path.join(os.path.dirname(__file__), "..", "pieces-basic-png", filename)
         try:
             if os.path.exists(path):
                 img = pygame.image.load(path)
