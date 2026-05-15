@@ -505,10 +505,28 @@ class ChessGUI:
                 self.selected_square = None
                 self.legal_moves_from_selected = []
 
+    def _draw_coordinates(self):
+        """Draw file (a-h) and rank (1-8) labels around the board."""
+        for i in range(8):
+            # File labels below the board
+            x = self.BOARD_START_X + i * self.SQUARE_SIZE + self.SQUARE_SIZE // 2
+            y = self.BOARD_START_Y + 8 * self.SQUARE_SIZE + 12
+            file_label = chr(ord('h') - i) if self.board_flipped else chr(ord('a') + i)
+            text = self.font_small.render(file_label, True, COLOR_TEXT_SECONDARY)
+            self.screen.blit(text, text.get_rect(center=(x, y)))
+
+            # Rank labels to the left of the board
+            x = self.BOARD_START_X - 15
+            y = self.BOARD_START_Y + i * self.SQUARE_SIZE + self.SQUARE_SIZE // 2
+            rank_label = str(i + 1) if self.board_flipped else str(8 - i)
+            text = self.font_small.render(rank_label, True, COLOR_TEXT_SECONDARY)
+            self.screen.blit(text, text.get_rect(center=(x, y)))
+
     def _render(self):
         """Render board and UI."""
         self.screen.fill(COLOR_BG)
         self._draw_board()
+        self._draw_coordinates()
         self._draw_pieces()
         self._draw_move_history()
         self._draw_ui()
