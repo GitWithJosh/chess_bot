@@ -8,7 +8,7 @@ from engines.random_engine import RandomEngine
 from engines.stockfish_engine import StockfishEngine
 
 
-def create_engine(engine_name: str) -> 'ChessEngine':
+def create_engine(engine_name: str) -> StockfishEngine:
     """Create engine from name."""
     if engine_name == "human":
         return HumanInputEngine()
