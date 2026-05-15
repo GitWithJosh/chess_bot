@@ -26,6 +26,7 @@ class StockfishEngine(ChessEngine):
         self.process = None
         self._stdout_queue = queue.Queue()
         self._stdout_reader_thread = None
+        self._stop_reader = threading.Event()
 
         try:
             self.process = subprocess.Popen(
@@ -67,7 +68,7 @@ class StockfishEngine(ChessEngine):
         """Continuously read Stockfish stdout into a queue."""
         if not self.process or not self.process.stdout:
             return
-        while True:
+        while not self._stop_reader.is_set():
             line = self.process.stdout.readline()
             if not line:
                 break
@@ -84,6 +85,8 @@ class StockfishEngine(ChessEngine):
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                break
+            if remaining < 0.01:
                 break
 
             try:
@@ -151,9 +154,12 @@ class StockfishEngine(ChessEngine):
 
     def __del__(self):
         """Cleanup Stockfish process."""
+        self._stop_reader.set()
         if self.process:
             try:
                 self._send_command('quit')
                 self.process.wait(timeout=1)
             except:
                 self.process.terminate()
+        if self._stdout_reader_thread:
+            self._stdout_reader_thread.join(timeout=0.2)
