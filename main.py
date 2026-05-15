@@ -62,6 +62,12 @@ def main():
         game = Game()
         gui = ChessGUI(game, white_engine, black_engine)
 
+        # Initialize board orientation before the first frame so that in
+        # Human-vs-Engine mode the human always sees their own side at the
+        # bottom, even if the engine plays White and moves first.
+        if config.mode == GameMode.HUMAN_VS_ENGINE and hasattr(gui, "board_flipped"):
+            gui.board_flipped = (config.black_engine_name == "human")
+
         # If user returns False from gui.run(), they want to replay
         show_menu = gui.run()
 
