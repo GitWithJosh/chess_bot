@@ -21,14 +21,14 @@ def create_engine(engine_name: str) -> ChessEngine:
         elo = 1600
     elif engine_name == "stockfish_2400":
         elo = 2400
-    elif "Stockfish" in engine_name:
+    elif engine_name == "Stockfish":
         elo = None
-        if "(Easy)" in engine_name:
-            elo = 800
-        elif "(Medium)" in engine_name:
-            elo = 1600
-        elif "(Hard)" in engine_name:
-            elo = 2400
+    elif engine_name in {"Stockfish (Easy)", "Stockfish (Medium)", "Stockfish (Hard)"}:
+        elo = {
+            "Stockfish (Easy)": 800,
+            "Stockfish (Medium)": 1600,
+            "Stockfish (Hard)": 2400,
+        }[engine_name]
     else:
         return RandomEngine()
 
