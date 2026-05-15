@@ -2,6 +2,8 @@
 
 import subprocess
 import os
+import select
+import time
 from board.board import BoardState
 from move_generation.move import Move
 from move_generation.generator import MoveGenerator
@@ -54,18 +56,31 @@ class StockfishEngine(ChessEngine):
             self.process.stdin.flush()
 
     def _wait_for_response(self, marker: str, timeout=5) -> list[str]:
-        """Read lines until marker found."""
+        """Read lines until marker found or timeout expires."""
         lines = []
-        try:
-            while True:
-                line = self.process.stdout.readline()
-                if not line:
-                    break
-                lines.append(line.strip())
-                if marker in line:
-                    break
-        except:
-            pass
+        if not self.process or not self.process.stdout:
+            return lines
+
+        deadline = time.monotonic() + timeout
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+
+            ready, _, _ = select.select([self.process.stdout], [], [], remaining)
+            if not ready:
+                break
+
+            line = self.process.stdout.readline()
+            if not line:
+                break
+
+            line = line.strip()
+            lines.append(line)
+            if marker in line:
+                break
+
         return lines
 
     def get_best_move(self, board_state: BoardState) -> Move | None:
