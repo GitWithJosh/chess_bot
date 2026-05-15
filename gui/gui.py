@@ -295,6 +295,7 @@ class ChessGUI:
         self.history_moves_per_page = 13  # More compact
         self.game_over_shown = False
         self.board_flipped = False
+        self.last_engine_polled_position: Optional[str] = None
 
         self.piece_images = self._load_piece_images()
         self.menu_button_img = self._load_button_image("menu.png", (40, 40))
@@ -496,6 +497,11 @@ class ChessGUI:
             if self.game.board.active_color == 'white'
             else self.black_engine
         )
+
+        position_key = self.game.board.to_fen()
+        if self.last_engine_polled_position == position_key:
+            return
+        self.last_engine_polled_position = position_key
 
         move = engine.get_best_move(self.game.board)
         if move:
