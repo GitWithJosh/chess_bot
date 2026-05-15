@@ -207,8 +207,14 @@ class MoveGenerator:
     def _apply_move_to_board(self, board: BoardState, move: Move):
         """Apply move to board state (mutates)."""
         piece = board.get_piece(move.from_row, move.from_col)
+        target = board.get_piece(move.to_row, move.to_col)
         board.set_piece(move.from_row, move.from_col, None)
         board.set_piece(move.to_row, move.to_col, piece)
+
+        # En passant: remove the captured pawn (it sits on the same row as the
+        # moving pawn, not on the destination square)
+        if piece and piece[1] == 'pawn' and target is None and move.from_col != move.to_col:
+            board.set_piece(move.from_row, move.to_col, None)
 
     def _is_king_attacked(self, board: BoardState, color: str) -> bool:
         """Check if color's king is under attack (doesn't use recursion)."""
