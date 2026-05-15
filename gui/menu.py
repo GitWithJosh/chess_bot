@@ -80,7 +80,6 @@ class MenuScreen:
             self._render()
             self.clock.tick(30)
 
-        pygame.quit()
         return self.config
 
     def _handle_events(self):
