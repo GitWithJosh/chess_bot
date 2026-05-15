@@ -160,21 +160,20 @@ class MenuScreen:
         for i, name in enumerate(engine_names):
             y = 150 + i * 70
             if 100 <= pos[0] <= 700 and y <= pos[1] <= y + 60:
-                self.selected_engines[self.engine_selection] = self.engines[name]
+                selected_engine_id = self.engines[name]
+                self.selected_engines[self.engine_selection] = selected_engine_id
 
                 if self.engine_selection == "opponent":
                     # Move to color selection screen
-                    self.selected_opponent_engine = name
+                    self.selected_opponent_engine = selected_engine_id
                     self.current_screen = "color_selection"
                 elif self.engine_selection == "white":
                     self.engine_selection = "black"
                 else:
-                    white_name = self._get_engine_display_name(self.selected_engines["white"])
-                    black_name = self._get_engine_display_name(self.selected_engines["black"])
                     self.config = GameConfig(
                         mode=GameMode.ENGINE_VS_ENGINE,
-                        white_engine_name=white_name,
-                        black_engine_name=black_name,
+                        white_engine_name=self.selected_engines["white"],
+                        black_engine_name=self.selected_engines["black"],
                     )
                     self.running = False
                 return
@@ -191,17 +190,17 @@ class MenuScreen:
         for i, (name, color) in enumerate(colors):
             y = 150 + i * 70
             if 100 <= pos[0] <= 700 and y <= pos[1] <= y + 60:
-                opponent_name = self.selected_opponent_engine
+                opponent_engine_id = self.selected_opponent_engine or "random"
                 if color == "white":
                     self.config = GameConfig(
                         mode=GameMode.HUMAN_VS_ENGINE,
                         white_engine_name="human",
-                        black_engine_name=opponent_name,
+                        black_engine_name=opponent_engine_id,
                     )
                 elif color == "black":
                     self.config = GameConfig(
                         mode=GameMode.HUMAN_VS_ENGINE,
-                        white_engine_name=opponent_name,
+                        white_engine_name=opponent_engine_id,
                         black_engine_name="human",
                     )
                 else:  # Random
@@ -210,12 +209,12 @@ class MenuScreen:
                         self.config = GameConfig(
                             mode=GameMode.HUMAN_VS_ENGINE,
                             white_engine_name="human",
-                            black_engine_name=opponent_name,
+                            black_engine_name=opponent_engine_id,
                         )
                     else:
                         self.config = GameConfig(
                             mode=GameMode.HUMAN_VS_ENGINE,
-                            white_engine_name=opponent_name,
+                            white_engine_name=opponent_engine_id,
                             black_engine_name="human",
                         )
                 self.running = False
@@ -305,7 +304,7 @@ class MenuScreen:
 
     def _render_color_selection(self):
         """Render color selection screen."""
-        opponent_name = self.selected_opponent_engine or "Unknown"
+        opponent_name = self._get_engine_display_name(self.selected_opponent_engine or "random")
         title_text = f"Play as... ({opponent_name})"
         title = self.font_large.render(title_text, True, COLOR_TEXT_PRIMARY)
         self.screen.blit(title, (self.WINDOW_WIDTH // 2 - title.get_width() // 2, 30))

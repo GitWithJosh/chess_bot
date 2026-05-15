@@ -15,6 +15,12 @@ def create_engine(engine_name: str) -> ChessEngine:
         return HumanInputEngine()
     elif engine_name == "random":
         return RandomEngine()
+    elif engine_name == "stockfish_800":
+        elo = 800
+    elif engine_name == "stockfish_1600":
+        elo = 1600
+    elif engine_name == "stockfish_2400":
+        elo = 2400
     elif "Stockfish" in engine_name:
         elo = None
         if "(Easy)" in engine_name:
@@ -23,12 +29,13 @@ def create_engine(engine_name: str) -> ChessEngine:
             elo = 1600
         elif "(Hard)" in engine_name:
             elo = 2400
-        try:
-            return StockfishEngine(depth=10, elo=elo)
-        except RuntimeError as e:
-            print(f"Warning: {e}")
-            return RandomEngine()
     else:
+        return RandomEngine()
+
+    try:
+        return StockfishEngine(depth=10, elo=elo)
+    except RuntimeError as e:
+        print(f"Warning: {e}")
         return RandomEngine()
 
 
