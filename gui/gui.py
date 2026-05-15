@@ -445,9 +445,14 @@ class ChessGUI:
 
     def _try_make_move(self, from_row: int, from_col: int, to_row: int, to_col: int):
         """Try to make a move, handling promotion if needed."""
-        move = Move(from_row, from_col, to_row, to_col)
+        # Find any legal move matching from/to squares (ignoring promotion_piece)
+        legal_move = None
+        for lm in self.legal_moves_from_selected:
+            if lm.from_row == from_row and lm.from_col == from_col and lm.to_row == to_row and lm.to_col == to_col:
+                legal_move = lm
+                break
 
-        if move not in self.legal_moves_from_selected:
+        if legal_move is None:
             piece = self.game.board.get_piece(to_row, to_col)
             if piece and piece[0] == self.game.board.active_color:
                 self._update_selected_square(to_row, to_col)
@@ -456,21 +461,14 @@ class ChessGUI:
                 self.legal_moves_from_selected = []
             return
 
-        # Check if this is a promotion move
-        legal_move = None
-        for lm in self.legal_moves_from_selected:
-            if lm.from_row == from_row and lm.from_col == from_col and lm.to_row == to_row and lm.to_col == to_col:
-                legal_move = lm
-                break
-
-        if legal_move and legal_move.promotion_piece:
+        if legal_move.promotion_piece:
             # Need to show promotion dialog
             promo_dialog = PromotionDialog(self.screen)
             promotion_piece = promo_dialog.show()
             legal_move = Move(from_row, from_col, to_row, to_col, promotion_piece)
 
-        if self.game.make_move(legal_move or move):
-            self.last_move = legal_move or move
+        if self.game.make_move(legal_move):
+            self.last_move = legal_move
             self.selected_square = None
             self.legal_moves_from_selected = []
 

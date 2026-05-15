@@ -62,7 +62,7 @@ class MoveGenerator:
         new_row = row + direction
         if is_valid_square(new_row, col) and self.board.get_piece(new_row, col) is None:
             if new_row == 0 or new_row == 7:
-                for promo in ['q', 'r', 'b', 'n']:
+                for promo in ['queen', 'rook', 'bishop', 'knight']:
                     moves.append(Move(row, col, new_row, col, promo))
             else:
                 moves.append(Move(row, col, new_row, col))
@@ -81,7 +81,7 @@ class MoveGenerator:
                 target = self.board.get_piece(new_row, new_col)
                 if target and target[0] != color:
                     if new_row == 0 or new_row == 7:
-                        for promo in ['q', 'r', 'b', 'n']:
+                        for promo in ['queen', 'rook', 'bishop', 'knight']:
                             moves.append(Move(row, col, new_row, new_col, promo))
                     else:
                         moves.append(Move(row, col, new_row, new_col))
@@ -215,6 +215,10 @@ class MoveGenerator:
         # moving pawn, not on the destination square)
         if piece and piece[1] == 'pawn' and target is None and move.from_col != move.to_col:
             board.set_piece(move.from_row, move.to_col, None)
+
+        # Promotion: replace pawn with promoted piece
+        if piece and piece[1] == 'pawn' and move.promotion_piece:
+            board.set_piece(move.to_row, move.to_col, (piece[0], move.promotion_piece))
 
     def _is_king_attacked(self, board: BoardState, color: str) -> bool:
         """Check if color's king is under attack (doesn't use recursion)."""
