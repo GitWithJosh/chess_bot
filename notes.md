@@ -52,4 +52,3 @@ Dominik Klein June 11, 2022
 - child nodes are selected that have highest probabilities
 - second, for the simulation there are no random playouts,
 - instead network is queried with position and the value returned is used
--  
