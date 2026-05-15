@@ -37,7 +37,6 @@ class Game:
         if move not in legal_moves:
             return False
 
-        old_board = self.board.copy()
         self._apply_move(move)
         self.move_history.append(move)
         self.position_history.append(self.board.to_fen())
