@@ -168,28 +168,50 @@ class Game:
 
     def _is_insufficient_material(self) -> bool:
         """Check for insufficient mating material."""
-        white_pieces = []
-        black_pieces = []
+        white_non_king = []
+        black_non_king = []
+        white_bishop_colors = []
+        black_bishop_colors = []
+
         for row in range(8):
             for col in range(8):
                 piece = self.board.get_piece(row, col)
-                if piece:
-                    if piece[0] == "white":
-                        white_pieces.append(piece[1])
-                    else:
-                        black_pieces.append(piece[1])
+                if piece is None:
+                    continue
 
-        white_non_king = [p for p in white_pieces if p != "king"]
-        black_non_king = [p for p in black_pieces if p != "king"]
+                color, piece_type = piece
+                if piece_type == "king":
+                    continue
 
-        if not white_non_king or not black_non_king:
-            return len(white_non_king) == 0 and len(black_non_king) == 0
+                target_pieces = white_non_king if color == "white" else black_non_king
+                target_pieces.append(piece_type)
 
+                if piece_type == "bishop":
+                    bishop_colors = (
+                        white_bishop_colors if color == "white" else black_bishop_colors
+                    )
+                    bishop_colors.append((row + col) % 2)
+
+        # King vs king
+        if len(white_non_king) == 0 and len(black_non_king) == 0:
+            return True
+
+        # King and single bishop/knight vs bare king
+        lone_minor = {"bishop", "knight"}
+        if len(white_non_king) == 0 and len(black_non_king) == 1:
+            return black_non_king[0] in lone_minor
+        if len(black_non_king) == 0 and len(white_non_king) == 1:
+            return white_non_king[0] in lone_minor
+
+        # King and bishop/knight vs king and bishop/knight
         if len(white_non_king) == 1 and len(black_non_king) == 1:
-            return white_non_king[0] in ["bishop", "knight"] and black_non_king[0] in [
-                "bishop",
-                "knight",
-            ]
+            white_piece = white_non_king[0]
+            black_piece = black_non_king[0]
+
+            if white_piece == "bishop" and black_piece == "bishop":
+                return white_bishop_colors[0] == black_bishop_colors[0]
+
+            return white_piece in lone_minor and black_piece in lone_minor
 
         return False
 
