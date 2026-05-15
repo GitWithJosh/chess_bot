@@ -45,7 +45,7 @@ Then click pieces to move and enjoy the game!
 ```
 chess_bot/
 ├── utils/              # Coordinate and FEN utilities
-├── board/              # Board representation (immutable, copyable)
+├── board/              # Board representation (copyable)
 ├── move_generation/    # Legal move generation (no recursion in check detection)
 ├── game/               # Game rules & state management
 ├── engines/            # Engine interface & implementations
@@ -62,7 +62,7 @@ chess_bot/
 ### Key Design Principles
 
 1. **Modular Separation** - Zero coupling between modules
-2. **Immutable Board State** - Copyable for ML compatibility
+2. **Copyable Board State** - Supports safe state duplication for ML compatibility
 3. **Clean Engine Interface** - Swap engines without changing core logic
 4. **Menu-Driven Flow** - Professional game setup experience
 5. **Confirmation Dialogs** - Safe user experience (no accidental state changes)
@@ -272,7 +272,7 @@ class RLEngine(ChessEngine):
 chess_bot/
 ├── board/
 │   ├── __init__.py
-│   └── board.py          (BoardState class - immutable)
+│   └── board.py          (BoardState class - mutable/copyable)
 ├── move_generation/
 │   ├── __init__.py
 │   ├── move.py           (Move dataclass)

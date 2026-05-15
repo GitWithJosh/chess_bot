@@ -8,7 +8,7 @@ from utils.coordinates import is_valid_square
 
 @dataclass
 class BoardState:
-    """Immutable chess board state for move generation and ML compatibility."""
+    """Chess board state for move generation and ML compatibility."""
 
     board: list[list]
     active_color: str
