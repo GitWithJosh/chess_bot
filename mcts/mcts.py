@@ -1,6 +1,27 @@
 import random
 
 
+class Node:
+    def __init__(self, move=None, parent=None):
+        self.move = move
+        self.label = f"{LAYER}-{move}" if move else "root"
+        self.parent = parent
+        self.children = []
+        self.Q = 0  # Total move value of this node
+        self.W = 0  # Total sum of move values
+        self.N = 0  # Visit count
+        self.P = 0  # Prior probability from the network
+        self.u = 0  # Exploration term
+
+    def is_unvisited(self):
+        return self.N == 0
+
+    def update_Q_W_N(self, value):
+        self.W += value
+        self.N += 1
+        self.Q = self.W / self.N
+
+
 def generate_mock_network_outputs():
     outputs_size = 50
     # generate 50 numbers between 0 and 1, summing to 1
@@ -55,49 +76,6 @@ def calculate_u(node):
     u = c * node.P * (parent_possible_moves**0.5) / (1 + node.N)
     print(f"{node.label} - u: {u:.4f}")
     return u
-
-
-# - Q is move value
-# - W is a helper variable that stores the sum of move values
-# - N is the visit count
-# - P is the prior probability from the network's policy head
-
-Q = W = N = 0
-
-
-LAYER = 1
-
-
-class Node:
-    def __init__(self, move=None, parent=None):
-        self.move = move
-        self.label = f"{LAYER}-{move}" if move else "root"
-        self.parent = parent
-        self.children = []
-        self.Q = 0  # Total move value of this node
-        self.W = 0  # Total sum of move values
-        self.N = 0  # Visit count
-        self.P = 0  # Prior probability from the network
-        self.u = 0  # Exploration term
-
-    def is_unvisited(self):
-        return self.N == 0
-
-    def update_Q_W_N(self, value):
-        self.W += value
-        self.N += 1
-        self.Q = self.W / self.N
-
-
-print("Initializing MCTS with root node...")
-root_node = Node()
-possible_moves = generate_mock_possible_moves()
-masked_policy, value = query_network("initial_position", possible_moves)
-for move in possible_moves:
-    child_node = Node(move=move, parent=root_node)
-    child_node.P = masked_policy[move]  # Set prior probability from masked policy
-    root_node.children.append(child_node)
-LAYER += 1
 
 
 def select_child_that_maximizes_Q_plus_u(node):
@@ -162,6 +140,24 @@ def select_move_given_policy(node):
     return chosen_child  # Return the move associated with the selected child
 
 
+# - Q is move value
+# - W is a helper variable that stores the sum of move values
+# - N is the visit count
+# - P is the prior probability from the network's policy head
+Q = W = N = 0
+LAYER = 1  # To track the depth of the tree for labeling purposes
+
+print("Initializing MCTS with root node...")
+root_node = Node()
+possible_moves = generate_mock_possible_moves()
+masked_policy, value = query_network("initial_position", possible_moves)
+for move in possible_moves:
+    child_node = Node(move=move, parent=root_node)
+    child_node.P = masked_policy[move]  # Set prior probability from masked policy
+    root_node.children.append(child_node)
+LAYER += 1
+
+
 # chosen child is the one with the highest Q + u
 chosen_child = select_child_that_maximizes_Q_plus_u(root_node)
 
@@ -176,4 +172,5 @@ if chosen_child.is_unvisited():
 else:
     print(f"\nSelected node {chosen_child.label} has been visited before")
 
+# After running the MCTS iterations, select the move to play based on visit counts
 chosen_child_given_policy = select_move_given_policy(root_node)
