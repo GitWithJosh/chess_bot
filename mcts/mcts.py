@@ -34,12 +34,23 @@ def generate_mock_network_outputs():
     return policy, value
 
 
-def generate_mock_possible_moves():
+def generate_mock_possible_moves(layer=None):
     print("Generating legal moves for the position...")
     num_moves = random.randint(2, 5)  # Random number of possible moves
     # create list naming moves as "move1", "move2", ..., "moveN"
     possible_moves = [f"move{i+1}" for i in range(num_moves)]
+    # for a small chance it should return win, loss, or draw
+    # Only allow generating terminal outcomes when `layer` is not provided
+    # (i.e. during inner expansions where layer is omitted). This prevents
+    # terminal results from being generated at the root when a layer value
+    # is explicitly passed (for example, layer=1).
+    if layer is None and random.random() < 0.1:
+        possible_moves = random.choice(["win", "loss", "draw"])
+        print(
+            f"Position is terminal, returning game outcome {possible_moves} instead of moves..."
+        )
     print(f"Possible moves are: {possible_moves}")
+
     return possible_moves
 
 
@@ -106,6 +117,14 @@ def expand(node):
     print(f"Expanding node {node.label}...")
     new_position = make_move(node)  # Placeholder for move application
     new_possible_moves = generate_mock_possible_moves()  # Generate new possible moves
+    if isinstance(new_possible_moves, str):  # Check for terminal state
+        print(f"Reached terminal state with outcome: {new_possible_moves}")
+        if new_possible_moves == "win":
+            return "win"
+        elif new_possible_moves == "loss":
+            return "loss"
+        else:
+            return "draw"
     masked_policy, value = query_network(new_position, new_possible_moves)
     print(f"{node.label} resulted in a position, yielding value: {value:.4f}")
     print(f"Generating children for {node.label} based on new possible moves...")
@@ -149,7 +168,7 @@ LAYER = 1  # To track the depth of the tree for labeling purposes
 
 print("Initializing MCTS with root node...")
 root_node = Node()
-possible_moves = generate_mock_possible_moves()
+possible_moves = generate_mock_possible_moves(LAYER)
 masked_policy, value = query_network("initial_position", possible_moves)
 for move in possible_moves:
     child_node = Node(move=move, parent=root_node)
@@ -166,11 +185,16 @@ if chosen_child.is_unvisited():
         f"\nExploring unvisited node: {chosen_child.label} with P={chosen_child.P:.4f}"
     )
     value = expand(chosen_child)  # Placeholder for expansion logic
-    print(f"Backpropagating")
-    backpropagate(chosen_child, value)  # Placeholder for backpropagation logic
+    if not isinstance(value, str):  # Check for terminal state outcome
+        print(f"Backpropagating")
+        backpropagate(chosen_child, value)  # Placeholder for backpropagation logic
+    else:
+        print(f"Terminal outcome {value} reached during expansion.")
 
 else:
     print(f"\nSelected node {chosen_child.label} has been visited before")
 
 # After running the MCTS iterations, select the move to play based on visit counts
-chosen_child_given_policy = select_move_given_policy(root_node)
+if not isinstance(value, str):  # Ensure we haven't already reached a terminal state
+    print("\nSelecting move to play based on visit counts...")
+    chosen_child_given_policy = select_move_given_policy(root_node)
