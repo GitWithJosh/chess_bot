@@ -71,9 +71,26 @@ Dominik Klein June 11, 2022
 - Consequence: move value $Q$ gets more important (behaviour is human-inspired, focus more in promising candidates)
 - We continue to select until we find a leaf node (a node with unvisited moves $N_{m_i} = 0$)
 
-#### Simulation 
+#### Expansions
+- query network with leaf node position; policy head results are the prior probability $p_m$ for each possible move of the leaf node
+- value head results is value $v$ of this position
+- expand leaf node by adding edges for each move
+- each edge initializes $Q = W = N = 0$ and $p = p_m$
 
+#### Simulation 
+- Rollout-simulations are replaced by simpling computing value $v$
+  
 #### Backpropagation
+- Starting from the leaf node the values Q, W and N are updated to the root
+- Update formulas: $W = W + v$; $N+=1$ and $Q=V/N$
+
+#### Select move 
+- move is selected given policy $\pi_m$ in the root position
+- $\pi_m = \dfrac{N^{1/ \tau}_m}{\displaystyle \sum^n N^{1/ \tau}_m}$
+- denominator: sum over all possible moves $n$ at the root
+- This is almost the same as just taking the move with the highest visit count
+- $\tau$ is for exploration
+
 
 ### Once trained
 - engine works by using Monte Carlo Tree search to find the best move in a given positoin
