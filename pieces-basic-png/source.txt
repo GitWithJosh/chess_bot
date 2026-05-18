@@ -1,0 +1,2 @@
+chess_pieces: https://greenchess.net/info.php?item=downloads
+back/menu/switch_icons: https://www.flaticon.com/free-icons/
