@@ -62,7 +62,7 @@ Dominik Klein June 11, 2022
   
 #### Selection
 - Start at root node and at each step choose the next node that maximizes $Q + u$
-- How is $u$ computed given a move $m$: $c \cdot P \cdot \dfrac{\sqrt{\displaystyle \sum^m' N_{m'}}}{1 + N_m}$
+- How is $u$ computed given a move $m$: $c \cdot P \cdot \dfrac{\sqrt{\displaystyle \sum^{m'} N_{m'}}}{1 + N_m}$
 - $c$ is a constant
 - $P$ is prior probability which led to this node
 - enumerator: node count of the parent (all possible moves but we chose m)
