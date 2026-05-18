@@ -42,9 +42,38 @@ Dominik Klein June 11, 2022
 - Note: There is another appraoch, that has less outputs but trains slower (enumerates all possible moves "a1ba1, a1c1,...)
 
 ### Network training
-- trained usind Monte Carlo Tree Search (self-played games)
+- training is done by just using the results of MCT-searches
 - for each move MCT search is conducted  using the current state of the net
-- positions of these games, MCT search results and final outcome are used as training data 
+- positions of these games, MCT search results and final outcome are used as training data
+
+- For each possible move in a position, we query the network to get move probabilities (prior p)
+- We assign those p to each edge corresponding to each legal move
+
+- Secondly we also get the evaluation (value v) of the position from the network
+
+### Step by step: MCTS and training
+
+- start with randomly initialized weight parameters $\Theta$
+- Initialize Q = W = N = 0
+- Q is move value
+- W is a helper variable that stores the sum of move values
+- N is the visit count
+- P is the prior probability from the network's policy head
+  
+#### Selection
+- Start at root node and at each step choose the next node that maximizes $Q + u$
+- How is $u$ computed given a move $m$: $c \cdot P \cdot \dfrac{\sqrt{\displaystyle \sum^m' N_{m'}}}{1 + N_m}$
+- $c$ is a constant
+- $P$ is prior probability which led to this node
+- enumerator: node count of the parent (all possible moves but we chose m)
+- $1 + N_m$ is the counter how often we visit this move during the game
+- Impact of $u$: First explore moves with high initial prior $p$, later $u$ gets less important since it reduces (counter in the denominator rises)
+- Consequence: move value $Q$ gets more important (behaviour is human-inspired, focus more in promising candidates)
+- We continue to select until we find a leaf node (a node with unvisited moves $N_{m_i} = 0$)
+
+#### Simulation 
+
+#### Backpropagation
 
 ### Once trained
 - engine works by using Monte Carlo Tree search to find the best move in a given positoin
