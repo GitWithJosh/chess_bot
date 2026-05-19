@@ -166,35 +166,33 @@ def select_move_given_policy(node):
 Q = W = N = 0
 LAYER = 1  # To track the depth of the tree for labeling purposes
 
-print("Initializing MCTS with root node...")
-root_node = Node()
-possible_moves = generate_mock_possible_moves(LAYER)
-masked_policy, value = query_network("initial_position", possible_moves)
-for move in possible_moves:
-    child_node = Node(move=move, parent=root_node)
-    child_node.P = masked_policy[move]  # Set prior probability from masked policy
-    root_node.children.append(child_node)
-LAYER += 1
+if __name__ == "__main__":
+    print("Initializing MCTS with root node...")
+    root_node = Node()
+    possible_moves = generate_mock_possible_moves(LAYER)
+    masked_policy, value = query_network("initial_position", possible_moves)
+    for move in possible_moves:
+        child_node = Node(move=move, parent=root_node)
+        child_node.P = masked_policy[move]  # Set prior probability from masked policy
+        root_node.children.append(child_node)
+    LAYER += 1
 
+    # chosen child is the one with the highest Q + u
+    chosen_child = select_child_that_maximizes_Q_plus_u(root_node)
 
-# chosen child is the one with the highest Q + u
-chosen_child = select_child_that_maximizes_Q_plus_u(root_node)
+    if chosen_child.is_unvisited():
+        print(
+            f"\nExploring unvisited node: {chosen_child.label} with P={chosen_child.P:.4f}"
+        )
+        value = expand(chosen_child)  # Placeholder for expansion logic
+        if not isinstance(value, str):  # Check for terminal state outcome
+            backpropagate(chosen_child, value)  # Placeholder for backpropagation logic
+        else:
+            print(f"Terminal outcome {value} reached during expansion.")
 
-if chosen_child.is_unvisited():
-    print(
-        f"\nExploring unvisited node: {chosen_child.label} with P={chosen_child.P:.4f}"
-    )
-    value = expand(chosen_child)  # Placeholder for expansion logic
-    if not isinstance(value, str):  # Check for terminal state outcome
-        print(f"Backpropagating")
-        backpropagate(chosen_child, value)  # Placeholder for backpropagation logic
     else:
-        print(f"Terminal outcome {value} reached during expansion.")
+        print(f"\nSelected node {chosen_child.label} has been visited before")
 
-else:
-    print(f"\nSelected node {chosen_child.label} has been visited before")
-
-# After running the MCTS iterations, select the move to play based on visit counts
-if not isinstance(value, str):  # Ensure we haven't already reached a terminal state
-    print("\nSelecting move to play based on visit counts...")
-    chosen_child_given_policy = select_move_given_policy(root_node)
+    # After running the MCTS iterations, select the move to play based on visit counts
+    if not isinstance(value, str):  # Ensure we haven't already reached a terminal state
+        chosen_child_given_policy = select_move_given_policy(root_node)
