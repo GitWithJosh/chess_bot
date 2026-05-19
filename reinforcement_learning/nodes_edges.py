@@ -28,6 +28,8 @@ class Node:
             child_node = Node(child_board, child_edge)
             self.child_edge_node.append((child_edge, child_node))
         # Query the network for the child node's position and set the prior probability
+        # Return is of shape policy(1,28), value(1,1)
+        # Therefore q[0] = policy array, q[1] = value array
         q = network.predict(self.board.to_network_input())
         prob_sum = 0.0
         for edge, _ in self.child_edge_node:
@@ -51,3 +53,5 @@ if __name__ == "__main__":
     network = Network()
     # network.build_and_save_model()
     network.load_model()
+    q = network.predict("test_position")
+    print(f"Predicted policy: {q[0]}, Predicted value: {q[1]}")
