@@ -1,5 +1,6 @@
 import keras
 import numpy as np
+from tqdm import tqdm
 
 from reinforcement_learning import mcts
 from reinforcement_learning.reinf_learn import ReinfLearn
@@ -12,7 +13,7 @@ for i in range(0, 11):
     all_pos = []
     all_move_probs = []
     all_values = []
-    for j in range(0, 10):
+    for j in tqdm(range(0, 10)):
         pos, move_probs, values = learner.play_game()
         all_pos += pos
         all_move_probs += move_probs

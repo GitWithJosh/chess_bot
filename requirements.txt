@@ -1,2 +1,4 @@
 pygame
 python-chess
+tensforflow
+tqdm
