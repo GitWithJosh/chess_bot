@@ -1,6 +1,5 @@
 import math
 from random import random
-
 from reinforcement_learning.board import Board
 
 
