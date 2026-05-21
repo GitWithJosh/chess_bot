@@ -165,3 +165,11 @@ if __name__ == "__main__":
     move = chess.Move.from_uci("e2e4")
     move_index = converter.encode_move(move)
     logger.info(f"Encoded move index for e2e4: {move_index}")
+
+    move = chess.Move.from_uci("a1b1")
+    move_index = converter.encode_move(move)
+    logger.info(f"Encoded move index for a1b1: {move_index}")
+
+    move = chess.Move.from_uci("a1b4")
+    move_index = converter.encode_move(move)
+    logger.info(f"Encoded move index for a1b4: {move_index}")
