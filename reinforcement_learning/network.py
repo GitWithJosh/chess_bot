@@ -17,7 +17,7 @@ class Network:
         l3 = Dense(128, activation=tf.nn.relu)(l2)
         l4 = Dense(128, activation=tf.nn.relu)(l3)
         l5 = Dense(128, activation=tf.nn.relu)(l4)
-        policyOut = Dense(28, name="policyHead", activation="softmax")(l5)
+        policyOut = Dense(1858, name="policyHead", activation="softmax")(l5)
         valueOut = Dense(1, activation=tf.nn.tanh, name="valueHead")(l5)
         bce = tf.keras.losses.CategoricalCrossentropy(from_logits=False)
         self.model = Model(inp, [policyOut, valueOut])
@@ -36,7 +36,7 @@ class Network:
         # For now, we will just return random values.
         import numpy as np
 
-        policy = np.random.rand(1, 28)
+        policy = np.random.rand(1, 1858)
         policy = policy / np.sum(policy)  # Normalize to get probabilities
         value = np.random.uniform(-1, 1, (1, 1))  # Random value between -1 and 1
         return policy, value

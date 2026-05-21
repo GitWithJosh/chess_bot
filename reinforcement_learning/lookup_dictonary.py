@@ -133,7 +133,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    with open('move_lookup.json', 'r') as file:
-        data = json.load(file)
-        print(len(data))
 
