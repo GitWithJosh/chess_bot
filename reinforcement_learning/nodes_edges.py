@@ -1,6 +1,9 @@
 "Alpha-Zero like Reinforcement Learning with Monte Carlo Tree Search for Chess"
 
 import copy
+import chess
+
+from converter import Converter
 
 
 class Edge:
@@ -14,16 +17,16 @@ class Edge:
 
 
 class Node:
-    def __init__(self, board, parent_edge):
+    def __init__(self, board:chess.Board, parent_edge):
         self.board = board
         self.parent_edge = parent_edge
         self.child_edge_node = []
 
     def expand(self, network):
-        moves = self.board.get_possible_moves()
-        for move in moves:
+
+        for move in self.board.legal_moves:
             child_board = copy.deepcopy(self.board)
-            child_board.apply_move(move)
+            child_board.push(chess.Move.from_uci(move))
             child_edge = Edge(move, self)
             child_node = Node(child_board, child_edge)
             self.child_edge_node.append((child_edge, child_node))
@@ -44,14 +47,3 @@ class Node:
 
     def is_leaf(self):
         return self.child_edge_node == []
-
-
-if __name__ == "__main__":
-    # test the Node and Edge classes
-    from network import Network
-
-    network = Network()
-    # network.build_and_save_model()
-    network.load_model()
-    q = network.predict("test_position")
-    print(f"Predicted policy: {q[0]}, Predicted value: {q[1]}")

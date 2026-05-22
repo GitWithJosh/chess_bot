@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.4.6",
     "pygame>=2.6.1",
+    "pytest>=9.0.3",
     "python-chess>=1.999",
     "tensorflow>=2.21.0",
     "tqdm>=4.67.3",

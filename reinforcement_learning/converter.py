@@ -4,18 +4,97 @@ import json
 import tensorflow as tf
 
 class Converter:
-
+    """
+    Class for converting stuff
+    """
     def __init__(self):
-        self.board = chess.Board
+        self.board = chess.Board()
         self.lookup = {}
         with open("move_lookup.json", "r") as f:
             self.lookup = json.load(f)
 
 
-    def board_to_tensor():
-        pass
+    def board_to_input_tensor(self, board:chess.Board) -> tf.Tensor:
+        """Convert chess board to 8x8x112 tensor representation
 
-    def network_to_move(self, network_output: tf.Tensor) -> str:
+            0-11: piece placement both colors (Friendly (pawns, knights, bishops, rooks, queens, king); Enemy (pawns, knights, bishops, rooks, queens, king))
+            12: shows if repetition has occurred once or twice (is 1 regardless)
+            13-103: Repeat for seven previous positions
+            104-107: castling rights (white queenside, white kingside, black queenside, black kingside); all ones if right exists
+            108: 1 if blacks turn, 0 whites turn
+            109: 50 move rule; number of moves where no capture was made and no pawn was moved; same scalar value in all entries ;Half-move clock divided by 100
+            110: Set to 0
+            111: Set to 1 (to help detect bord edges)
+
+            All planes have dimension 8x8
+
+            Args:
+                board: Chess board position
+
+            Returns:
+                numpy array of shape (8, 8, 112) representing the board state
+        """
+        tensor = np.zeros((8, 8, 112), dtype=getattr(np, "float16"))
+
+        # Build a list of boards by walking back through the move stack
+        boards = [board.copy()]
+        temp_board = board.copy()
+        for _ in range(7):
+            if temp_board.move_stack:
+                temp_board.pop()
+                boards.append(temp_board.copy())
+            else:
+                boards.append(None)  # No history available
+
+        # Channels 0-103: piece placement for current + 7 previous positions
+        # Each position gets 13 channels (12 piece planes + 1 repetition plane)
+        for i, hist_board in enumerate(boards):
+            base_channel = i * 13
+
+            if hist_board is None:
+                continue  # Leave as zeros if no history
+
+            # Determine who is "friendly" based on the CURRENT board's turn
+            friendly_color = board.turn
+            enemy_color = not board.turn
+
+            # Channels 0-5: friendly pieces (pawn, knight, bishop, rook, queen, king)
+            # Channels 6-11: enemy pieces
+            for square in chess.SQUARES:
+                piece = hist_board.piece_at(square)
+                if piece:
+                    rank = square // 8
+                    file = square % 8
+                    piece_type = piece.piece_type - 1  # 0-5
+
+                    if piece.color == friendly_color:
+                        tensor[rank, file, base_channel + piece_type] = 1
+                    else:
+                        tensor[rank, file, base_channel + 6 + piece_type] = 1
+
+            # Channel 12: repetition (set to 1 if the position has occurred at least once)
+            tensor[:, :, base_channel + 12] = float(hist_board.is_repetition(2)) 
+
+        # Channels 104-107: castling rights
+        tensor[:, :, 104] = float(board.has_queenside_castling_rights(chess.WHITE))
+        tensor[:, :, 105] = float(board.has_kingside_castling_rights(chess.WHITE))
+        tensor[:, :, 106] = float(board.has_queenside_castling_rights(chess.BLACK))
+        tensor[:, :, 107] = float(board.has_kingside_castling_rights(chess.BLACK))
+
+        # Channel 108: side to move (1 if black's turn)
+        tensor[:, :, 108] = float(board.turn == chess.BLACK)
+
+        # Channel 109: 50-move rule (halfmove clock / 100, same value across all squares)
+        tensor[:, :, 109] = board.halfmove_clock / 100
+
+        # Channel 110: set to 0 (already zeros)
+
+        # Channel 111: set to 1 (helps detect board edges)
+        tensor[:, :, 111] = 1
+
+        return tensor
+
+    def output_tensor_to_move(self, network_output: tf.Tensor) -> str:
         """
         Takes a network output and converts it to a move in UIC chess notation
         """
@@ -25,6 +104,9 @@ class Converter:
         return self._get_move_from_index(best_move_index)
     
     def mask_illegal_moves(self, board: chess.Board, move_probabilities: tf.Tensor) -> tf.Tensor:
+        """
+        Mask illegal moves to remove them from the output and recalculate the probabilities for all legal moves (sum = 1).
+        """
         index_lookup = {v: int(k) for k, v in self.lookup.items()}
 
         mask = np.zeros(len(move_probabilities), dtype=bool)
@@ -45,4 +127,4 @@ class Converter:
 
     def _get_move_from_index(self, index) -> str:
         """Returns the corresponding move notation given an index"""
-        return self.lookup[index]
+        return self.lookup[str(index)]
