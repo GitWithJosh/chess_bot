@@ -10,7 +10,7 @@ class Converter:
     def __init__(self):
         self.board = chess.Board()
         self.lookup = {}
-        with open("move_lookup.json", "r") as f:
+        with open("reinforcement_learning/move_lookup.json", "r") as f:
             self.lookup = json.load(f)
 
 

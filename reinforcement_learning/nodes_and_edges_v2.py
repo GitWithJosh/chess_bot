@@ -115,10 +115,12 @@ class Node:
         # Create edges with prior probabilities for each legal move
         for move in self.board.legal_moves:
             move_uci = move.uci()
-            if move_uci in index_lookup:
+            if move_uci.endswith("q"):
+                prior = float(policy[index_lookup[move_uci[:-1]]])
+            elif move_uci in index_lookup:
                 prior = float(policy[index_lookup[move_uci]])
             else:
-                raise AttributeError("Check die Liste nochmal")
+                raise AttributeError(f"Move {move_uci} not found in lookup")
             edge = Edge(move, self, prior)
             self.edges.append(edge)
 
