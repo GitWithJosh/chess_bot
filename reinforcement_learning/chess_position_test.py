@@ -21,41 +21,48 @@ board.set_piece_at(chess.C8, chess.Piece(chess.ROOK, chess.BLACK))
 board.set_piece_at(chess.E8, chess.Piece(chess.ROOK, chess.BLACK))
 
 # Weiß ist am Zug
-board.turn = chess.WHITE
-
-print("=" * 50)
-print("Stellung (FEN):")
-print(board.fen())
-print("=" * 50)
-print()
 print(board)
-print()
+print(chess.SquareSet(chess.BB_RANK_1))
+print(board.turn)
+print("=========")
+board = board.mirror()
+print(board)
+print(chess.SquareSet(chess.BB_RANK_1))
+print(board.turn)
 
-# Alle legalen Züge des Bauern auf d7 anzeigen
-pawn_moves = [m for m in board.legal_moves if m.from_square == chess.D7]
+# print("=" * 50)
+# print("Stellung (FEN):")
+# print(board.fen())
+# print("=" * 50)
+# print()
+# print(board)
+# print()
 
-print(f"Legale Züge des Bauern auf d7 ({len(pawn_moves)} Züge):")
-print("-" * 50)
+# # Alle legalen Züge des Bauern auf d7 anzeigen
+# pawn_moves = [m for m in board.legal_moves if m.from_square == chess.D7]
 
-for move in pawn_moves:
-    target = chess.square_name(move.to_square)
-    captured = board.piece_at(move.to_square)
-    promo = chess.piece_name(move.promotion) if move.promotion else None
+# print(f"Legale Züge des Bauern auf d7 ({len(pawn_moves)} Züge):")
+# print("-" * 50)
 
-    if captured:
-        cap_info = f"  ← schlägt {chess.piece_name(captured.piece_type)} auf {target}!"
-    else:
-        cap_info = f"  ← Vorwärtszug (keine Schlagmöglichkeit)"
+# for move in pawn_moves:
+#     target = chess.square_name(move.to_square)
+#     captured = board.piece_at(move.to_square)
+#     promo = chess.piece_name(move.promotion) if move.promotion else None
 
-    print(f"  {board.san(move):10s} → {target} (Umwandlung: {promo}){cap_info}")
+#     if captured:
+#         cap_info = f"  ← schlägt {chess.piece_name(captured.piece_type)} auf {target}!"
+#     else:
+#         cap_info = f"  ← Vorwärtszug (keine Schlagmöglichkeit)"
 
-print()
+#     print(f"  {board.san(move):10s} → {target} (Umwandlung: {promo}){cap_info}")
 
-# Schlagzüge hervorheben
-captures = [m for m in pawn_moves if board.is_capture(m)]
-print(f"Davon Schlagzüge mit Umwandlung: {len(captures)}")
-for move in captures:
-    print(f"  {board.san(move)}")
+# print()
 
-print()
-print(board.legal_moves)
+# # Schlagzüge hervorheben
+# captures = [m for m in pawn_moves if board.is_capture(m)]
+# print(f"Davon Schlagzüge mit Umwandlung: {len(captures)}")
+# for move in captures:
+#     print(f"  {board.san(move)}")
+
+# print()
+# print(board.legal_moves)

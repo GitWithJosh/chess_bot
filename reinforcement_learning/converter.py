@@ -34,15 +34,23 @@ class Converter:
             Returns:
                 numpy array of shape (8, 8, 112) representing the board state
         """
+        if board.turn == chess.BLACK:
+            oriented_board = board.mirror()
+        else:
+            oriented_board = board.copy()
+
         tensor = np.zeros((8, 8, 112), dtype=getattr(np, "float16"))
 
         # Build a list of boards by walking back through the move stack
-        boards = [board.copy()]
+        boards = [oriented_board.copy()]
         temp_board = board.copy()
         for _ in range(7):
             if temp_board.move_stack:
                 temp_board.pop()
-                boards.append(temp_board.copy())
+                if board.turn == chess.BLACK:
+                    boards.append(temp_board.mirror())
+                else:
+                    boards.append(temp_board.copy())
             else:
                 boards.append(None)  # No history available
 
@@ -56,7 +64,6 @@ class Converter:
 
             # Determine who is "friendly" based on the CURRENT board's turn
             friendly_color = board.turn
-            enemy_color = not board.turn
 
             # Channels 0-5: friendly pieces (pawn, knight, bishop, rook, queen, king)
             # Channels 6-11: enemy pieces
@@ -76,10 +83,10 @@ class Converter:
             tensor[:, :, base_channel + 12] = float(hist_board.is_repetition(2)) 
 
         # Channels 104-107: castling rights
-        tensor[:, :, 104] = float(board.has_queenside_castling_rights(chess.WHITE))
-        tensor[:, :, 105] = float(board.has_kingside_castling_rights(chess.WHITE))
-        tensor[:, :, 106] = float(board.has_queenside_castling_rights(chess.BLACK))
-        tensor[:, :, 107] = float(board.has_kingside_castling_rights(chess.BLACK))
+        tensor[:, :, 104] = float(oriented_board.has_queenside_castling_rights(chess.WHITE))
+        tensor[:, :, 105] = float(oriented_board.has_kingside_castling_rights(chess.WHITE))
+        tensor[:, :, 106] = float(oriented_board.has_queenside_castling_rights(chess.BLACK))
+        tensor[:, :, 107] = float(oriented_board.has_kingside_castling_rights(chess.BLACK))
 
         # Channel 108: side to move (1 if black's turn)
         tensor[:, :, 108] = float(board.turn == chess.BLACK)
@@ -101,7 +108,13 @@ class Converter:
         move_probabilities = network_output[:1858]
         legal_move_probabilities = self.mask_illegal_moves(self.board, move_probabilities)
         best_move_index = tf.argmax(legal_move_probabilities).numpy()
-        return self._get_move_from_index(best_move_index)
+
+        move_uci = self._get_move_from_index(best_move_index)
+
+        if self.board.turn == chess.BLACK:
+            move_uci = self._mirror_move_uci(move_uci)
+
+        return move_uci
     
     def mask_illegal_moves(self, board: chess.Board, move_probabilities: tf.Tensor) -> tf.Tensor:
         """
@@ -113,6 +126,15 @@ class Converter:
 
         for move in board.legal_moves:
             move_uci = move.uci()
+
+            # Mirror the move to friendly perspective if black's turn
+            if board.turn == chess.BLACK:
+                move_uci = self._mirror_move_uci(move_uci)
+
+            # Handle queen promotions (default, not in lookup)
+            if move.promotion == chess.QUEEN:
+                move_uci = move_uci[:-1]
+
             if move_uci in index_lookup:
                 mask[index_lookup[move_uci]] = True
 
@@ -124,6 +146,16 @@ class Converter:
 
         # Re-apply softmax so legal moves sum to 1
         return tf.nn.softmax(masked_logits)
+
+    def _mirror_move_uci(self, move_uci:str) -> str:
+        def flip_rank(c):
+            return str(9-int(c))
+        
+        result = move_uci[0] + flip_rank(move_uci[1]) + move_uci[2] + flip_rank(move_uci[3])
+        if len(move_uci) > 4:
+            result += move_uci[4]  # Promotion piece
+        return result
+
 
     def _get_move_from_index(self, index) -> str:
         """Returns the corresponding move notation given an index"""

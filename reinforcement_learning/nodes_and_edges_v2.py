@@ -114,13 +114,12 @@ class Node:
 
         # Create edges with prior probabilities for each legal move
         for move in self.board.legal_moves:
-            move_uci = move.uci()
-            if move_uci.endswith("q"):
-                prior = float(policy[index_lookup[move_uci[:-1]]])
-            elif move_uci in index_lookup:
-                prior = float(policy[index_lookup[move_uci]])
+            lookup_key = move_to_lookup_key(move, self.board.turn)
+
+            if lookup_key in index_lookup:
+                prior = float(policy[index_lookup[lookup_key]])
             else:
-                raise AttributeError(f"Move {move_uci} not found in lookup")
+                raise AttributeError(f"Lookup key {lookup_key} not found in lookup")
             edge = Edge(move, self, prior)
             self.edges.append(edge)
 
@@ -219,7 +218,48 @@ class Node:
         target = np.zeros(len(converter.lookup), dtype=np.float32)
 
         for move_uci, prob in move_probs.items():
-            if move_uci in index_lookup:
-                target[index_lookup[move_uci]] = prob
+            move = chess.Move.from_uci(move_uci)
+            lookupkey = move_to_lookup_key(move, self.board.turn)
+            if lookupkey in index_lookup:
+                target[index_lookup[lookupkey]] = prob
 
         return target
+    
+
+def mirror_move_uci(move_uci: str) -> str:
+    """Mirror a UCI move string vertically (flip ranks).
+ 
+    e.g. 'e2e4' -> 'e7e5', 'a7a8n' -> 'a2a1n'
+    """
+    def flip_rank(c):
+        return str(9 - int(c))
+ 
+    result = move_uci[0] + flip_rank(move_uci[1]) + move_uci[2] + flip_rank(move_uci[3])
+    if len(move_uci) > 4:
+        result += move_uci[4]  # Promotion piece
+    return result
+ 
+ 
+def move_to_lookup_key(move: chess.Move, board_turn: chess.Color) -> str:
+    """Convert a chess.Move to the key used in the move lookup.
+ 
+    Handles mirroring for black's turn and queen promotion stripping.
+ 
+    Args:
+        move: The chess move
+        board_turn: Whose turn it is on the real board
+ 
+    Returns:
+        The lookup key string
+    """
+    move_uci = move.uci()
+ 
+    # Mirror to friendly perspective if black's turn
+    if board_turn == chess.BLACK:
+        move_uci = mirror_move_uci(move_uci)
+ 
+    # Queen promotions use the base move (without 'q' suffix)
+    if move.promotion == chess.QUEEN:
+        move_uci = move_uci[:-1]
+ 
+    return move_uci
