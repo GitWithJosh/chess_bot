@@ -1,0 +1,100 @@
+[Event "Network vs Random"]
+[Site "?"]
+[Date "????.??.??"]
+[Round "?"]
+[White "Network"]
+[Black "Random"]
+[Result "0-1"]
+
+1. a4 d6 2. Ra3 Nf6 3. h4 d5 4. f3 e5 5. Ra2 Nc6 6. c4 dxc4 7. d3 Be6 8. Bh6 gxh6 9. Nc3 a5 10. Qa1 Rg8 11. Qd1 h5 12. Qb3 cxb3 13. Kf2 bxa2 14. Rh3 Qd4+ 15. e3 Qb6 16. Be2 a1=Q 17. b4 Bh6 18. Bf1 Qxe3# 0-1
+
+[Event "Network vs Random"]
+[Site "?"]
+[Date "????.??.??"]
+[Round "?"]
+[White "Network"]
+[Black "Random"]
+[Result "0-1"]
+
+1. a4 a6 2. Ra3 e5 3. h4 Bxa3 4. f3 Bf8 5. d3 d5 6. Bh6 Be6 7. Bg5 f6 8. c4 Nc6 9. Qb3 Bb4+ 10. Nc3 dxc4 11. Kf2 Bc5+ 12. e3 cxb3 13. Be2 fxg5 14. Rh3 Bxh3 15. Bf1 gxh4 16. Be2 Bxg2 17. Ne4 Ba7 18. Bf1 h3 19. Bxg2 h2 20. Kg3 hxg1=Q 21. d4 exd4 22. exd4 Qdxd4 23. f4 Nh6 24. Kh4 Qh2+ 25. Bh3 Qd8+ 26. Kh5 Qe2+ 27. Bg4 Qg5+ 28. fxg5 Qxg4# 0-1
+
+[Event "Network vs Random"]
+[Site "?"]
+[Date "????.??.??"]
+[Round "?"]
+[White "Network"]
+[Black "Random"]
+[Result "0-1"]
+
+1. a4 e5 2. Ra3 Bxa3 3. h4 Bf8 4. f3 d5 5. d3 Bb4+ 6. Kf2 Be6 7. Bh6 g6 8. Bg5 f6 9. c4 Nc6 10. Qb3 h6 11. Rh3 hxg5 12. e4 Bc5+ 13. Kg3 dxc4 14. Be2 Qd4 15. Qxc4 Qf2+ 16. Kh2 Qxg1+ 17. Kg3 Bf2# 0-1
+
+[Event "Network vs Random"]
+[Site "?"]
+[Date "????.??.??"]
+[Round "?"]
+[White "Network"]
+[Black "Random"]
+[Result "0-1"]
+
+1. a4 e5 2. Ra3 Bxa3 3. h4 Bd6 4. f3 Bc5 5. d3 d5 6. Bh6 Nxh6 7. c4 dxc4 8. g4 Qd4 9. b3 f5 10. gxf5 Nc6 11. f6 Qf2+ 12. Kd2 Qe3+ 13. Kc3 Nf5 14. Qd2 Bb4+ 15. Kxc4 Qc5# 0-1
+
+[Event "Network vs Random"]
+[Site "?"]
+[Date "????.??.??"]
+[Round "?"]
+[White "Network"]
+[Black "Random"]
+[Result "0-1"]
+
+1. a4 e5 2. Ra3 Nc6 3. h4 Bxa3 4. b3 Bc5 5. f3 Nh6 6. Ba3 Bxa3 7. Qc1 Bxc1 8. Kf2 O-O 9. h5 Nd4 10. Rh4 Qxh4+ 11. Ke3 d5 12. c4 Be6 13. g4 Bxg4 14. cxd5 Bxh5 15. Bg2 Bg6 16. Bh1 Nc2# 0-1
+
+[Event "Network vs Random"]
+[Site "?"]
+[Date "????.??.??"]
+[Round "?"]
+[White "Random"]
+[Black "Network"]
+[Result "1-0"]
+
+1. d4 h5 2. c4 Rh6 3. Bxh6 a5 4. Bf4 Ra6 5. c5 f6 6. e4 Ra7 7. Qxh5+ g6 8. Qxg6# 1-0
+
+[Event "Network vs Random"]
+[Site "?"]
+[Date "????.??.??"]
+[Round "?"]
+[White "Random"]
+[Black "Network"]
+[Result "1-0"]
+
+1. e4 h5 2. Nf3 f6 3. d4 Kf7 4. Bd3 Qe8 5. Bc4+ d5 6. Bxd5+ Be6 7. Bxb7 Qa4 8. Bxa8 Rh6 9. e5 a5 10. Nc3 c5 11. Nxa4 Kg6 12. c4 Bh3 13. gxh3 e6 14. Be3 Bd6 15. exd6 cxd4 16. Nxd4 e5 17. Nf3 Kf5 18. Be4+ Kxe4 19. Nc5+ Kf5 20. Qc2+ e4 21. Rg1 g5 22. Qxe4# 1-0
+
+[Event "Network vs Random"]
+[Site "?"]
+[Date "????.??.??"]
+[Round "?"]
+[White "Random"]
+[Black "Network"]
+[Result "1-0"]
+
+1. e4 h5 2. Be2 f6 3. Bxh5+ Rxh5 4. Qxh5+ g6 5. Qxg6# 1-0
+
+[Event "Network vs Random"]
+[Site "?"]
+[Date "????.??.??"]
+[Round "?"]
+[White "Random"]
+[Black "Network"]
+[Result "1-0"]
+
+1. d4 h5 2. d5 f6 3. Nf3 Kf7 4. b3 Qe8 5. Bb2 Qd8 6. h4 Qe8 7. e3 d6 8. Be2 Bh3 9. Rxh3 Qa4 10. Ng5+ Kg6 11. Qd3+ Qe4 12. Qxe4+ Kh6 13. Nf7# 1-0
+
+[Event "Network vs Random"]
+[Site "?"]
+[Date "????.??.??"]
+[Round "?"]
+[White "Random"]
+[Black "Network"]
+[Result "1-0"]
+
+1. d4 h5 2. d5 f6 3. Nf3 Kf7 4. a4 d6 5. Nd4 Bh3 6. gxh3 Qd7 7. Bg2 Qf5 8. Nxf5 Rh7 9. h4 a5 10. Qd3 Ra6 11. Qe3 b5 12. Qe6+ Kg6 13. Be4 c5 14. Ng3# 1-0
+

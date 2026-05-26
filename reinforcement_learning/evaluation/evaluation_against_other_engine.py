@@ -1,6 +1,8 @@
 import chess
 import tensorflow as tf
-from random_move_opponent import RandomMover
+import chess.pgn
+
+from reinforcement_learning.evaluation.random_move_opponent import RandomMover
 from converter import Converter
 from nodes_and_edges_v2 import mirror_move_uci
 from smaller_network import SmallerNetwork
@@ -13,7 +15,7 @@ class EvaluationAgainstOtherEngine:
         self.converter = converter
         self.other_engine = other_engine
         self.results = {"network_wins": 0, "draws": 0, "network_losses": 0}
-
+        self.games = []
 
     def play_games(self):
         
@@ -23,7 +25,8 @@ class EvaluationAgainstOtherEngine:
             else:
                 starting_player = "other_engine"
 
-            result = self._play_game(starting_player)
+            result, game = self._play_game(starting_player)
+            self.games.append(game)
 
             if result == 1:
                 self.results["network_wins"] += 1
@@ -34,8 +37,15 @@ class EvaluationAgainstOtherEngine:
 
     def _play_game(self, starting_player):
         board = chess.Board()
+        game = chess.pgn.Game()
+        game.headers["Event"] = "Network vs Random"
+        game.headers["White"] = "Network" if starting_player == "network" else "Random"
+        game.headers["Black"] = "Random" if starting_player == "network" else "Network"
+ 
         network_color = chess.WHITE if starting_player == "network" else chess.BLACK
         self.other_engine.board = board
+
+        node = game
 
         while not board.is_game_over():
             if board.turn == network_color:
@@ -52,17 +62,25 @@ class EvaluationAgainstOtherEngine:
 
                 move = chess.Move.from_uci(move_uci)
             else:
-                move = self.other_engine.choose_random_move()
+                move = self.other_engine.choose_move(board)
 
+            node = node.add_variation(move)
             board.push(move)
             print(move)
 
 
         result = board.result()
+        game.headers["Result"] = board.result()
         if result == "1/2-1/2":
-            return 0.5
+            return 0.5, game
         elif (result == "1-0" and network_color == chess.WHITE) or \
             (result == "0-1" and network_color == chess.BLACK):
-            return 1
+            return 1, game
         else:
-            return 0
+            return 0, game
+        
+    def save_pgn(self, filepath:str):
+        with open(filepath, "w") as f:
+            for game in self.games:
+                print(game, file=f)
+                print(file=f)

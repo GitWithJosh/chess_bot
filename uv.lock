@@ -125,6 +125,7 @@ dependencies = [
     { name = "pygame" },
     { name = "pytest" },
     { name = "python-chess" },
+    { name = "stockfish" },
     { name = "tensorflow" },
     { name = "tqdm" },
 ]
@@ -135,6 +136,7 @@ requires-dist = [
     { name = "pygame", specifier = ">=2.6.1" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "python-chess", specifier = ">=1.999" },
+    { name = "stockfish", specifier = ">=5.2.0" },
     { name = "tensorflow", specifier = ">=2.21.0" },
     { name = "tqdm", specifier = ">=4.67.3" },
 ]
@@ -637,6 +639,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
+]
+
+[[package]]
+name = "stockfish"
+version = "5.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/99/52/685fc4d2c68157579e6b6ed3afba844e4bb467f45a1856c178e6b0e8bc73/stockfish-5.2.0.tar.gz", hash = "sha256:86db6882d34759575af15b7f201914ac8bad95b87672628f7754d8cf39e5a989", size = 33101, upload-time = "2026-04-17T05:51:44.562Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/23/bd/45d33e109d0e822c16c73747d9a8a7fa7bd29dcae435cd13275ddc3bbe98/stockfish-5.2.0-py3-none-any.whl", hash = "sha256:0f733810f6e049ba96f85a517f7122cad22b389b57e054cb9cb6780575cb2447", size = 25830, upload-time = "2026-04-17T05:51:43.138Z" },
 ]
 
 [[package]]
