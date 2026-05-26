@@ -6,6 +6,7 @@ from networks.big_network import BigNetwork
 from networks.smaller_network import SmallerNetwork
 from monte_carlo_tree_search.mcts_v2 import MCTS, SelfPlayGame
 from helpers.converter import Converter
+from helpers.weights_utils import get_latest_weights, extract_iteration
 
 # Configuration
 NETWORK = "small"  # or later "big"
@@ -19,36 +20,15 @@ if not os.path.isdir(WEIGHTS_DIR):
     raise FileNotFoundError(f"Weights directory not found: {WEIGHTS_DIR}")
 
 
-# Extract iteration number and sort by it
-def extract_iteration(file_name):
-    """Extract iteration number from a weights filename.
-
-    Handles inputs like:
-    - small_network_v0.weights.h5
-    - /full/path/to/small_network_v10.weights.h5
-
-    Returns -1 when no iteration is found.
-    """
-    base = os.path.basename(file_name)
-    m = re.search(r"v(\d+)", base)
-    if m:
-        return int(m.group(1))
-    return -1
-
-
+# Resolve weights path (either latest or a specific iteration)
 if NETWORK_ITERATION == "latest":
-    files = os.listdir(WEIGHTS_DIR)
-    files = [f for f in files if f.endswith(".weights.h5") and f.startswith(NETWORK)]
-    # If no files match the network prefix, fall back to any weights file
-    if not files:
-        files = [f for f in os.listdir(WEIGHTS_DIR) if f.endswith(".weights.h5")]
-    if not files:
-        raise FileNotFoundError(f"No weights found in {WEIGHTS_DIR}.")
-
-    latest_file = max(files, key=extract_iteration)
-    weights_path = os.path.join(WEIGHTS_DIR, latest_file)
+    weights_path = get_latest_weights(NETWORK, WEIGHTS_DIR)
 else:
-    expected_name = f"{NETWORK}_network_v{NETWORK_ITERATION}.weights.h5"
+    # Allow NETWORK_ITERATION to be either 'v1' or '1'
+    if str(NETWORK_ITERATION).startswith("v"):
+        expected_name = f"{NETWORK}_network_{NETWORK_ITERATION}.weights.h5"
+    else:
+        expected_name = f"{NETWORK}_network_v{NETWORK_ITERATION}.weights.h5"
     weights_path = os.path.join(WEIGHTS_DIR, expected_name)
 
 if not os.path.isfile(weights_path):

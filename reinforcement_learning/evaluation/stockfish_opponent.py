@@ -5,17 +5,25 @@ from engine_opponent import EngineOpponent
 
 # Requires: "sudo apt install stockfish" to get binary and "pip install stockfish"/"uv add stockfish"
 
+
 class StockfishOpponent(EngineOpponent):
 
     PRESETS = {
-        "beginner":     {"skill_level": 0, "depth": 1},
-        "easy":         {"skill_level": 5, "depth": 5},
+        "beginner": {"skill_level": 0, "depth": 1},
+        "easy": {"skill_level": 5, "depth": 5},
         "intermediate": {"skill_level": 10, "depth": 10},
-        "hard":         {"skill_level": 15, "depth": 15},
-        "maximum":      {"skill_level": 20, "depth": 20},
+        "hard": {"skill_level": 15, "depth": 15},
+        "maximum": {"skill_level": 20, "depth": 20},
     }
 
-    def __init__(self, board:chess.Board, stockfish_path:str=None, level:str="beginner", depth:int=None, think_time:int=None):
+    def __init__(
+        self,
+        board: chess.Board,
+        stockfish_path: str = None,
+        level: str = "beginner",
+        depth: int = None,
+        think_time: int = None,
+    ):
         self.board = board
         self.think_time = think_time
 
