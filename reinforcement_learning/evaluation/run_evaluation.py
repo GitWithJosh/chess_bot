@@ -20,6 +20,8 @@ NETWORK = "small"  # or later "big"
 NETWORK_ITERATION = "latest"  # or latest or "1" or "2" etc.
 BASE_DIR = os.path.dirname(__file__)[: -len("evaluation")]
 WEIGHTS_DIR = os.path.join(BASE_DIR, "networks", "weights")
+OPPONENT_TYPE = "random"  # or "stockfish"
+AMOUNT_OF_GAMES = 1
 
 # Resolve weights path
 if NETWORK_ITERATION == "latest":
@@ -32,8 +34,6 @@ else:
 if not os.path.isfile(weights_path):
     raise FileNotFoundError(f"Weights file not found: {weights_path}")
 
-OPPONENT_TYPE = "random"  # or "stockfish"
-AMOUNT_OF_GAMES = 1
 THIS_DIR = os.path.dirname(__file__)
 RESULTS_DIR = os.path.join(THIS_DIR, "results")
 if not os.path.isdir(RESULTS_DIR):
