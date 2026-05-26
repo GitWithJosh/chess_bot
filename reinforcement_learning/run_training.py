@@ -24,11 +24,7 @@ if not os.path.isdir(WEIGHTS_DIR):
 if NETWORK_ITERATION == "latest":
     weights_path = get_latest_weights(NETWORK, WEIGHTS_DIR)
 else:
-    # Allow NETWORK_ITERATION to be either 'v1' or '1'
-    if str(NETWORK_ITERATION).startswith("v"):
-        expected_name = f"{NETWORK}_network_{NETWORK_ITERATION}.weights.h5"
-    else:
-        expected_name = f"{NETWORK}_network_v{NETWORK_ITERATION}.weights.h5"
+    expected_name = f"{NETWORK}_network_v{NETWORK_ITERATION}.weights.h5"
     weights_path = os.path.join(WEIGHTS_DIR, expected_name)
 
 if not os.path.isfile(weights_path):
