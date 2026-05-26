@@ -3,9 +3,9 @@
 import chess
 import numpy as np
 
-from reinforcement_learning.helpers.converter import Converter
-from reinforcement_learning.networks.smaller_network import SmallerNetwork
-from reinforcement_learning.monte_carlo_tree_search.nodes_and_edges_v2 import Node, Edge
+from helpers.converter import Converter
+from networks.smaller_network import SmallerNetwork
+from monte_carlo_tree_search.nodes_and_edges_v2 import Node, Edge
 
 
 class MCTS:
@@ -99,7 +99,9 @@ class MCTS:
         """
         noise = np.random.dirichlet([self.dirichlet_alpha] * len(root.edges))
         for i, edge in enumerate(root.edges):
-            edge.P = (1 - self.dirichlet_epsilon) * edge.P + self.dirichlet_epsilon * noise[i]
+            edge.P = (
+                1 - self.dirichlet_epsilon
+            ) * edge.P + self.dirichlet_epsilon * noise[i]
 
     def get_best_move(self, root: Node, temperature: float = 1.0) -> chess.Move:
         """Select a move from the root based on visit counts.
@@ -192,15 +194,17 @@ class SelfPlayGame:
             # Store training sample (before making the move)
             board_tensor = self.mcts.converter.board_to_input_tensor(board)
             policy_target = root.get_policy_target(self.mcts.converter, temperature=1.0)
-            training_data.append({
-                "board_tensor": board_tensor,
-                "policy_target": policy_target,
-                "side_to_move": board.turn,
-            })
+            training_data.append(
+                {
+                    "board_tensor": board_tensor,
+                    "policy_target": policy_target,
+                    "side_to_move": board.turn,
+                }
+            )
 
             # Select and play the move
             move = self.mcts.get_best_move(root, temperature=temperature)
-            
+
             board.push(move)
             move_count += 1
 
@@ -272,11 +276,17 @@ def play_single_game():
     print("\nTraining on collected data...")
     board_tensors = np.array([s["board_tensor"] for s in training_data])
     policy_targets = np.array([s["policy_target"] for s in training_data])
-    value_targets = np.array([[s["value_target"]] for s in training_data], dtype=np.float32)
+    value_targets = np.array(
+        [[s["value_target"]] for s in training_data], dtype=np.float32
+    )
 
     history = network.train(
-        board_tensors, policy_targets, value_targets,
-        epochs=1, batch_size=32, verbose=1,
+        board_tensors,
+        policy_targets,
+        value_targets,
+        epochs=1,
+        batch_size=32,
+        verbose=1,
     )
     print(f"Training loss: {history.history['loss'][0]:.4f}")
 
