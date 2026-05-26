@@ -24,6 +24,7 @@ WEIGHTS_DIR = os.path.join(BASE_DIR, "networks", "weights")
 # Resolve weights path
 if NETWORK_ITERATION == "latest":
     weights_path = get_latest_weights(NETWORK, WEIGHTS_DIR)
+    NETWORK_ITERATION = extract_iteration(weights_path)
 else:
     expected_name = f"{NETWORK}_network_v{NETWORK_ITERATION}.weights.h5"
     weights_path = os.path.join(WEIGHTS_DIR, expected_name)
@@ -32,8 +33,15 @@ if not os.path.isfile(weights_path):
     raise FileNotFoundError(f"Weights file not found: {weights_path}")
 
 OPPONENT_TYPE = "random"  # or "stockfish"
-AMOUNT_OF_GAMES = 10
-SAVE_TO_PATH = f"{NETWORK}_network_{NETWORK_ITERATION}_vs_{OPPONENT_TYPE}_{AMOUNT_OF_GAMES}_games.pgn"
+AMOUNT_OF_GAMES = 1
+THIS_DIR = os.path.dirname(__file__)
+RESULTS_DIR = os.path.join(THIS_DIR, "results")
+if not os.path.isdir(RESULTS_DIR):
+    os.makedirs(RESULTS_DIR)
+SAVE_TO_PATH = os.path.join(
+    RESULTS_DIR,
+    f"{NETWORK}_network_iteration_{NETWORK_ITERATION}_vs_{OPPONENT_TYPE}_{AMOUNT_OF_GAMES}_games.pgn",
+)
 
 
 # Load Network
