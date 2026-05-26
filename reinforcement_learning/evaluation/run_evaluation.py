@@ -1,15 +1,13 @@
-import chess
-import chess.svg
-
 from reinforcement_learning.evaluation.random_move_opponent import RandomMover
 from reinforcement_learning.evaluation.evaluation_against_other_engine import EvaluationAgainstOtherEngine
-from smaller_network import SmallerNetwork
-from converter import Converter
+from reinforcement_learning.networks.smaller_network import SmallerNetwork
+from reinforcement_learning.networks.big_network import BigNetwork
+from reinforcement_learning.helpers.converter import Converter
 from reinforcement_learning.evaluation.stockfish_opponent import StockfishOpponent
 
 NETWORK = "small" # or later "big"
 NETWORK_ITERATION = "v1"
-NETWORK_WEIGTHS = "/home/timle/semester_6/chess_bot/reinforcement_learning/random_model.weights.h5"
+NETWORK_WEIGTHS = "/home/timle/semester_6/chess_bot/reinforcement_learning/networks/weights/random_model.weights.h5"
 
 OPPONENT_TYPE = "random" # or "stockfish"
 AMOUNT_OF_GAMES = 10
@@ -17,7 +15,7 @@ SAVE_TO_PATH = f"{NETWORK}_network_{NETWORK_ITERATION}_vs_{OPPONENT_TYPE}_{AMOUN
 
 
 # Load Network
-network = SmallerNetwork() if NETWORK == "small" else None
+network = SmallerNetwork() if NETWORK == "small" else BigNetwork()
 network.load(NETWORK_WEIGTHS)
 
 # Get opponent

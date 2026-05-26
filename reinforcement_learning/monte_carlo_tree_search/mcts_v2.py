@@ -3,9 +3,9 @@
 import chess
 import numpy as np
 
-from converter import Converter
-from smaller_network import SmallerNetwork
-from nodes_and_edges_v2 import Node, Edge
+from reinforcement_learning.helpers.converter import Converter
+from reinforcement_learning.networks.smaller_network import SmallerNetwork
+from reinforcement_learning.monte_carlo_tree_search.nodes_and_edges_v2 import Node, Edge
 
 
 class MCTS:

@@ -3,9 +3,9 @@ import tensorflow as tf
 import chess.pgn
 
 from reinforcement_learning.evaluation.random_move_opponent import RandomMover
-from converter import Converter
-from nodes_and_edges_v2 import mirror_move_uci
-from smaller_network import SmallerNetwork
+from reinforcement_learning.helpers.converter import Converter
+from reinforcement_learning.monte_carlo_tree_search.nodes_and_edges_v2 import mirror_move_uci
+from reinforcement_learning.networks.smaller_network import SmallerNetwork
 
 class EvaluationAgainstOtherEngine:
 

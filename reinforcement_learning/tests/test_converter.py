@@ -2,54 +2,7 @@ import chess
 import numpy as np
 import pytest
 
-from converter import Converter
-
-
-# # Minimal stub of Converter without TF/JSON dependencies
-# class Converter:
-#     def board_to_input_tensor(self, board: chess.Board):
-#         tensor = np.zeros((8, 8, 112), dtype=np.float16)
-
-#         boards = [board.copy()]
-#         temp_board = board.copy()
-#         for _ in range(7):
-#             if temp_board.move_stack:
-#                 temp_board.pop()
-#                 boards.append(temp_board.copy())
-#             else:
-#                 boards.append(None)
-
-#         for i, hist_board in enumerate(boards):
-#             base_channel = i * 13
-#             if hist_board is None:
-#                 continue
-
-#             friendly_color = board.turn
-#             enemy_color = not board.turn
-
-#             for square in chess.SQUARES:
-#                 piece = hist_board.piece_at(square)
-#                 if piece:
-#                     rank = square // 8
-#                     file = square % 8
-#                     piece_type = piece.piece_type - 1
-#                     if piece.color == friendly_color:
-#                         tensor[rank, file, base_channel + piece_type] = 1
-#                     else:
-#                         tensor[rank, file, base_channel + 6 + piece_type] = 1
-
-#             tensor[:, :, base_channel + 12] = float(hist_board.is_repetition(2))
-
-#         tensor[:, :, 104] = float(board.has_queenside_castling_rights(chess.WHITE))
-#         tensor[:, :, 105] = float(board.has_kingside_castling_rights(chess.WHITE))
-#         tensor[:, :, 106] = float(board.has_queenside_castling_rights(chess.BLACK))
-#         tensor[:, :, 107] = float(board.has_kingside_castling_rights(chess.BLACK))
-#         tensor[:, :, 108] = float(board.turn == chess.BLACK)
-#         tensor[:, :, 109] = board.halfmove_clock / 99.0
-#         tensor[:, :, 111] = 1
-
-#         return tensor
-
+from reinforcement_learning.helpers.converter import Converter
 
 @pytest.fixture
 def converter():

@@ -3,7 +3,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 
-from converter import Converter
+from reinforcement_learning.helpers.converter import Converter
 import chess
 
 class SmallerNetwork:
