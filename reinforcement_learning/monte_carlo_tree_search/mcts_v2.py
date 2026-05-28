@@ -244,6 +244,46 @@ class SelfPlayGame:
 
         return training_data
 
+def play_n_games(n:int, load_network:bool, network_path:str, mcts:MCTS, converter:Converter, network:SmallerNetwork):
+
+    print(f"Initializing network and converter to play {n} games...")
+    if load_network:
+        network.load(network_path)
+
+    training_data = []
+
+    for i in range(n):
+        game = SelfPlayGame(mcts, temperature_threshold=30, max_moves=300)
+        game_data = game.play()
+        training_data.append(game_data)
+
+        print(f"Game {1} finished")
+
+    return training_data
+
+def train_on_game_batch(batch_size:int, weight_file):
+
+    network = SmallerNetwork(num_res_blocks=5, num_filters=128)
+    converter = Converter()
+    mcts = MCTS(
+        network=network,
+        converter=converter,
+        num_simulations=10
+    )
+    training_data = play_n_games(batch_size,True,weight_file,mcts,converter, network)
+
+    print("\nTraining on collected data...")
+
+    # TODO: DOES NOT WORK YET as training data is nested, list comprehension needs to b adjusted
+    board_tensors = np.array([s["board_tensor"] for s in training_data])
+    policy_targets = np.array([s["policy_target"] for s in training_data])
+    value_targets = np.array([[s["value_target"]] for s in training_data], dtype=np.float32)
+
+    history = network.train(
+        board_tensors, policy_targets, value_targets,
+        epochs=1, batch_size=32, verbose=1,
+    )
+    print(f"Training loss: {history.history['loss'][0]:.4f}")
 
 def play_single_game():
     """Play one self-play game and print the results."""
