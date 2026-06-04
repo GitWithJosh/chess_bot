@@ -130,7 +130,20 @@ class Node:
             for edge in self.edges:
                 edge.P /= prior_sum
 
-        return float(value)
+        # The network may return different value formats:
+        # - a scalar (smaller network: shape (1,) or 0-d array)
+        # - a WDL probability vector (big network: shape (3,) -> [win, draw, loss])
+        # Convert to a single scalar in [-1, 1] where win=1, draw=0, loss=-1
+        value = np.asarray(value).reshape(-1)  # normalize to 1-D
+
+        if value.size == 3:
+            # WDL vector: expected value in [-1, 1]
+            return float(np.dot(value, [1.0, 0.0, -1.0]))
+        elif value.size == 1:
+            # Scalar output from smaller network
+            return float(value[0])
+        else:
+            raise ValueError(f"Unexpected value shape: {value.shape}")
 
     def select_edge(self, c_puct: float = 1.5) -> Edge:
         """Select the edge with the highest PUCT score.

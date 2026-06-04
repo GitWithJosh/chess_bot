@@ -9,7 +9,7 @@ from helpers.converter import Converter
 from helpers.weights_utils import get_latest_weights, extract_iteration
 
 # Configuration
-NETWORK = "small"  # or later "big"
+NETWORK = "big"  # or later "big"
 NETWORK_ITERATION = "latest"  # or number of iteration, CAREFUL when setting number, overwrites next weights file
 
 # Resolve weights directory relative to this script (reinforcement_learning/networks/weights)
@@ -32,6 +32,7 @@ if not os.path.isfile(weights_path):
 
 if __name__ == "__main__":
     network = SmallerNetwork() if NETWORK == "small" else BigNetwork()
+    print(f"Trying to load {NETWORK} network weights from {weights_path}...")
     network.load(weights_path)
     print(f"Loaded {NETWORK} network with weights from {weights_path}")
     converter = Converter()
