@@ -4,8 +4,8 @@ import math
 import chess
 import numpy as np
 
-from reinforcement_learning.helpers.converter import Converter
-from reinforcement_learning.networks.smaller_network import SmallerNetwork
+from helpers.converter import Converter
+from networks.smaller_network import SmallerNetwork
 
 
 class Edge:
@@ -17,9 +17,9 @@ class Edge:
         self.move = move
         self.parent_node = parent_node
         self.child_node = None  # Lazily assigned when the child is expanded
-        self.N = 0      # Visit count
-        self.W = 0.0    # Total accumulated value
-        self.Q = 0.0    # Mean value (W / N)
+        self.N = 0  # Visit count
+        self.W = 0.0  # Total accumulated value
+        self.Q = 0.0  # Mean value (W / N)
         self.P = prior  # Prior probability from the network
 
     def update(self, value: float):
@@ -77,8 +77,9 @@ class Node:
             result = self.board.result()
             if result == "1/2-1/2":
                 self._terminal_value = 0.0
-            elif (result == "1-0" and self.board.turn == chess.WHITE) or \
-                 (result == "0-1" and self.board.turn == chess.BLACK):
+            elif (result == "1-0" and self.board.turn == chess.WHITE) or (
+                result == "0-1" and self.board.turn == chess.BLACK
+            ):
                 self._terminal_value = 1.0
             else:
                 self._terminal_value = -1.0
@@ -129,7 +130,20 @@ class Node:
             for edge in self.edges:
                 edge.P /= prior_sum
 
-        return float(value)
+        # The network may return different value formats:
+        # - a scalar (smaller network: shape (1,) or 0-d array)
+        # - a WDL probability vector (big network: shape (3,) -> [win, draw, loss])
+        # Convert to a single scalar in [-1, 1] where win=1, draw=0, loss=-1
+        value = np.asarray(value).reshape(-1)  # normalize to 1-D
+
+        if value.size == 3:
+            # WDL vector: expected value in [-1, 1]
+            return float(np.dot(value, [1.0, 0.0, -1.0]))
+        elif value.size == 1:
+            # Scalar output from smaller network
+            return float(value[0])
+        else:
+            raise ValueError(f"Unexpected value shape: {value.shape}")
 
     def select_edge(self, c_puct: float = 1.5) -> Edge:
         """Select the edge with the highest PUCT score.
@@ -186,7 +200,10 @@ class Node:
         if temperature == 0:
             # Greedy: all probability on the most visited move
             best_edge = max(self.edges, key=lambda e: e.N)
-            return {edge.move.uci(): (1.0 if edge is best_edge else 0.0) for edge in self.edges}
+            return {
+                edge.move.uci(): (1.0 if edge is best_edge else 0.0)
+                for edge in self.edges
+            }
 
         # Proportional to N^(1/temperature)
         visits = np.array([edge.N for edge in self.edges], dtype=np.float64)
@@ -201,7 +218,9 @@ class Node:
         probs = visits / total
         return {edge.move.uci(): float(probs[i]) for i, edge in enumerate(self.edges)}
 
-    def get_policy_target(self, converter: Converter, temperature: float = 1.0) -> np.ndarray:
+    def get_policy_target(
+        self, converter: Converter, temperature: float = 1.0
+    ) -> np.ndarray:
         """Generate a policy training target from MCTS visit counts.
 
         Returns a full 1858-length vector suitable for training the network.
@@ -224,42 +243,43 @@ class Node:
                 target[index_lookup[lookupkey]] = prob
 
         return target
-    
+
 
 def mirror_move_uci(move_uci: str) -> str:
     """Mirror a UCI move string vertically (flip ranks).
- 
+
     e.g. 'e2e4' -> 'e7e5', 'a7a8n' -> 'a2a1n'
     """
+
     def flip_rank(c):
         return str(9 - int(c))
- 
+
     result = move_uci[0] + flip_rank(move_uci[1]) + move_uci[2] + flip_rank(move_uci[3])
     if len(move_uci) > 4:
         result += move_uci[4]  # Promotion piece
     return result
- 
- 
+
+
 def move_to_lookup_key(move: chess.Move, board_turn: chess.Color) -> str:
     """Convert a chess.Move to the key used in the move lookup.
- 
+
     Handles mirroring for black's turn and queen promotion stripping.
- 
+
     Args:
         move: The chess move
         board_turn: Whose turn it is on the real board
- 
+
     Returns:
         The lookup key string
     """
     move_uci = move.uci()
- 
+
     # Mirror to friendly perspective if black's turn
     if board_turn == chess.BLACK:
         move_uci = mirror_move_uci(move_uci)
- 
+
     # Queen promotions use the base move (without 'q' suffix)
     if move.promotion == chess.QUEEN:
         move_uci = move_uci[:-1]
- 
+
     return move_uci

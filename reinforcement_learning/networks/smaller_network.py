@@ -3,19 +3,17 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 
-from reinforcement_learning.helpers.converter import Converter
-import chess
 
 class SmallerNetwork:
     """
-        Args:
-        input_shape: Board tensor shape (8, 8, 112)
-        num_res_blocks: Number of residual blocks
-        num_filters: Number of convolutional filters per layer
-        num_moves: Number of possible moves (1858 for chess)
-        learning_rate: Learning rate for Adam optimizer
+    Args:
+    input_shape: Board tensor shape (8, 8, 112)
+    num_res_blocks: Number of residual blocks
+    num_filters: Number of convolutional filters per layer
+    num_moves: Number of possible moves (1858 for chess)
+    learning_rate: Learning rate for Adam optimizer
     """
- 
+
     def __init__(
         self,
         input_shape: tuple = (8, 8, 112),
@@ -37,11 +35,23 @@ class SmallerNetwork:
         """Single residual block with two conv layers and skip connection."""
         shortcut = x
 
-        x = layers.Conv2D(self.num_filters, 3, padding="same", use_bias=False, name=f"{block_name}_conv1")(x)
+        x = layers.Conv2D(
+            self.num_filters,
+            3,
+            padding="same",
+            use_bias=False,
+            name=f"{block_name}_conv1",
+        )(x)
         x = layers.BatchNormalization(name=f"{block_name}_bn1")(x)
         x = layers.ReLU(name=f"{block_name}_relu1")(x)
 
-        x = layers.Conv2D(self.num_filters, 3, padding="same", use_bias=False, name=f"{block_name}_conv2")(x)
+        x = layers.Conv2D(
+            self.num_filters,
+            3,
+            padding="same",
+            use_bias=False,
+            name=f"{block_name}_conv2",
+        )(x)
         x = layers.BatchNormalization(name=f"{block_name}_bn2")(x)
 
         x = layers.Add(name=f"{block_name}_add")([shortcut, x])
@@ -73,7 +83,9 @@ class SmallerNetwork:
         inputs = layers.Input(shape=self.input_shape, name="board_input")
 
         # Initial convolution to project input channels to filter size
-        x = layers.Conv2D(self.num_filters, 3, padding="same", use_bias=False, name="initial_conv")(inputs)
+        x = layers.Conv2D(
+            self.num_filters, 3, padding="same", use_bias=False, name="initial_conv"
+        )(inputs)
         x = layers.BatchNormalization(name="initial_bn")(x)
         x = layers.ReLU(name="initial_relu")(x)
 
@@ -120,7 +132,13 @@ class SmallerNetwork:
         policy, value = self.model.predict(input_batch, verbose=0)
         return policy[0], value[0][0]
 
-    def train(self, board_tensors: np.ndarray, policy_targets: np.ndarray, value_targets: np.ndarray, **kwargs):
+    def train(
+        self,
+        board_tensors: np.ndarray,
+        policy_targets: np.ndarray,
+        value_targets: np.ndarray,
+        **kwargs,
+    ):
         """Train the network on a batch of positions.
 
         Args:
