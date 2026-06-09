@@ -2,6 +2,9 @@ import numpy as np
 import keras
 from keras import layers
 
+from monte_carlo_tree_search.mcts_v2 import MCTS
+#from monte_carlo_tree_search.nodes_and_edges_v2 import Node, Edge
+
 
 class BigNetwork:
     """
@@ -19,8 +22,8 @@ class BigNetwork:
     --------------
     One initial Conv → BN → ReLU projects the input to `num_filters` channels.
     Each SE block contains:
-        Conv(3×3) → BN → ReLU
-        Conv(3×3) → BN
+        Conv(3x3) → BN → ReLU
+        Conv(3x3) → BN
         SE attention: GlobalAvgPool → Dense(C/se_ratio, relu) → Dense(C, sigmoid)
                       → channel-wise scale of the second conv output
         Add(shortcut) → ReLU
@@ -32,7 +35,7 @@ class BigNetwork:
 
     Value head  (WDL — Win / Draw / Loss)
     --------------------------------------
-    Conv(1×1) → BN → ReLU → Flatten → Dense(num_filters, relu) → Dense(3, softmax).
+    Conv(1x1) → BN → ReLU → Flatten → Dense(num_filters, relu) → Dense(3, softmax).
     The three outputs are the probabilities for winning, drawing, and losing.
     Loss: categorical cross-entropy against the actual game result one-hot vector.
     """
@@ -66,8 +69,8 @@ class BigNetwork:
 
         Architecture:
             shortcut = x
-            x = Conv(3×3) → BN → ReLU
-            x = Conv(3×3) → BN
+            x = Conv(3x3) → BN → ReLU
+            x = Conv(3x3) → BN
             # SE attention on x (before adding shortcut)
             se = GlobalAvgPool(x)
             se = Dense(C // se_ratio, relu)(se)
@@ -144,7 +147,7 @@ class BigNetwork:
         """
         Value head — outputs WDL probabilities (Win, Draw, Loss).
 
-        Single 1×1 conv for channel reduction, then two FC layers.
+        Single 1x1 conv for channel reduction, then two FC layers.
         Softmax over three classes instead of a scalar tanh.
         """
         x = layers.Conv2D(1, 1, use_bias=False, name="value_conv")(x)
@@ -215,7 +218,21 @@ class BigNetwork:
         input_batch = np.expand_dims(board_tensor, axis=0)
         policy, value = self.model.predict(input_batch, verbose=0)
         return policy[0], value[0]
+    
+    def search_for_best_move(self, board_tensor: np.ndarray, num_simulations:int) -> tuple[np.array, np.array]:
+        """
+        Run inference on a single board position using MCTS search
+        
+        Args:
+            board_tensor: numpy array of shape (8, 8, 112)
+            num_simulations: the simulatiosn of MCTS
 
+        Returns:
+            Tuple of (move_probabilities, wdl_probabilities)
+                move_probabilies : numpy array of shape (num_moves,)
+                wdl_probabilities: numpy of array shape (3,) - [win, draw, loss]
+        """
+        # TODO
     def outcome_to_wdl(self, outcomes: np.ndarray) -> np.ndarray:
         """
         Converts scalar game outcomes to WDL one-hot vectors.
