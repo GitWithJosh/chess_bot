@@ -24,9 +24,8 @@ def test_train_one_epoch(tmp_path):
     policies = np.random.rand(batch_size, net.num_moves).astype(np.float32)
     policies = policies / policies.sum(axis=1, keepdims=True)
 
-    values = np.zeros((batch_size, 3), dtype=np.float32)
-    choices = np.random.randint(0, 3, size=(batch_size,))
-    values[np.arange(batch_size), choices] = 1.0
+    # BigNetwork.train() calls outcome_to_wdl() internally, so pass raw outcomes
+    values = np.array([1, -1], dtype=np.float32)
 
     history = net.train(boards, policies, values, epochs=1, batch_size=1, verbose=0)
     assert hasattr(history, "history")

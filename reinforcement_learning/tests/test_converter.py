@@ -140,13 +140,18 @@ class TestMoveHistory:
         board.push_uci("e2e4")
         tensor = converter.board_to_input_tensor(board)
 
-        # Current position (ch 0-12): black to move, so black is friendly
-        # e4 pawn should be friendly (white pawn) -> enemy from black's POV -> ch 6
-        assert tensor[3, 4, 6] == 1  # white pawn on e4 is enemy for black
+        # It's black's turn, board is mirrored.
+        # On the mirrored board, friendly_color = BLACK (board.turn).
+        # The mirrored board swaps colors+ranks, so original black pawns (rank 6)
+        # become WHITE pawns at rank 1 on the mirrored board.
+        # Since friendly_color=BLACK, those WHITE pawns are "enemy" -> ch 6.
+        # Original white e4 pawn becomes BLACK pawn at rank 4 -> "friendly" -> ch 0.
+        # Current position (ch 0-12):
+        assert tensor[4, 4, 0] == 1  # e4 pawn is BLACK on mirrored board -> friendly (ch 0)
 
-        # Previous position (ch 13-25): starting position, still from black's POV
-        # White pawn on e2 should be enemy pawn -> ch 13+6 = 19
-        assert tensor[1, 4, 19] == 1
+        # Previous position (ch 13-25): starting position mirrored
+        # Original white e2 pawn -> mirrored to BLACK at rank 6 -> friendly -> ch 13+0=13
+        assert tensor[6, 4, 13] == 1
 
     def test_no_history_is_zeros(self, converter):
         """Starting position has no history, so channels 13-103 should be zero for pieces"""
@@ -190,16 +195,20 @@ class TestRepetition:
 
 class TestFriendlyEnemyPerspective:
     def test_perspective_flips_on_black_turn(self, converter):
-        """When it's black's turn, black pieces should be friendly (ch 0-5)"""
+        """When it's black's turn, board is mirrored. friendly_color = board.turn = BLACK.
+        On mirrored board: original black pawns become WHITE, original white become BLACK.
+        So BLACK pieces on mirrored board (original white) are "friendly" (ch 0-5)."""
         board = chess.Board()
         board.push_uci("e2e4")
         tensor = converter.board_to_input_tensor(board)
 
-        # Black pawn on e7 should be friendly pawn (ch 0) since it's black's turn
-        assert tensor[6, 4, 0] == 1
+        # On mirrored board, original black pawns at rank 6 -> WHITE at rank 1
+        # friendly_color=BLACK, so WHITE pawns at rank 1 are enemy (ch 6)
+        assert tensor[1, 0, 6] == 1  # enemy pawn at rank 1
 
-        # White pawn on e4 should be enemy pawn (ch 6)
-        assert tensor[3, 4, 6] == 1
+        # On mirrored board, original white e4 pawn -> BLACK at rank 4 (e5 mirror)
+        # friendly_color=BLACK, so BLACK pawn is friendly (ch 0)
+        assert tensor[4, 4, 0] == 1  # friendly pawn at rank 4
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

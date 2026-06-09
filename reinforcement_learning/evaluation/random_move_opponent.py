@@ -1,6 +1,6 @@
 import chess
 from random import choice
-from engine_opponent import EngineOpponent
+from reinforcement_learning.evaluation.engine_opponent import EngineOpponent
 
 
 class RandomMover(EngineOpponent):

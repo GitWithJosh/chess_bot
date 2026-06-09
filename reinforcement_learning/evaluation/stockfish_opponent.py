@@ -1,7 +1,7 @@
 import chess
 from stockfish import Stockfish
 
-from engine_opponent import EngineOpponent
+from reinforcement_learning.evaluation.engine_opponent import EngineOpponent
 
 # Requires: "sudo apt install stockfish" to get binary and "pip install stockfish"/"uv add stockfish"
 

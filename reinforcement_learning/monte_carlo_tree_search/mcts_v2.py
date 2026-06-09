@@ -1,10 +1,11 @@
 """Monte Carlo Tree Search for AlphaZero-style chess self-play."""
 
+from typing import Any
+
 import chess
 import numpy as np
 
 from helpers.converter import Converter
-from networks.smaller_network import SmallerNetwork
 from monte_carlo_tree_search.nodes_and_edges_v2 import Node, Edge
 
 
@@ -22,7 +23,7 @@ class MCTS:
 
     def __init__(
         self,
-        network: SmallerNetwork,
+        network: Any,
         converter: Converter,
         num_simulations: int = 100,
         c_puct: float = 1.5,
@@ -248,7 +249,7 @@ class SelfPlayGame:
 
         return training_data
 
-def play_n_games(n:int, load_network:bool, network_path:str, mcts:MCTS, converter:Converter, network:SmallerNetwork):
+def play_n_games(n:int, load_network:bool, network_path:str, mcts:MCTS, converter:Converter, network):
 
     print(f"Initializing network and converter to play {n} games...")
     if load_network:
@@ -267,6 +268,7 @@ def play_n_games(n:int, load_network:bool, network_path:str, mcts:MCTS, converte
 
 def train_on_game_batch(batch_size:int, weight_file):
 
+    from networks.smaller_network import SmallerNetwork
     network = SmallerNetwork(num_res_blocks=5, num_filters=128)
     converter = Converter()
     mcts = MCTS(
@@ -292,6 +294,7 @@ def train_on_game_batch(batch_size:int, weight_file):
 def play_single_game():
     """Play one self-play game and print the results."""
     print("Initializing network and converter...")
+    from networks.smaller_network import SmallerNetwork
     network = SmallerNetwork(num_res_blocks=5, num_filters=128)
     converter = Converter()
 

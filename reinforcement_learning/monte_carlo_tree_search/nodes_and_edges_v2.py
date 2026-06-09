@@ -1,11 +1,12 @@
 """Alpha-Zero like Reinforcement Learning with Monte Carlo Tree Search for Chess"""
 
 import math
+from typing import Any
+
 import chess
 import numpy as np
 
 from helpers.converter import Converter
-from networks.smaller_network import SmallerNetwork
 
 
 class Edge:
@@ -90,7 +91,7 @@ class Node:
         """Total visits across all child edges."""
         return sum(edge.N for edge in self.edges)
 
-    def expand(self, network: SmallerNetwork, converter: Converter) -> float:
+    def expand(self, network: Any, converter: Converter) -> float:
         """Expand this node by creating edges for all legal moves.
 
         Uses the network to evaluate the position and assign prior

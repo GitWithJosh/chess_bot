@@ -22,6 +22,7 @@ BASE_DIR = os.path.dirname(__file__)[: -len("evaluation")]
 WEIGHTS_DIR = os.path.join(BASE_DIR, "networks", "weights")
 OPPONENT_TYPE = "random"  # or "stockfish"
 AMOUNT_OF_GAMES = 1
+NUM_SIMULATIONS = 50  # MCTS simulations per move (None = raw network, no search)
 
 # Resolve weights path
 if NETWORK_ITERATION == "latest":
@@ -55,7 +56,7 @@ converter = Converter()
 
 # Run evaluation
 evaluation = EvaluationAgainstOtherEngine(
-    AMOUNT_OF_GAMES, network, engine_opponent, converter
+    AMOUNT_OF_GAMES, network, engine_opponent, converter, num_simulations=NUM_SIMULATIONS
 )
 
 evaluation.play_games()

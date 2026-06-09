@@ -1,7 +1,12 @@
+import chess
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+
+from monte_carlo_tree_search.mcts_v2 import MCTS
+from monte_carlo_tree_search.nodes_and_edges_v2 import Node
+from helpers.converter import Converter
 
 
 class SmallerNetwork:
@@ -131,6 +136,26 @@ class SmallerNetwork:
         input_batch = np.expand_dims(board_tensor, axis=0)
         policy, value = self.model.predict(input_batch, verbose=0)
         return policy[0], value[0][0]
+
+    def search_for_best_move(self, board: chess.Board, num_simulations: int) -> chess.Move:
+        """Select the best move for the given position using MCTS search.
+
+        Args:
+            board: The current chess board position
+            num_simulations: Number of MCTS simulations to run
+
+        Returns:
+            The best move according to MCTS (greedy, most-visited)
+        """
+        converter = Converter()
+        mcts = MCTS(
+            network=self,
+            converter=converter,
+            num_simulations=num_simulations,
+        )
+        root = Node(board)
+        root = mcts.search(root, add_noise=False)
+        return mcts.get_best_move(root, temperature=0)
 
     def train(
         self,

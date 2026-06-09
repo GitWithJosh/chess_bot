@@ -1,9 +1,11 @@
+import chess
 import numpy as np
 import keras
 from keras import layers
 
 from monte_carlo_tree_search.mcts_v2 import MCTS
-#from monte_carlo_tree_search.nodes_and_edges_v2 import Node, Edge
+from monte_carlo_tree_search.nodes_and_edges_v2 import Node
+from helpers.converter import Converter
 
 
 class BigNetwork:
@@ -219,20 +221,26 @@ class BigNetwork:
         policy, value = self.model.predict(input_batch, verbose=0)
         return policy[0], value[0]
     
-    def search_for_best_move(self, board_tensor: np.ndarray, num_simulations:int) -> tuple[np.array, np.array]:
+    def search_for_best_move(self, board: chess.Board, num_simulations: int) -> chess.Move:
         """
-        Run inference on a single board position using MCTS search
-        
+        Select the best move for the given position using MCTS search.
+
         Args:
-            board_tensor: numpy array of shape (8, 8, 112)
-            num_simulations: the simulatiosn of MCTS
+            board: The current chess board position
+            num_simulations: Number of MCTS simulations to run
 
         Returns:
-            Tuple of (move_probabilities, wdl_probabilities)
-                move_probabilies : numpy array of shape (num_moves,)
-                wdl_probabilities: numpy of array shape (3,) - [win, draw, loss]
+            The best move according to MCTS (greedy, most-visited)
         """
-        # TODO
+        converter = Converter()
+        mcts = MCTS(
+            network=self,
+            converter=converter,
+            num_simulations=num_simulations,
+        )
+        root = Node(board)
+        root = mcts.search(root, add_noise=False)
+        return mcts.get_best_move(root, temperature=0)
     def outcome_to_wdl(self, outcomes: np.ndarray) -> np.ndarray:
         """
         Converts scalar game outcomes to WDL one-hot vectors.
@@ -289,9 +297,9 @@ class BigNetwork:
     # make random weight and save under weights/random_model.weights.h5
 
 
-# if __name__ == "__main__":
-#     net = BigNetwork()
-#     net.save("reinforcement_learning/networks/weights/random_model.weights.h5")
-#     print(
-#         "Saved random weights for BigNetwork to reinforcement_learning/networks/weights/random_model.weights.h5"
-#     )
+if __name__ == "__main__":
+    net = BigNetwork()
+    net.save("reinforcement_learning/networks/weights/random_model.weights.h5")
+    print(
+        "Saved random weights for BigNetwork to reinforcement_learning/networks/weights/random_model.weights.h5"
+    )
