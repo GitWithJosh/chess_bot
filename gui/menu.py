@@ -53,6 +53,7 @@ class MenuScreen:
         self.selected_opponent_engine = None
         self.engines = {
             "Random": "random",
+            "BigNetwork (SL)": "big_network",
             "Stockfish (Easy)": "stockfish_800",
             "Stockfish (Medium)": "stockfish_1600",
             "Stockfish (Hard)": "stockfish_2400",

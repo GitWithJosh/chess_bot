@@ -509,7 +509,7 @@ class ChessGUI:
             return
 
         engine = self.white_engine if self.game.board.active_color == 'white' else self.black_engine
-        move = engine.get_best_move(self.game.board)
+        move = engine.get_best_move(self.game.board, self.game.move_history)
         if move and self.game.make_move(move):
             self.last_move = move
             self.selected_square = None

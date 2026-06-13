@@ -99,27 +99,62 @@ CKPT_PREFIX  = "sl"
 STATE_FILE   = os.path.join(OUT_DIR, "train_state.json")
 METRICS_CSV  = os.path.join(OUT_DIR, "metrics.csv")
 
-# Chunks identified as corrupted (game_rep_ratio >= 40%) by analyse_chunks.py.
+# Chunks identified as corrupted (game_rep_ratio >= 25%) by analyse_chunks.py.
 # Caused by a resume-bug in process_pgn_data.py: chunk-boundary saves happened
 # mid-file before _mark_done() was called, so those PGN files were reprocessed
 # on resume and their positions duplicated.
 EXCLUDED_CHUNKS: frozenset[str] = frozenset({
-    "chunk_035.npz", "chunk_036.npz", "chunk_037.npz", "chunk_039.npz",
-    "chunk_040.npz", "chunk_139.npz", "chunk_140.npz", "chunk_141.npz",
-    "chunk_142.npz", "chunk_143.npz", "chunk_144.npz", "chunk_145.npz",
-    "chunk_148.npz", "chunk_241.npz", "chunk_242.npz", "chunk_243.npz",
+    "chunk_007.npz", "chunk_008.npz", "chunk_024.npz", "chunk_026.npz",
+    "chunk_028.npz", "chunk_030.npz", "chunk_034.npz", "chunk_035.npz",
+    "chunk_036.npz", "chunk_037.npz", "chunk_039.npz", "chunk_040.npz",
+    "chunk_041.npz", "chunk_043.npz", "chunk_070.npz", "chunk_072.npz",
+    "chunk_074.npz", "chunk_076.npz", "chunk_080.npz", "chunk_086.npz",
+    "chunk_092.npz", "chunk_129.npz", "chunk_130.npz", "chunk_139.npz",
+    "chunk_140.npz", "chunk_141.npz", "chunk_142.npz", "chunk_143.npz",
+    "chunk_144.npz", "chunk_145.npz", "chunk_148.npz", "chunk_168.npz",
+    "chunk_197.npz", "chunk_204.npz", "chunk_230.npz", "chunk_237.npz",
+    "chunk_240.npz", "chunk_241.npz", "chunk_242.npz", "chunk_243.npz",
     "chunk_244.npz", "chunk_245.npz", "chunk_246.npz", "chunk_247.npz",
-    "chunk_248.npz", "chunk_251.npz", "chunk_252.npz", "chunk_253.npz",
-    "chunk_254.npz", "chunk_255.npz", "chunk_256.npz", "chunk_257.npz",
-    "chunk_258.npz", "chunk_260.npz", "chunk_301.npz", "chunk_302.npz",
+    "chunk_248.npz", "chunk_249.npz", "chunk_250.npz", "chunk_251.npz",
+    "chunk_252.npz", "chunk_253.npz", "chunk_254.npz", "chunk_255.npz",
+    "chunk_256.npz", "chunk_257.npz", "chunk_258.npz", "chunk_259.npz",
+    "chunk_260.npz", "chunk_261.npz", "chunk_262.npz", "chunk_263.npz",
+    "chunk_264.npz", "chunk_300.npz", "chunk_301.npz", "chunk_302.npz",
     "chunk_303.npz", "chunk_304.npz", "chunk_305.npz", "chunk_306.npz",
     "chunk_307.npz", "chunk_308.npz", "chunk_309.npz", "chunk_310.npz",
     "chunk_311.npz", "chunk_312.npz", "chunk_313.npz", "chunk_314.npz",
-    "chunk_315.npz", "chunk_490.npz", "chunk_491.npz", "chunk_492.npz",
-    "chunk_576.npz", "chunk_577.npz", "chunk_578.npz", "chunk_584.npz",
+    "chunk_315.npz", "chunk_339.npz", "chunk_341.npz", "chunk_346.npz",
+    "chunk_351.npz", "chunk_354.npz", "chunk_356.npz", "chunk_369.npz",
+    "chunk_370.npz", "chunk_371.npz", "chunk_372.npz", "chunk_373.npz",
+    "chunk_375.npz", "chunk_378.npz", "chunk_380.npz", "chunk_381.npz",
+    "chunk_382.npz", "chunk_383.npz", "chunk_384.npz", "chunk_385.npz",
+    "chunk_394.npz", "chunk_401.npz", "chunk_402.npz", "chunk_405.npz",
+    "chunk_407.npz", "chunk_414.npz", "chunk_419.npz", "chunk_424.npz",
+    "chunk_427.npz", "chunk_429.npz", "chunk_431.npz", "chunk_433.npz",
+    "chunk_436.npz", "chunk_438.npz", "chunk_441.npz", "chunk_446.npz",
+    "chunk_468.npz", "chunk_470.npz", "chunk_472.npz", "chunk_473.npz",
+    "chunk_475.npz", "chunk_480.npz", "chunk_482.npz", "chunk_486.npz",
+    "chunk_490.npz", "chunk_491.npz", "chunk_492.npz", "chunk_511.npz",
+    "chunk_513.npz", "chunk_516.npz", "chunk_518.npz", "chunk_522.npz",
+    "chunk_524.npz", "chunk_526.npz", "chunk_553.npz", "chunk_556.npz",
+    "chunk_558.npz", "chunk_560.npz", "chunk_564.npz", "chunk_566.npz",
+    "chunk_568.npz", "chunk_576.npz", "chunk_577.npz", "chunk_578.npz",
+    "chunk_579.npz", "chunk_581.npz", "chunk_584.npz", "chunk_585.npz",
     "chunk_586.npz", "chunk_587.npz", "chunk_588.npz", "chunk_589.npz",
-    "chunk_590.npz", "chunk_591.npz",
+    "chunk_590.npz", "chunk_591.npz", "chunk_592.npz", "chunk_595.npz",
+    "chunk_597.npz", "chunk_599.npz", "chunk_601.npz", "chunk_603.npz",
+    "chunk_610.npz", "chunk_611.npz", "chunk_612.npz", "chunk_638.npz",
+    "chunk_640.npz", "chunk_642.npz", "chunk_644.npz", "chunk_646.npz",
+    "chunk_653.npz", "chunk_656.npz",
 })
+
+# Learning-rate schedule: reduce on plateau (val_policy_acc, checked every chunk).
+LR_INIT       = 0.001  # starting LR — matches BigNetwork Adam default
+LR_FACTOR     = 0.5    # multiply by this on each plateau
+LR_PATIENCE   = 3      # consecutive chunks without improvement before reducing
+LR_MIN        = 1e-9   # floor
+
+BEST_CKPT_PATH = os.path.join(OUT_DIR, "sl_best.weights.h5")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -181,6 +216,13 @@ def _load_state() -> dict | None:
         with open(STATE_FILE) as f:
             return json.load(f)
     return None
+
+
+def _set_lr(model, lr: float) -> None:
+    try:
+        model.optimizer.learning_rate.assign(lr)
+    except AttributeError:
+        model.optimizer.learning_rate = lr
 
 
 def _append_metrics(row: dict, header: list[str]) -> None:
@@ -245,6 +287,10 @@ def main() -> None:
 
     # --- Resume (restarts from the last CHECKPOINT, not the last fitted chunk,
     #     so no training is silently lost between checkpoint boundaries) ---
+    current_lr       = LR_INIT
+    best_val_acc     = 0.0
+    lr_plateau_count = 0
+
     state = _load_state()
     start_epoch = 0
     resume_skip = 0            # chunks to skip within start_epoch's shuffled order
@@ -256,9 +302,13 @@ def main() -> None:
             start_epoch        = state["epoch"]
             resume_skip        = state["pos_in_epoch"]
             global_chunk_count = state["global_chunk_count"]
+            current_lr         = state.get("current_lr", LR_INIT)
+            best_val_acc       = state.get("best_val_acc", 0.0)
+            lr_plateau_count   = state.get("lr_plateau_count", 0)
+            _set_lr(net.model, current_lr)
             print(f"Resumed from {os.path.basename(ckpt)} "
                   f"(epoch {start_epoch}, {resume_skip} chunks into epoch, "
-                  f"{global_chunk_count} total)\n")
+                  f"{global_chunk_count} total, lr {current_lr:.2e})\n")
 
     # --- Preload validation set once (small) ---
     val_data = None
@@ -277,7 +327,7 @@ def main() -> None:
         "epoch", "global_chunk", "chunk_file", "n_pos",
         "loss", "policy_loss", "value_loss", "policy_acc",
         "val_loss", "val_policy_loss", "val_value_loss", "val_policy_acc",
-        "seconds",
+        "learning_rate", "seconds",
     ]
 
     for epoch in range(start_epoch, EPOCHS):
@@ -319,6 +369,7 @@ def main() -> None:
                 "policy_acc":  round(h["policy_output_accuracy"][-1], 5),
                 "val_loss": "", "val_policy_loss": "",
                 "val_value_loss": "", "val_policy_acc": "",
+                "learning_rate": current_lr,
                 "seconds": round(time.time() - t0, 1),
             }
 
@@ -329,8 +380,9 @@ def main() -> None:
             is_last_in_epoch = pos_in_epoch == len(order) - 1
             do_ckpt = _should_checkpoint(global_chunk_count) or is_last_in_epoch
 
-            # Validate at checkpoint boundaries (keeps val cost bounded)
-            if do_ckpt and val_data is not None:
+            # Validate every chunk — cheap on P100, gives clean signal for
+            # ReduceLROnPlateau and lets us track the best model precisely.
+            if val_data is not None:
                 # return_dict=True is required: in Keras 3, evaluate's metrics_names
                 # lumps per-output accuracy under a "compile_metrics" placeholder,
                 # so positional unpacking would drop val_policy_acc.
@@ -343,13 +395,34 @@ def main() -> None:
                 row["val_value_loss"]  = round(vmap.get("value_output_loss", 0.0), 5)
                 row["val_policy_acc"]  = round(vmap.get("policy_output_accuracy", 0.0), 5)
 
+                val_acc = float(row["val_policy_acc"])
+                if val_acc > best_val_acc + 1e-4:
+                    best_val_acc     = val_acc
+                    lr_plateau_count = 0
+                    net.save(BEST_CKPT_PATH)
+                    print(f"    new best val pacc {val_acc:.5f} → sl_best.weights.h5",
+                          flush=True)
+                else:
+                    lr_plateau_count += 1
+                    if lr_plateau_count >= LR_PATIENCE:
+                        old_lr = current_lr
+                        new_lr = max(LR_MIN, old_lr * LR_FACTOR)
+                        if new_lr < old_lr - 1e-12:
+                            _set_lr(net.model, new_lr)
+                            current_lr = new_lr
+                            print(f"    LR {old_lr:.2e} → {new_lr:.2e}"
+                                  f"  (plateau {lr_plateau_count} chunks)", flush=True)
+                        lr_plateau_count = 0
+
+                row["learning_rate"] = current_lr
+
             _append_metrics(row, metrics_header)
 
             msg = (f"[e{epoch} {pos_in_epoch+1}/{len(order)}] "
                    f"{row['chunk_file']}  loss {row['loss']}  "
                    f"pacc {row['policy_acc']}  ({row['seconds']}s)")
             if row["val_policy_acc"] != "":
-                msg += f"  | val pacc {row['val_policy_acc']}"
+                msg += f"  | val pacc {row['val_policy_acc']}  lr {current_lr:.1e}"
             print(msg, flush=True)
 
             if do_ckpt:
@@ -358,10 +431,13 @@ def main() -> None:
                 # pos_in_epoch+1 = chunks completed in this epoch as of this checkpoint.
                 # Next epoch resets to 0 (handled by start_epoch comparison on resume).
                 _save_state({
-                    "epoch": epoch if not is_last_in_epoch else epoch + 1,
-                    "pos_in_epoch": (pos_in_epoch + 1) if not is_last_in_epoch else 0,
+                    "epoch":              epoch if not is_last_in_epoch else epoch + 1,
+                    "pos_in_epoch":       (pos_in_epoch + 1) if not is_last_in_epoch else 0,
                     "global_chunk_count": global_chunk_count,
-                    "last_checkpoint": ckpt_path,
+                    "last_checkpoint":    ckpt_path,
+                    "current_lr":         current_lr,
+                    "best_val_acc":       best_val_acc,
+                    "lr_plateau_count":   lr_plateau_count,
                 })
                 print(f"    saved {os.path.basename(ckpt_path)}", flush=True)
 

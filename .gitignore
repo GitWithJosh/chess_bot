@@ -222,3 +222,4 @@ __marimo__/
 .streamlit/secrets.toml
 *.pgn
 *.npz
+*.weights.h5

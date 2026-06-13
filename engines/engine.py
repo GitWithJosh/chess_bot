@@ -17,11 +17,17 @@ class ChessEngine(ABC):
     """
 
     @abstractmethod
-    def get_best_move(self, board_state: BoardState) -> Move | None:
+    def get_best_move(
+        self, board_state: BoardState, move_history: list[Move] | None = None
+    ) -> Move | None:
         """Return best move for current position.
 
         Args:
             board_state: Current board state
+            move_history: Moves played to reach this position, oldest first.
+                Optional context for engines that need game history (e.g. a
+                neural net that encodes prior positions); position-only engines
+                may ignore it.
 
         Returns:
             Move object, or None if no legal moves

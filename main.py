@@ -1,5 +1,7 @@
 """Chess application entry point with menu system."""
 
+import os
+
 from gui.menu import MenuScreen, GameMode, GameConfig
 from gui.gui import ChessGUI
 from game.game import Game
@@ -7,14 +9,22 @@ from engines.engine import ChessEngine
 from engines.human_engine import HumanInputEngine
 from engines.random_engine import RandomEngine
 from engines.stockfish_engine import StockfishEngine
+from engines.big_network_engine import BigNetworkEngine
+
+SL_WEIGHTS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "supervised_learning", "checkpoints", "sl_011.weights.h5",
+)
 
 
-def create_engine(engine_name: str) -> ChessEngine:
-    """Create engine from name."""
+def create_engine(engine_name: str | None) -> ChessEngine:
+    """Create engine from name. None (or any unknown name) falls back to Random."""
     if engine_name == "human":
         return HumanInputEngine()
     elif engine_name == "random":
         return RandomEngine()
+    elif engine_name == "big_network":
+        return BigNetworkEngine(SL_WEIGHTS)
     elif engine_name == "stockfish_800":
         elo = 800
     elif engine_name == "stockfish_1600":
