@@ -35,11 +35,12 @@ import numpy as np
 def _find_repo_root() -> str:
     """Locate the chess_bot repo root (the dir containing reinforcement_learning/)."""
     # Local run: this file is at <root>/supervised_learning/train_supervised.py
-    here = os.path.dirname(os.path.abspath(__file__))
-    candidate = os.path.normpath(os.path.join(here, ".."))
-    if os.path.isdir(os.path.join(candidate, "reinforcement_learning")):
-        return candidate
-    # Kaggle (or elsewhere): search common mount points for the package
+    if "__file__" in dir():
+        here = os.path.dirname(os.path.abspath(__file__))  # type: ignore[name-defined]
+        candidate = os.path.normpath(os.path.join(here, ".."))
+        if os.path.isdir(os.path.join(candidate, "reinforcement_learning")):
+            return candidate
+    # Kaggle notebook cell (no __file__) or elsewhere: search common mount points
     for base in ("/kaggle/input", "/kaggle/working", os.getcwd()):
         if not os.path.isdir(base):
             continue
@@ -86,14 +87,39 @@ else:
 
 EPOCHS            = 1        # passes over the full dataset
 BATCH_SIZE        = 512
-FIRST_N_SAVE_ALL  = 10       # checkpoint every chunk for the first N processed
-SAVE_EVERY        = 5        # thereafter, checkpoint every Nth chunk
-VAL_CHUNKS        = 2        # hold out this many chunks for validation (0 = off)
+CHUNK_SIZE        = 50_000   # expected positions per full chunk
+FIRST_N_SAVE_ALL  = 12       # checkpoint every chunk for the first N processed
+SAVE_EVERY_MID    = 4        # then every Nth chunk until MID_UNTIL
+MID_UNTIL         = 40       # switch to SAVE_EVERY after this many chunks
+SAVE_EVERY        = 40       # thereafter, checkpoint every Nth chunk
+VAL_CHUNKS        = 4        # hold out this many chunks for validation (0 = off)
 SHUFFLE_SEED      = 42
 
-CKPT_PREFIX  = "sl_big"
+CKPT_PREFIX  = "sl"
 STATE_FILE   = os.path.join(OUT_DIR, "train_state.json")
 METRICS_CSV  = os.path.join(OUT_DIR, "metrics.csv")
+
+# Chunks identified as corrupted (game_rep_ratio >= 40%) by analyse_chunks.py.
+# Caused by a resume-bug in process_pgn_data.py: chunk-boundary saves happened
+# mid-file before _mark_done() was called, so those PGN files were reprocessed
+# on resume and their positions duplicated.
+EXCLUDED_CHUNKS: frozenset[str] = frozenset({
+    "chunk_035.npz", "chunk_036.npz", "chunk_037.npz", "chunk_039.npz",
+    "chunk_040.npz", "chunk_139.npz", "chunk_140.npz", "chunk_141.npz",
+    "chunk_142.npz", "chunk_143.npz", "chunk_144.npz", "chunk_145.npz",
+    "chunk_148.npz", "chunk_241.npz", "chunk_242.npz", "chunk_243.npz",
+    "chunk_244.npz", "chunk_245.npz", "chunk_246.npz", "chunk_247.npz",
+    "chunk_248.npz", "chunk_251.npz", "chunk_252.npz", "chunk_253.npz",
+    "chunk_254.npz", "chunk_255.npz", "chunk_256.npz", "chunk_257.npz",
+    "chunk_258.npz", "chunk_260.npz", "chunk_301.npz", "chunk_302.npz",
+    "chunk_303.npz", "chunk_304.npz", "chunk_305.npz", "chunk_306.npz",
+    "chunk_307.npz", "chunk_308.npz", "chunk_309.npz", "chunk_310.npz",
+    "chunk_311.npz", "chunk_312.npz", "chunk_313.npz", "chunk_314.npz",
+    "chunk_315.npz", "chunk_490.npz", "chunk_491.npz", "chunk_492.npz",
+    "chunk_576.npz", "chunk_577.npz", "chunk_578.npz", "chunk_584.npz",
+    "chunk_586.npz", "chunk_587.npz", "chunk_588.npz", "chunk_589.npz",
+    "chunk_590.npz", "chunk_591.npz",
+})
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -103,6 +129,25 @@ def _list_chunks() -> list[str]:
     files = glob.glob(os.path.join(DATA_DIR, "**", "chunk_*.npz"), recursive=True)
     files = [f for f in files if os.path.basename(f).startswith("chunk_")]
     return sorted(files)
+
+
+def _chunk_size(path: str) -> int:
+    # Read only the npy header inside the zip — no decompression of the data.
+    import zipfile, struct, re
+    with zipfile.ZipFile(path) as zf:
+        with zf.open("boards.npy") as f:
+            f.read(6)                          # magic \x93NUMPY
+            major = f.read(1)[0]               # version major
+            f.read(1)                          # version minor
+            if major == 1:
+                hlen = struct.unpack("<H", f.read(2))[0]
+            else:                              # version 2+
+                hlen = struct.unpack("<I", f.read(4))[0]
+            header = f.read(hlen).decode()
+    m = re.search(r"'shape'\s*:\s*\((\d+)", header) or re.search(r'"shape"\s*:\s*\((\d+)', header)
+    if m:
+        return int(m.group(1))
+    raise ValueError(f"Could not parse shape from npy header in {path}: {header!r}")
 
 
 def _load_chunk(path: str):
@@ -117,11 +162,13 @@ def _should_checkpoint(global_chunk_count: int) -> bool:
     """global_chunk_count = number of TRAIN chunks fitted so far (1-based)."""
     if global_chunk_count <= FIRST_N_SAVE_ALL:
         return True
-    return global_chunk_count % SAVE_EVERY == 0
+    if global_chunk_count <= MID_UNTIL:
+        return (global_chunk_count - FIRST_N_SAVE_ALL) % SAVE_EVERY_MID == 0
+    return (global_chunk_count - MID_UNTIL) % SAVE_EVERY == 0
 
 
 def _ckpt_path(global_chunk_count: int) -> str:
-    return os.path.join(OUT_DIR, f"{CKPT_PREFIX}_{global_chunk_count:05d}.weights.h5")
+    return os.path.join(OUT_DIR, f"{CKPT_PREFIX}_{global_chunk_count:03d}.weights.h5")
 
 
 def _save_state(state: dict) -> None:
@@ -156,12 +203,25 @@ def main() -> None:
         print(f"ERROR: no chunk_*.npz found under {DATA_DIR}")
         sys.exit(1)
 
-    # Split off a fixed validation set (last VAL_CHUNKS files, deterministic)
-    if VAL_CHUNKS > 0 and len(all_chunks) > VAL_CHUNKS:
-        train_chunks = all_chunks[:-VAL_CHUNKS]
-        val_chunks   = all_chunks[-VAL_CHUNKS:]
+    n_before = len(all_chunks)
+    all_chunks = [c for c in all_chunks if os.path.basename(c) not in EXCLUDED_CHUNKS]
+    n_excluded = n_before - len(all_chunks)
+    if n_excluded:
+        print(f"  ({n_excluded} corrupted chunk(s) excluded by EXCLUDED_CHUNKS)")
+
+    # Split off a fixed validation set — only use full-sized chunks (50k positions)
+    # so undersized tail chunks (last chunk of each worker) don't skew validation.
+    full_chunks = [c for c in all_chunks if _chunk_size(c) >= CHUNK_SIZE]
+    tail_chunks = [c for c in all_chunks if c not in set(full_chunks)]
+
+    if VAL_CHUNKS > 0 and len(full_chunks) > VAL_CHUNKS:
+        val_chunks   = full_chunks[-VAL_CHUNKS:]
+        val_set      = set(val_chunks)
+        train_chunks = [c for c in all_chunks if c not in val_set]
     else:
         train_chunks, val_chunks = all_chunks, []
+
+    print(f"  ({len(tail_chunks)} undersized tail chunk(s) kept in train, excluded from val)")
 
     print(f"=== Supervised Training ===")
     print(f"Repo root : {REPO_ROOT}")
@@ -306,7 +366,7 @@ def main() -> None:
                 print(f"    saved {os.path.basename(ckpt_path)}", flush=True)
 
     # Always save a final checkpoint
-    final_path = os.path.join(OUT_DIR, f"{CKPT_PREFIX}_final.weights.h5")
+    final_path = os.path.join(OUT_DIR, "sl_final.weights.h5")
     net.save(final_path)
     print(f"\nDone. Final weights: {final_path}")
 
