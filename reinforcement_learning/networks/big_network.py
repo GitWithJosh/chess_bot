@@ -47,7 +47,7 @@ class BigNetwork:
     def __init__(
         self,
         input_shape: tuple = (8, 8, 112),
-        num_res_blocks: int = 20,
+        num_res_blocks: int = 10,
         num_filters: int = 256,
         num_moves: int = 1858,
         se_ratio: int = 16,

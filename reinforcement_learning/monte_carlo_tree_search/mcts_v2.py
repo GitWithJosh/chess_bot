@@ -9,6 +9,7 @@ import multiprocessing as mp
 from typing import Any
 
 import chess
+import chess.pgn
 import numpy as np
 
 from reinforcement_learning.helpers.converter import Converter
@@ -184,6 +185,9 @@ class SelfPlayGame:
         self.resign_threshold = resign_threshold
         self.resign_moves = resign_moves
 
+        self.record = None
+
+
     def play(self) -> list[dict]:
         """Play a full self-play game and return training data.
 
@@ -247,6 +251,18 @@ class SelfPlayGame:
         # Determine game outcome
         result = self._get_game_result(board, move_count, resigned_side)
         print(f"  Game over after {move_count} moves: {result}")
+        
+        # Build a PGN record of the game for logging (board holds the full move stack)
+        game_node = chess.pgn.Game.from_board(board)
+        game_node.headers["Event"] = "self-play"
+        game_node.headers["Result"] = result
+        self.record = {
+            "result": result,
+            "num_moves": move_count,
+            "num_positions": len(training_data),
+            "resigned": resigned_side is not None,
+            "pgn": str(game_node),
+        }
 
         # Assign value targets based on game outcome
         return self._assign_values(training_data, result)
