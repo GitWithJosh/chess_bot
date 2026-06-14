@@ -95,6 +95,10 @@ SAVE_EVERY        = 40       # thereafter, checkpoint every Nth chunk
 VAL_CHUNKS        = 4        # hold out this many chunks for validation (0 = off)
 SHUFFLE_SEED      = 42
 
+# TEMPORARY: cap training to the first N chunks of the shuffled order per epoch
+# (for quick test runs). Set to None to train on all chunks.
+LIMIT_CHUNKS      = 200
+
 CKPT_PREFIX  = "sl"
 STATE_FILE   = os.path.join(OUT_DIR, "train_state.json")
 METRICS_CSV  = os.path.join(OUT_DIR, "metrics.csv")
@@ -335,6 +339,10 @@ def main() -> None:
         # whether reached fresh or via resume (no dependence on call history).
         order = list(range(len(train_chunks)))
         random.Random(SHUFFLE_SEED + epoch).shuffle(order)
+
+        # TEMPORARY: train on only the first LIMIT_CHUNKS of the shuffled order.
+        if LIMIT_CHUNKS is not None:
+            order = order[:LIMIT_CHUNKS]
 
         skip = resume_skip if epoch == start_epoch else 0
 
