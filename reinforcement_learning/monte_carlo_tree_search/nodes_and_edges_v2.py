@@ -29,6 +29,27 @@ class Edge:
         self.W += value
         self.Q = self.W / self.N
 
+    def add_virtual_loss(self):
+        """Temporarily discourage this edge during batched selection.
+
+        Counts a pretend visit that lost (from this node's perspective), so other
+        selections in the same batch diverge to different leaves. Reverted in
+        revert_virtual_loss_and_update once the real value arrives.
+        """
+        self.N += 1
+        self.W -= 1.0
+        self.Q = self.W / self.N
+
+    def revert_virtual_loss_and_update(self, value: float):
+        """Undo one virtual loss and fold in the real value.
+
+        N was already incremented by add_virtual_loss during selection, so we
+        only adjust W (remove the -1 virtual loss, add the real value) and
+        recompute Q. Net effect equals one normal update(value).
+        """
+        self.W += 1.0 + value
+        self.Q = self.W / self.N
+
     def ucb_score(self, parent_visits: int, c_puct: float = 1.5) -> float:
         """Calculate the PUCT score for this edge.
 
@@ -94,8 +115,8 @@ class Node:
     def expand(self, network: Any, converter: Converter) -> float:
         """Expand this node by creating edges for all legal moves.
 
-        Uses the network to evaluate the position and assign prior
-        probabilities to each legal move.
+        Evaluates the position with the network (single inference), assigns prior
+        probabilities to each legal move, and returns the scalar value estimate.
 
         Args:
             network: The chess neural network
@@ -107,14 +128,24 @@ class Node:
         if self.is_terminal:
             return self.terminal_value
 
-        # Get network prediction
         board_tensor = converter.board_to_input_tensor(self.board)
         policy, value = network.predict(board_tensor)
+        self._create_edges(policy, converter)
+        return self._scalar_value(value)
 
-        # Build reverse lookup once per expansion
-        index_lookup = {v: int(k) for k, v in converter.lookup.items()}
+    def expand_from_eval(self, policy: np.ndarray, converter: Converter) -> None:
+        """Expand using an already-computed policy (batched-search path).
 
-        # Create edges with prior probabilities for each legal move
+        The network value is applied separately by the caller (see
+        MCTS.search_batched), so this only builds the edges.
+        """
+        self._create_edges(policy, converter)
+
+    def _create_edges(self, policy: np.ndarray, converter: Converter) -> None:
+        """Create one edge per legal move with normalized network priors."""
+        # Reverse lookup is cached on the converter (built once, not per expansion)
+        index_lookup = converter.index_lookup
+
         for move in self.board.legal_moves:
             lookup_key = move_to_lookup_key(move, self.board.turn)
 
@@ -122,8 +153,7 @@ class Node:
                 prior = float(policy[index_lookup[lookup_key]])
             else:
                 raise AttributeError(f"Lookup key {lookup_key} not found in lookup")
-            edge = Edge(move, self, prior)
-            self.edges.append(edge)
+            self.edges.append(Edge(move, self, prior))
 
         # Normalize priors so they sum to 1 over legal moves
         prior_sum = sum(edge.P for edge in self.edges)
@@ -131,17 +161,19 @@ class Node:
             for edge in self.edges:
                 edge.P /= prior_sum
 
-        # The network may return different value formats:
-        # - a scalar (smaller network: shape (1,) or 0-d array)
-        # - a WDL probability vector (big network: shape (3,) -> [win, draw, loss])
-        # Convert to a single scalar in [-1, 1] where win=1, draw=0, loss=-1
-        value = np.asarray(value).reshape(-1)  # normalize to 1-D
+    @staticmethod
+    def _scalar_value(value) -> float:
+        """Collapse the network value head to a scalar in [-1, 1].
 
+        The network may return different value formats:
+          - a WDL probability vector (big network: shape (3,) -> win/draw/loss)
+          - a scalar (smaller network: shape (1,) or 0-d)
+        Mapped as win=1, draw=0, loss=-1.
+        """
+        value = np.asarray(value).reshape(-1)  # normalize to 1-D
         if value.size == 3:
-            # WDL vector: expected value in [-1, 1]
             return float(np.dot(value, [1.0, 0.0, -1.0]))
         elif value.size == 1:
-            # Scalar output from smaller network
             return float(value[0])
         else:
             raise ValueError(f"Unexpected value shape: {value.shape}")
@@ -233,7 +265,7 @@ class Node:
         Returns:
             numpy array of shape (1858,) with visit-count-based probabilities
         """
-        index_lookup = {v: int(k) for k, v in converter.lookup.items()}
+        index_lookup = converter.index_lookup
         move_probs = self.get_move_probabilities(temperature)
         target = np.zeros(len(converter.lookup), dtype=np.float32)
 

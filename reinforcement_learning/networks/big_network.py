@@ -1,5 +1,6 @@
 import chess
 import numpy as np
+import tensorflow as tf
 import keras
 from keras import layers
 
@@ -60,6 +61,9 @@ class BigNetwork:
 
         self.model = self._build()
         self._compile()
+
+        self._infer_fn = None          # cached tf.function (see _get_infer_fn)
+        self._search_converter = None  # reused across search_for_best_move calls
 
     # ------------------------------------------------------------------
     # Block builders
@@ -217,29 +221,72 @@ class BigNetwork:
                 move_probabilities : numpy array of shape (num_moves,)
                 wdl_probabilities  : numpy array of shape (3,)  — [win, draw, loss]
         """
-        input_batch = np.expand_dims(board_tensor, axis=0)
-        policy, value = self.model.predict(input_batch, verbose=0)
-        return policy[0], value[0]
+        input_batch = np.expand_dims(board_tensor, axis=0).astype(np.float32)
+        policy, value = self._get_infer_fn()(input_batch)
+        return policy[0].numpy(), value[0].numpy()
+
+    def predict_batch(self, board_tensors) -> tuple[np.ndarray, np.ndarray]:
+        """Run inference on a batch of positions in a single call.
+
+        Used by MCTS.search_batched so the GPU sees real batches.
+
+        Args:
+            board_tensors: array-like of shape (K, 8, 8, 112)
+
+        Returns:
+            Tuple of (policies (K, num_moves), wdl_values (K, 3)) as numpy arrays.
+        """
+        x = np.asarray(board_tensors, dtype=np.float32)
+        policy, value = self._get_infer_fn()(x)
+        return policy.numpy(), value.numpy()
+
+    def _get_infer_fn(self):
+        """Lazily build a tf.function for low-overhead inference.
+
+        model.predict() carries heavy per-call overhead that dominates when it's
+        invoked once per MCTS simulation (batch of 1); a traced tf.function is
+        far cheaper. Built lazily so it traces after weights are loaded —
+        load_weights mutates the existing variables in place, so a later load is
+        reflected without rebuilding.
+        """
+        if self._infer_fn is None:
+            @tf.function(input_signature=[
+                tf.TensorSpec(shape=(None,) + tuple(self.input_shape),
+                              dtype=tf.float32)
+            ])
+            def _infer(x):
+                return self.model(x, training=False)
+            self._infer_fn = _infer
+        return self._infer_fn
     
-    def search_for_best_move(self, board: chess.Board, num_simulations: int) -> chess.Move:
+    def search_for_best_move(
+        self, board: chess.Board, num_simulations: int, batch_size: int = 16
+    ) -> chess.Move:
         """
         Select the best move for the given position using MCTS search.
+
+        Uses batched (virtual-loss) MCTS so leaf evaluations are sent to the
+        network in groups of ``batch_size`` — far faster on GPU than batch-1.
 
         Args:
             board: The current chess board position
             num_simulations: Number of MCTS simulations to run
+            batch_size: Leaves evaluated per network call (set 1 for the old
+                sequential behaviour)
 
         Returns:
             The best move according to MCTS (greedy, most-visited)
         """
-        converter = Converter()
+        if self._search_converter is None:
+            self._search_converter = Converter()
+        converter = self._search_converter
         mcts = MCTS(
             network=self,
             converter=converter,
             num_simulations=num_simulations,
         )
         root = Node(board)
-        root = mcts.search(root, add_noise=False)
+        root = mcts.search_batched(root, add_noise=False, batch_size=batch_size)
         return mcts.get_best_move(root, temperature=0)
     def outcome_to_wdl(self, outcomes: np.ndarray) -> np.ndarray:
         """

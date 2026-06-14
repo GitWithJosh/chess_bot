@@ -91,6 +91,99 @@ class MCTS:
             value = -value
             edge.update(value)
 
+    def search_batched(
+        self, root: Node, add_noise: bool = False, batch_size: int = 16
+    ) -> Node:
+        """MCTS that batches leaf evaluations to use the GPU efficiently.
+
+        Plain MCTS evaluates one leaf per network call (batch size 1), which
+        leaves a deep ResNet's GPU mostly idle. Here we collect up to
+        ``batch_size`` leaves per round using *virtual loss* (a temporary penalty
+        on each selected path so concurrent selections diverge to different
+        leaves), evaluate them all in a single network call, then back up.
+
+        Equivalent in search quality to the sequential version for typical
+        batch sizes, but far higher throughput on GPU.
+
+        Args:
+            root: Root node to search from.
+            add_noise: Add Dirichlet noise to root priors (self-play exploration).
+            batch_size: Max leaves gathered per network call.
+
+        Returns:
+            The root node with updated visit counts.
+        """
+        if root.is_terminal:
+            return root
+        if root.is_leaf:
+            root.expand(self.network, self.converter)
+        if add_noise and len(root.edges) > 0:
+            self._add_dirichlet_noise(root)
+
+        sims_done = 0
+        while sims_done < self.num_simulations:
+            n_this = min(batch_size, self.num_simulations - sims_done)
+
+            leaves: list[Node] = []          # unique nodes needing a network eval
+            leaf_index: dict[int, int] = {}  # id(node) -> position in `leaves`
+            pending: list[tuple[list[Edge], Node]] = []  # (path, leaf) per sim
+
+            for _ in range(n_this):
+                node = root
+                path: list[Edge] = []
+
+                # SELECT — walk down with virtual loss until a leaf/terminal
+                while not node.is_leaf and not node.is_terminal:
+                    edge = node.select_edge(self.c_puct)
+                    edge.add_virtual_loss()
+                    path.append(edge)
+                    node = node.get_child_node(edge)
+
+                if node.is_terminal:
+                    # No network eval needed; back up the exact value now.
+                    self._backpropagate_batched(path, node.terminal_value)
+                    continue
+
+                if id(node) not in leaf_index:
+                    leaf_index[id(node)] = len(leaves)
+                    leaves.append(node)
+                pending.append((path, node))
+
+            if not leaves:
+                sims_done += n_this
+                continue
+
+            # EVALUATE — one batched network call for all distinct leaves
+            tensors = [self.converter.board_to_input_tensor(n.board) for n in leaves]
+            policies, values = self.network.predict_batch(tensors)
+
+            # EXPAND each distinct leaf once
+            for node in leaves:
+                if node.is_leaf:
+                    idx = leaf_index[id(node)]
+                    node.expand_from_eval(policies[idx], self.converter)
+
+            scalars = [Node._scalar_value(values[i]) for i in range(len(leaves))]
+
+            # BACKUP — every collected sim, using its leaf's value
+            for path, node in pending:
+                self._backpropagate_batched(path, scalars[leaf_index[id(node)]])
+
+            sims_done += n_this
+
+        return root
+
+    def _backpropagate_batched(self, search_path: list[Edge], value: float):
+        """Back up through a path that had virtual loss applied during selection.
+
+        Same sign-flipping as _backpropagate, but uses
+        revert_virtual_loss_and_update so the virtual loss added in the SELECT
+        phase is undone (N stays, the -1 is removed and the real value folded in).
+        """
+        for edge in reversed(search_path):
+            value = -value
+            edge.revert_virtual_loss_and_update(value)
+
     def _add_dirichlet_noise(self, root: Node):
         """Add Dirichlet noise to root node priors for exploration.
 

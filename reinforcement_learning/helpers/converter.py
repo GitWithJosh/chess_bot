@@ -12,6 +12,9 @@ class Converter:
         self.lookup = {}
         with open("reinforcement_learning/move_lookup.json", "r") as f:
             self.lookup = json.load(f)
+        # Reverse map (uci -> index), built once. Callers reuse this instead of
+        # rebuilding the 1858-entry dict on every node expansion / move mask.
+        self.index_lookup = {v: int(k) for k, v in self.lookup.items()}
 
 
     def board_to_input_tensor(self, board:chess.Board) -> tf.Tensor:
@@ -120,7 +123,7 @@ class Converter:
         """
         Mask illegal moves to remove them from the output and recalculate the probabilities for all legal moves (sum = 1).
         """
-        index_lookup = {v: int(k) for k, v in self.lookup.items()}
+        index_lookup = self.index_lookup
 
         mask = np.zeros(len(move_probabilities), dtype=bool)
 
