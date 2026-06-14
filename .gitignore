@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+*.weights.h5
+reinforcement_learning/networks/weights/
+
 # Claude
 CLAUDE.md
 

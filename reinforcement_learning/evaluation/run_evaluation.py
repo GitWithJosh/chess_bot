@@ -3,20 +3,20 @@ import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 # now simple sibling imports like `from helpers.converter import Converter` will work
 
-from random_move_opponent import RandomMover
-from evaluation_against_other_engine import (
+from reinforcement_learning.evaluation.random_move_opponent import RandomMover
+from reinforcement_learning.evaluation.evaluation_against_other_engine import (
     EvaluationAgainstOtherEngine,
 )
-from networks.smaller_network import SmallerNetwork
-from networks.big_network import BigNetwork
-from helpers.converter import Converter
-from helpers.weights_utils import (
+from reinforcement_learning.networks.smaller_network import SmallerNetwork
+from reinforcement_learning.networks.big_network import BigNetwork
+from reinforcement_learning.helpers.converter import Converter
+from reinforcement_learning.helpers.weights_utils import (
     get_latest_weights,
     extract_iteration,
 )
-from stockfish_opponent import StockfishOpponent
+from reinforcement_learning.evaluation.stockfish_opponent import StockfishOpponent
 
-NETWORK = "small"  # or later "big"
+NETWORK = "big"  # or later "big"
 NETWORK_ITERATION = "latest"  # or latest or "1" or "2" etc.
 BASE_DIR = os.path.dirname(__file__)[: -len("evaluation")]
 WEIGHTS_DIR = os.path.join(BASE_DIR, "networks", "weights")
