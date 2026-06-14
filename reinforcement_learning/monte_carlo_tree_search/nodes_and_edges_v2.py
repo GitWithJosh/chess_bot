@@ -6,7 +6,7 @@ from typing import Any
 import chess
 import numpy as np
 
-from helpers.converter import Converter
+from reinforcement_learning.helpers.converter import Converter
 
 
 class Edge:
@@ -112,7 +112,7 @@ class Node:
         policy, value = network.predict(board_tensor)
 
         # Build reverse lookup once per expansion
-        index_lookup = {v: int(k) for k, v in converter.lookup.items()}
+        index_lookup = converter.index_lookup
 
         # Create edges with prior probabilities for each legal move
         for move in self.board.legal_moves:
@@ -233,7 +233,7 @@ class Node:
         Returns:
             numpy array of shape (1858,) with visit-count-based probabilities
         """
-        index_lookup = {v: int(k) for k, v in converter.lookup.items()}
+        index_lookup = converter.index_lookup
         move_probs = self.get_move_probabilities(temperature)
         target = np.zeros(len(converter.lookup), dtype=np.float32)
 

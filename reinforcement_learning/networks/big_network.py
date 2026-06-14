@@ -2,10 +2,12 @@ import chess
 import numpy as np
 import keras
 from keras import layers
+#import tensorflow as tf
 
-from monte_carlo_tree_search.mcts_v2 import MCTS
-from monte_carlo_tree_search.nodes_and_edges_v2 import Node
-from helpers.converter import Converter
+
+from reinforcement_learning.monte_carlo_tree_search.mcts_v2 import MCTS
+from reinforcement_learning.monte_carlo_tree_search.nodes_and_edges_v2 import Node
+from reinforcement_learning.helpers.converter import Converter
 
 
 class BigNetwork:
@@ -57,6 +59,11 @@ class BigNetwork:
         self.num_moves = num_moves
         self.se_ratio = se_ratio
         self.learning_rate = learning_rate
+
+        # self._infer = tf.function(
+        #     lambda x: self.model(x, training=False),
+        #     reduce_retracing=True,
+        # )
 
         self.model = self._build()
         self._compile()
@@ -217,9 +224,9 @@ class BigNetwork:
                 move_probabilities : numpy array of shape (num_moves,)
                 wdl_probabilities  : numpy array of shape (3,)  — [win, draw, loss]
         """
-        input_batch = np.expand_dims(board_tensor, axis=0)
-        policy, value = self.model.predict(input_batch, verbose=0)
-        return policy[0], value[0]
+        input_batch = np.expand_dims(board_tensor, axis=0).astype(np.float32)
+        policy, value = self.model(input_batch, training=False)
+        return np.asarray(policy[0]), np.asarray(value[0])
     
     def search_for_best_move(self, board: chess.Board, num_simulations: int) -> chess.Move:
         """
