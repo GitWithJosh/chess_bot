@@ -255,19 +255,19 @@ def main() -> None:
     if n_excluded:
         print(f"  ({n_excluded} corrupted chunk(s) excluded by EXCLUDED_CHUNKS)")
 
-    # Split off a fixed validation set — only use full-sized chunks (50k positions)
-    # so undersized tail chunks (last chunk of each worker) don't skew validation.
+    # Use only full-sized chunks (50k positions) for both train and val, so
+    # undersized tail chunks (last chunk of each worker) don't skew either.
     full_chunks = [c for c in all_chunks if _chunk_size(c) >= CHUNK_SIZE]
     tail_chunks = [c for c in all_chunks if c not in set(full_chunks)]
 
     if VAL_CHUNKS > 0 and len(full_chunks) > VAL_CHUNKS:
         val_chunks   = full_chunks[-VAL_CHUNKS:]
         val_set      = set(val_chunks)
-        train_chunks = [c for c in all_chunks if c not in val_set]
+        train_chunks = [c for c in full_chunks if c not in val_set]
     else:
-        train_chunks, val_chunks = all_chunks, []
+        train_chunks, val_chunks = full_chunks, []
 
-    print(f"  ({len(tail_chunks)} undersized tail chunk(s) kept in train, excluded from val)")
+    print(f"  ({len(tail_chunks)} undersized tail chunk(s) excluded from train and val)")
 
     print(f"=== Supervised Training ===")
     print(f"Repo root : {REPO_ROOT}")

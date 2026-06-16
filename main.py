@@ -13,7 +13,7 @@ from engines.big_network_engine import BigNetworkEngine
 
 SL_WEIGHTS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "supervised_learning", "checkpoints", "sl_011.weights.h5",
+    "supervised_learning", "checkpoints", "sl_best.weights.h5",
 )
 
 
