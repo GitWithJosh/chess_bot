@@ -269,6 +269,9 @@ class ChessGUI:
     HISTORY_WIDTH = 300
     HISTORY_HEIGHT = 600
 
+    # Delay between engine moves in engine-vs-engine mode (milliseconds)
+    ENGINE_MOVE_DELAY_MS = 700
+
     def __init__(self, game: Game, white_engine: ChessEngine, black_engine: ChessEngine):
         pygame.init()
         self.screen = pygame.display.set_mode((self.WINDOW_WIDTH, self.WINDOW_HEIGHT))
@@ -297,6 +300,13 @@ class ChessGUI:
         self.game_over_shown = False
         self.board_flipped = False
         self.last_engine_polled_position: Optional[str] = None
+
+        # In engine-vs-engine mode we space moves out so they're watchable.
+        self.bot_vs_bot = (
+            not isinstance(white_engine, HumanInputEngine)
+            and not isinstance(black_engine, HumanInputEngine)
+        )
+        self.last_engine_move_time = 0
 
         self.piece_images = self._load_piece_images()
         self.menu_button_img = self._load_button_image("menu.png", (40, 40))
@@ -508,12 +518,20 @@ class ChessGUI:
         if self.last_engine_polled_position == position_key:
             return
 
+        # In bot-vs-bot mode, leave a small gap between moves so the game is
+        # watchable instead of flashing to the end instantly.
+        if self.bot_vs_bot:
+            now = pygame.time.get_ticks()
+            if now - self.last_engine_move_time < self.ENGINE_MOVE_DELAY_MS:
+                return
+
         engine = self.white_engine if self.game.board.active_color == 'white' else self.black_engine
         move = engine.get_best_move(self.game.board, self.game.move_history)
         if move and self.game.make_move(move):
             self.last_move = move
             self.selected_square = None
             self.legal_moves_from_selected = []
+            self.last_engine_move_time = pygame.time.get_ticks()
 
         self.last_engine_polled_position = position_key
 
