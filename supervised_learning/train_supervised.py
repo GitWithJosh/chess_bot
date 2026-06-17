@@ -64,6 +64,8 @@ for p in (REPO_ROOT, RL_DIR):
 # relative to CWD — only matters if instantiated, but chdir keeps things safe.
 os.chdir(REPO_ROOT)
 
+import keras  # noqa: E402  (pulled in transitively by BigNetwork; needed for the loss below)
+
 from networks.big_network import BigNetwork  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -102,55 +104,6 @@ LIMIT_CHUNKS      = 200
 CKPT_PREFIX  = "sl"
 STATE_FILE   = os.path.join(OUT_DIR, "train_state.json")
 METRICS_CSV  = os.path.join(OUT_DIR, "metrics.csv")
-
-# Chunks identified as corrupted (game_rep_ratio >= 25%) by analyse_chunks.py.
-# Caused by a resume-bug in process_pgn_data.py: chunk-boundary saves happened
-# mid-file before _mark_done() was called, so those PGN files were reprocessed
-# on resume and their positions duplicated.
-EXCLUDED_CHUNKS: frozenset[str] = frozenset({
-    "chunk_007.npz", "chunk_008.npz", "chunk_024.npz", "chunk_026.npz",
-    "chunk_028.npz", "chunk_030.npz", "chunk_034.npz", "chunk_035.npz",
-    "chunk_036.npz", "chunk_037.npz", "chunk_039.npz", "chunk_040.npz",
-    "chunk_041.npz", "chunk_043.npz", "chunk_070.npz", "chunk_072.npz",
-    "chunk_074.npz", "chunk_076.npz", "chunk_080.npz", "chunk_086.npz",
-    "chunk_092.npz", "chunk_129.npz", "chunk_130.npz", "chunk_139.npz",
-    "chunk_140.npz", "chunk_141.npz", "chunk_142.npz", "chunk_143.npz",
-    "chunk_144.npz", "chunk_145.npz", "chunk_148.npz", "chunk_168.npz",
-    "chunk_197.npz", "chunk_204.npz", "chunk_230.npz", "chunk_237.npz",
-    "chunk_240.npz", "chunk_241.npz", "chunk_242.npz", "chunk_243.npz",
-    "chunk_244.npz", "chunk_245.npz", "chunk_246.npz", "chunk_247.npz",
-    "chunk_248.npz", "chunk_249.npz", "chunk_250.npz", "chunk_251.npz",
-    "chunk_252.npz", "chunk_253.npz", "chunk_254.npz", "chunk_255.npz",
-    "chunk_256.npz", "chunk_257.npz", "chunk_258.npz", "chunk_259.npz",
-    "chunk_260.npz", "chunk_261.npz", "chunk_262.npz", "chunk_263.npz",
-    "chunk_264.npz", "chunk_300.npz", "chunk_301.npz", "chunk_302.npz",
-    "chunk_303.npz", "chunk_304.npz", "chunk_305.npz", "chunk_306.npz",
-    "chunk_307.npz", "chunk_308.npz", "chunk_309.npz", "chunk_310.npz",
-    "chunk_311.npz", "chunk_312.npz", "chunk_313.npz", "chunk_314.npz",
-    "chunk_315.npz", "chunk_339.npz", "chunk_341.npz", "chunk_346.npz",
-    "chunk_351.npz", "chunk_354.npz", "chunk_356.npz", "chunk_369.npz",
-    "chunk_370.npz", "chunk_371.npz", "chunk_372.npz", "chunk_373.npz",
-    "chunk_375.npz", "chunk_378.npz", "chunk_380.npz", "chunk_381.npz",
-    "chunk_382.npz", "chunk_383.npz", "chunk_384.npz", "chunk_385.npz",
-    "chunk_394.npz", "chunk_401.npz", "chunk_402.npz", "chunk_405.npz",
-    "chunk_407.npz", "chunk_414.npz", "chunk_419.npz", "chunk_424.npz",
-    "chunk_427.npz", "chunk_429.npz", "chunk_431.npz", "chunk_433.npz",
-    "chunk_436.npz", "chunk_438.npz", "chunk_441.npz", "chunk_446.npz",
-    "chunk_468.npz", "chunk_470.npz", "chunk_472.npz", "chunk_473.npz",
-    "chunk_475.npz", "chunk_480.npz", "chunk_482.npz", "chunk_486.npz",
-    "chunk_490.npz", "chunk_491.npz", "chunk_492.npz", "chunk_511.npz",
-    "chunk_513.npz", "chunk_516.npz", "chunk_518.npz", "chunk_522.npz",
-    "chunk_524.npz", "chunk_526.npz", "chunk_553.npz", "chunk_556.npz",
-    "chunk_558.npz", "chunk_560.npz", "chunk_564.npz", "chunk_566.npz",
-    "chunk_568.npz", "chunk_576.npz", "chunk_577.npz", "chunk_578.npz",
-    "chunk_579.npz", "chunk_581.npz", "chunk_584.npz", "chunk_585.npz",
-    "chunk_586.npz", "chunk_587.npz", "chunk_588.npz", "chunk_589.npz",
-    "chunk_590.npz", "chunk_591.npz", "chunk_592.npz", "chunk_595.npz",
-    "chunk_597.npz", "chunk_599.npz", "chunk_601.npz", "chunk_603.npz",
-    "chunk_610.npz", "chunk_611.npz", "chunk_612.npz", "chunk_638.npz",
-    "chunk_640.npz", "chunk_642.npz", "chunk_644.npz", "chunk_646.npz",
-    "chunk_653.npz", "chunk_656.npz",
-})
 
 # Learning-rate schedule: reduce on plateau (val_policy_acc, checked every chunk).
 LR_INIT       = 0.001  # starting LR — matches BigNetwork Adam default
@@ -249,12 +202,6 @@ def main() -> None:
         print(f"ERROR: no chunk_*.npz found under {DATA_DIR}")
         sys.exit(1)
 
-    n_before = len(all_chunks)
-    all_chunks = [c for c in all_chunks if os.path.basename(c) not in EXCLUDED_CHUNKS]
-    n_excluded = n_before - len(all_chunks)
-    if n_excluded:
-        print(f"  ({n_excluded} corrupted chunk(s) excluded by EXCLUDED_CHUNKS)")
-
     # Use only full-sized chunks (50k positions) for both train and val, so
     # undersized tail chunks (last chunk of each worker) don't skew either.
     full_chunks = [c for c in all_chunks if _chunk_size(c) >= CHUNK_SIZE]
@@ -283,9 +230,13 @@ def main() -> None:
     net.model.compile(
         optimizer=net.model.optimizer,
         loss={
-            "policy_output": "categorical_crossentropy",
+            # MUST match BigNetwork._compile: the policy head emits RAW LOGITS, so
+            # policy loss is from_logits=True. A plain "categorical_crossentropy"
+            # here would silently mis-train (treats logits as probabilities → NaNs).
+            "policy_output": keras.losses.CategoricalCrossentropy(from_logits=True),
             "value_output":  "categorical_crossentropy",
         },
+        # Top-1 move match. argmax is softmax-invariant, so accuracy is correct on logits.
         metrics={"policy_output": "accuracy"},
     )
 
