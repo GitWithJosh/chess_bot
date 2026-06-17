@@ -243,7 +243,7 @@ class TestSelfPlayGame:
         data = game.play()
 
         for sample in data:
-            assert sample["board_tensor"].shape == (8, 8, 112)
+            assert sample["board_tensor"].shape == (8, 8, 20)
             assert sample["policy_target"].shape == (1858,)
             assert isinstance(sample["value_target"], float)
 

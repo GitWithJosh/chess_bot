@@ -6,7 +6,7 @@ reinforcement_learning/networks/big_network.py) so the SL-vs-RL comparison is
 apples-to-apples.
 
 Data: supervised_learning/processed_data/chunk_*.npz, each containing
-    boards   float16 (N, 8, 8, 112)
+    boards   float16 (N, 8, 8, 20)
     policies float32 (N, 1858)   one-hot move
     values   float32 (N, 3)      one-hot WDL
 Trains by calling net.model.fit() directly (NOT net.train(), which would

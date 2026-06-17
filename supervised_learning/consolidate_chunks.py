@@ -20,7 +20,7 @@ if not src_files:
 
 print(f"Found {len(src_files)} worker chunks to consolidate.\n")
 
-boards_buf   = np.empty((CHUNK_SIZE, 8, 8, 112), dtype=np.float16)
+boards_buf   = np.empty((CHUNK_SIZE, 8, 8, 20), dtype=np.float16)
 policies_buf = np.empty((CHUNK_SIZE, 1858),       dtype=np.float32)
 values_buf   = np.empty((CHUNK_SIZE, 3),           dtype=np.float32)
 buf_idx  = 0

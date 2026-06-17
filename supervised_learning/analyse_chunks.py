@@ -78,9 +78,9 @@ def analyse_chunk(path: str) -> dict:
             # ------------------------------------------------------------------
             # Boards  (float16, kept as-is to halve RAM vs float32)
             # ------------------------------------------------------------------
-            boards = npz["boards"]           # (N, 8, 8, 112) float16
+            boards = npz["boards"]           # (N, 8, 8, 20) float16
             n      = len(boards)
-            flat   = boards.reshape(n, -1)   # (N, 7168) — view, no copy
+            flat   = boards.reshape(n, -1)   # (N, 1280) — view, no copy
             board_hashes = _row_hashes(flat)
             del boards, flat
             gc.collect()

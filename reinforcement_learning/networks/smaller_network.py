@@ -12,7 +12,7 @@ from helpers.converter import Converter
 class SmallerNetwork:
     """
     Args:
-    input_shape: Board tensor shape (8, 8, 112)
+    input_shape: Board tensor shape (8, 8, 20)
     num_res_blocks: Number of residual blocks
     num_filters: Number of convolutional filters per layer
     num_moves: Number of possible moves (1858 for chess)
@@ -21,7 +21,7 @@ class SmallerNetwork:
 
     def __init__(
         self,
-        input_shape: tuple = (8, 8, 112),
+        input_shape: tuple = (8, 8, 20),
         num_res_blocks: int = 5,
         num_filters: int = 128,
         num_moves: int = 1858,
@@ -126,7 +126,7 @@ class SmallerNetwork:
         """Run inference on a single board position.
 
         Args:
-            board_tensor: numpy array of shape (8, 8, 112)
+            board_tensor: numpy array of shape (8, 8, 20)
 
         Returns:
             Tuple of (move_probabilities, position_evaluation)
@@ -167,7 +167,7 @@ class SmallerNetwork:
         """Train the network on a batch of positions.
 
         Args:
-            board_tensors: numpy array of shape (batch_size, 8, 8, 112)
+            board_tensors: numpy array of shape (batch_size, 8, 8, 20)
             policy_targets: numpy array of shape (batch_size, 1858) — MCTS visit distributions
             value_targets: numpy array of shape (batch_size, 1) — game outcomes (-1, 0, or 1)
             **kwargs: additional arguments passed to model.fit (epochs, batch_size, etc.)

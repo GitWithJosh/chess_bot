@@ -18,8 +18,8 @@ class BigNetwork:
 
     Input
     -----
-    Shape: (8, 8, 112)  — channels-last, matching TensorFlow/Keras defaults.
-    The 112 planes encode the board history used by AlphaZero/Leela.
+    Shape: (8, 8, 20)  — channels-last, matching TensorFlow/Keras defaults.
+    The 20 planes encode the current position only (no move history).
 
     Residual tower
     --------------
@@ -45,7 +45,7 @@ class BigNetwork:
 
     def __init__(
         self,
-        input_shape: tuple = (8, 8, 112),
+        input_shape: tuple = (8, 8, 20),
         num_res_blocks: int = 20,
         num_filters: int = 256,
         num_moves: int = 1858,
@@ -214,7 +214,7 @@ class BigNetwork:
         Run inference on a single board position.
 
         Args:
-            board_tensor: numpy array of shape (8, 8, 112)
+            board_tensor: numpy array of shape (8, 8, 20)
 
         Returns:
             Tuple of (move_probabilities, wdl_probabilities)
@@ -231,7 +231,7 @@ class BigNetwork:
         Used by MCTS.search_batched so the GPU sees real batches.
 
         Args:
-            board_tensors: array-like of shape (K, 8, 8, 112)
+            board_tensors: array-like of shape (K, 8, 8, 20)
 
         Returns:
             Tuple of (policies (K, num_moves), wdl_values (K, 3)) as numpy arrays.
@@ -313,7 +313,7 @@ class BigNetwork:
         Train the network on a batch of positions.
 
         Args:
-            board_tensors  : numpy array of shape (batch_size, 8, 8, 112)
+            board_tensors  : numpy array of shape (batch_size, 8, 8, 20)
             policy_targets : numpy array of shape (batch_size, num_moves)
                              MCTS visit-count distributions (sum to 1 per row).
             value_targets  : numpy array of shape (batch_size, 3)

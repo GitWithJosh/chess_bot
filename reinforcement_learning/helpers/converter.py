@@ -16,92 +16,78 @@ class Converter:
         self.index_lookup = {v: int(k) for k, v in self.lookup.items()}
 
 
-    def board_to_input_tensor(self, board:chess.Board, include_repetition: bool = False) -> np.ndarray:
-        """Convert chess board to 8x8x112 tensor representation
+    def board_to_input_tensor(self, board: chess.Board) -> np.ndarray:
+        """Convert a chess board to an (8, 8, 20) position-only tensor.
 
-            0-11: piece placement both colors (Friendly (pawns, knights, bishops, rooks, queens, king); Enemy (pawns, knights, bishops, rooks, queens, king))
-            12: shows if repetition has occurred once or twice (is 1 regardless)
-            13-103: Repeat for seven previous positions
-            104-107: castling rights (white queenside, white kingside, black queenside, black kingside); all ones if right exists
-            108: 1 if blacks turn, 0 whites turn
-            109: 50 move rule; number of moves where no capture was made and no pawn was moved; same scalar value in all entries ;Half-move clock divided by 100
-            110: Set to 0
-            111: Set to 1 (to help detect bord edges)
+            Position-only encoding — no move history. Every plane is derivable
+            from the current board alone (i.e. from a single FEN).
 
-            All planes have dimension 8x8
+            0-5  : friendly pieces (pawn, knight, bishop, rook, queen, king)
+            6-11 : enemy pieces    (pawn, knight, bishop, rook, queen, king)
+            12   : friendly queenside castling right (all-ones if present)
+            13   : friendly kingside  castling right
+            14   : enemy    queenside castling right
+            15   : enemy    kingside  castling right
+            16   : side to move (1 if it is black's turn in the real game)
+            17   : 50-move rule — halfmove clock / 100, broadcast across the plane
+            18   : en passant target square — single 1 on the ep square (only if a
+                   legal en passant capture exists)
+            19   : all-ones (helps the convolutions detect board edges)
+
+            The board is oriented so the side to move is always "white"/friendly
+            (mirrored when black is to move); mirror() also flips the ep square and
+            swaps piece colours, so friendly pieces are always white in this frame.
+
+            All planes have dimension 8x8.
 
             Args:
                 board: Chess board position
-                include_repetition: is_repetition() is very slow in python-chess; it's off by default for fast self-play. Turn it on once training is stable.
 
             Returns:
-                numpy array of shape (8, 8, 112) representing the board state
+                numpy array of shape (8, 8, 20) representing the board state
         """
         if board.turn == chess.BLACK:
             oriented_board = board.mirror()
         else:
             oriented_board = board.copy()
 
-        tensor = np.zeros((8, 8, 112), dtype=np.float16)
+        tensor = np.zeros((8, 8, 20), dtype=np.float16)
 
-        # Build a list of boards by walking back through the move stack
-        boards = [oriented_board]
-        temp_board = board.copy()
-        for _ in range(7):
-            if temp_board.move_stack:
-                temp_board.pop()
-                if board.turn == chess.BLACK:
-                    boards.append(temp_board.mirror())
-                else:
-                    boards.append(temp_board.copy())
-            else:
-                boards.append(None)
-
-        # Every board in `boards` has been oriented (via mirror() when black is to
-        # move) so the side-to-move is always White. mirror() swaps piece colors, so
-        # the friendly pieces are always white-colored in this oriented frame.
+        # After orientation the friendly (side-to-move) pieces are always white.
         friendly_color = chess.WHITE
 
-        # Channels 0-103: piece placement for current + 7 previous positions
-        # Each position gets 13 channels (12 piece planes + 1 repetition plane)
-        for i, hist_board in enumerate(boards):
-            if hist_board is None:
-                continue
-            base = i * 13
+        # Channels 0-11: piece placement for the current position.
+        # Iterate only the ~32 occupied squares, not all 64 with piece_at().
+        for square, piece in oriented_board.piece_map().items():
+            rank = square // 8
+            file = square % 8
+            ptype = piece.piece_type - 1  # 0-5
+            if piece.color == friendly_color:
+                # Channels 0-5: friendly pieces
+                tensor[rank, file, ptype] = 1
+            else:
+                # Channels 6-11: enemy pieces
+                tensor[rank, file, 6 + ptype] = 1
 
-            # Iterate only the ~32 occupied squares, not all 64 with piece_at()
-            for square, piece in hist_board.piece_map().items():
-                rank = square // 8
-                file = square % 8
-                ptype = piece.piece_type - 1  # 0-5
-                if piece.color == friendly_color:
-                    # Channels 0-5: friendly pieces (pawn, knight, bishop, rook, queen, king)
-                    tensor[rank, file, base + ptype] = 1
-                else:
-                    # Channels 6-11: enemy pieces
-                    tensor[rank, file, base + 6 + ptype] = 1
+        # Channels 12-15: castling rights (oriented frame, so white == friendly)
+        tensor[:, :, 12] = float(oriented_board.has_queenside_castling_rights(chess.WHITE))
+        tensor[:, :, 13] = float(oriented_board.has_kingside_castling_rights(chess.WHITE))
+        tensor[:, :, 14] = float(oriented_board.has_queenside_castling_rights(chess.BLACK))
+        tensor[:, :, 15] = float(oriented_board.has_kingside_castling_rights(chess.BLACK))
 
-            # Channel 12: repetition (skipped by default — expensive)
-            if include_repetition and hist_board.is_repetition(2):
-                tensor[:, :, base + 12] = 1.0
+        # Channel 16: side to move (1 if black's turn)
+        tensor[:, :, 16] = float(board.turn == chess.BLACK)
 
+        # Channel 17: 50-move rule (halfmove clock / 100, same value everywhere)
+        tensor[:, :, 17] = board.halfmove_clock / 100
 
-        # Channels 104-107: castling rights
-        tensor[:, :, 104] = float(oriented_board.has_queenside_castling_rights(chess.WHITE))
-        tensor[:, :, 105] = float(oriented_board.has_kingside_castling_rights(chess.WHITE))
-        tensor[:, :, 106] = float(oriented_board.has_queenside_castling_rights(chess.BLACK))
-        tensor[:, :, 107] = float(oriented_board.has_kingside_castling_rights(chess.BLACK))
+        # Channel 18: en passant target square (only when a legal ep capture exists)
+        if oriented_board.has_legal_en_passant():
+            ep = oriented_board.ep_square
+            tensor[ep // 8, ep % 8, 18] = 1
 
-        # Channel 108: side to move (1 if black's turn)
-        tensor[:, :, 108] = float(board.turn == chess.BLACK)
-
-        # Channel 109: 50-move rule (halfmove clock / 100, same value across all squares)
-        tensor[:, :, 109] = board.halfmove_clock / 100
-
-        # Channel 110: set to 0 (already zeros)
-
-        # Channel 111: set to 1 (helps detect board edges)
-        tensor[:, :, 111] = 1
+        # Channel 19: set to 1 (helps detect board edges)
+        tensor[:, :, 19] = 1
 
         return tensor
 

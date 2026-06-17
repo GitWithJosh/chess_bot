@@ -60,7 +60,7 @@ class TestBigNetArchitecture:
         assert value_layer.output.shape[-1] == 3
 
     def test_value_output_sums_to_one(self, big_net):
-        board = np.random.rand(8, 8, 112).astype(np.float32)
+        board = np.random.rand(8, 8, 20).astype(np.float32)
         _, value = big_net.predict(board)
         assert np.isclose(value.sum(), 1.0, atol=1e-5)
 
@@ -70,7 +70,7 @@ class TestBigNetTrain:
         """Test that training works with raw outcomes that get converted to WDL."""
         net = BigNetwork(num_res_blocks=1, num_filters=8, learning_rate=0.01)
         batch_size = 4
-        boards = np.random.rand(batch_size, 8, 8, 112).astype(np.float32)
+        boards = np.random.rand(batch_size, 8, 8, 20).astype(np.float32)
         policies = np.random.rand(batch_size, 1858).astype(np.float32)
         policies = policies / policies.sum(axis=1, keepdims=True)
         # Raw outcomes: 1, -1, 0, 1

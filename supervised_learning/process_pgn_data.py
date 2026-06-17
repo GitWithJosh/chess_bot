@@ -6,7 +6,7 @@ Run from the chess_bot root directory:
 
 Output: supervised_learning/processed_data/chunk_src_<pgn_stem>_XXXX.npz
 Each file contains:
-    boards   : float16  (N, 8, 8, 112)
+    boards   : float16  (N, 8, 8, 20)
     policies : float32  (N, 1858)   — one-hot move vector
     values   : float32  (N, 3)      — one-hot WDL [win, draw, loss]
 
@@ -106,7 +106,7 @@ def worker_fn(args: tuple) -> tuple[int, int, int, int]:
     if not remaining:
         return worker_id, 0, 0, 0
 
-    boards_buf   = np.empty((CHUNK_SIZE, 8, 8, 112), dtype=np.float16)
+    boards_buf   = np.empty((CHUNK_SIZE, 8, 8, 20), dtype=np.float16)
     policies_buf = np.zeros((CHUNK_SIZE, 1858),       dtype=np.float32)
     values_buf   = np.empty((CHUNK_SIZE, 3),           dtype=np.float32)
     buf_idx = 0

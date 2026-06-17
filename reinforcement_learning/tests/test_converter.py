@@ -13,7 +13,7 @@ class TestShape:
     def test_output_shape(self, converter):
         board = chess.Board()
         tensor = converter.board_to_input_tensor(board)
-        assert tensor.shape == (8, 8, 112)
+        assert tensor.shape == (8, 8, 20)
 
     def test_dtype(self, converter):
         board = chess.Board()
@@ -63,26 +63,26 @@ class TestCastlingRights:
         """Starting position has all castling rights"""
         board = chess.Board()
         tensor = converter.board_to_input_tensor(board)
-        assert tensor[0, 0, 104] == 1  # White queenside
-        assert tensor[0, 0, 105] == 1  # White kingside
-        assert tensor[0, 0, 106] == 1  # Black queenside
-        assert tensor[0, 0, 107] == 1  # Black kingside
+        assert tensor[0, 0, 12] == 1  # Friendly queenside
+        assert tensor[0, 0, 13] == 1  # Friendly kingside
+        assert tensor[0, 0, 14] == 1  # Enemy queenside
+        assert tensor[0, 0, 15] == 1  # Enemy kingside
 
     def test_no_castling_rights(self, converter):
         """Position with no castling rights"""
         board = chess.Board()
         board.set_castling_fen("-")
         tensor = converter.board_to_input_tensor(board)
-        assert tensor[0, 0, 104] == 0
-        assert tensor[0, 0, 105] == 0
-        assert tensor[0, 0, 106] == 0
-        assert tensor[0, 0, 107] == 0
+        assert tensor[0, 0, 12] == 0
+        assert tensor[0, 0, 13] == 0
+        assert tensor[0, 0, 14] == 0
+        assert tensor[0, 0, 15] == 0
 
     def test_castling_fills_entire_plane(self, converter):
         """Castling rights should be the same value across all squares"""
         board = chess.Board()
         tensor = converter.board_to_input_tensor(board)
-        for ch in [104, 105, 106, 107]:
+        for ch in [12, 13, 14, 15]:
             assert np.all(tensor[:, :, ch] == tensor[0, 0, ch])
 
 
@@ -90,20 +90,20 @@ class TestSideToMove:
     def test_white_to_move(self, converter):
         board = chess.Board()
         tensor = converter.board_to_input_tensor(board)
-        assert tensor[0, 0, 108] == 0  # White's turn -> 0
+        assert tensor[0, 0, 16] == 0  # White's turn -> 0
 
     def test_black_to_move(self, converter):
         board = chess.Board()
         board.push_uci("e2e4")
         tensor = converter.board_to_input_tensor(board)
-        assert tensor[0, 0, 108] == 1  # Black's turn -> 1
+        assert tensor[0, 0, 16] == 1  # Black's turn -> 1
 
 
 class TestFiftyMoveRule:
     def test_starting_position_zero(self, converter):
         board = chess.Board()
         tensor = converter.board_to_input_tensor(board)
-        assert tensor[0, 0, 109] == 0
+        assert tensor[0, 0, 17] == 0
 
     def test_after_knight_moves(self, converter):
         """Knight moves increment halfmove clock"""
@@ -111,86 +111,47 @@ class TestFiftyMoveRule:
         board.push_uci("g1f3")  # halfmove_clock = 1
         board.push_uci("g8f6")  # halfmove_clock = 2
         tensor = converter.board_to_input_tensor(board)
-        expected = 2 / 99.0
-        assert abs(float(tensor[0, 0, 109]) - expected) < 1e-3
+        expected = 2 / 100.0
+        assert abs(float(tensor[0, 0, 17]) - expected) < 1e-3
 
     def test_fills_entire_plane(self, converter):
         board = chess.Board()
         board.push_uci("g1f3")
         tensor = converter.board_to_input_tensor(board)
-        assert np.all(tensor[:, :, 109] == tensor[0, 0, 109])
+        assert np.all(tensor[:, :, 17] == tensor[0, 0, 17])
 
 
-class TestConstantPlanes:
-    def test_channel_110_zeros(self, converter):
+class TestEnPassant:
+    def test_no_en_passant_starting(self, converter):
+        """Starting position has no en passant target"""
         board = chess.Board()
         tensor = converter.board_to_input_tensor(board)
-        assert np.all(tensor[:, :, 110] == 0)
+        assert np.all(tensor[:, :, 18] == 0)
 
-    def test_channel_111_ones(self, converter):
-        board = chess.Board()
-        tensor = converter.board_to_input_tensor(board)
-        assert np.all(tensor[:, :, 111] == 1)
-
-
-class TestMoveHistory:
-    def test_history_populates_previous_planes(self, converter):
-        """After one move, channels 13-25 should have the starting position"""
+    def test_double_push_without_capturer_is_zero(self, converter):
+        """1.e4 sets an ep square in the FEN but no pawn can capture, so the
+        plane stays empty (we gate on has_legal_en_passant())."""
         board = chess.Board()
         board.push_uci("e2e4")
         tensor = converter.board_to_input_tensor(board)
+        assert np.all(tensor[:, :, 18] == 0)
 
-        # It's black's turn, board is mirrored.
-        # On the mirrored board, friendly_color = BLACK (board.turn).
-        # The mirrored board swaps colors+ranks, so original black pawns (rank 6)
-        # become WHITE pawns at rank 1 on the mirrored board.
-        # Since friendly_color=BLACK, those WHITE pawns are "enemy" -> ch 6.
-        # Original white e4 pawn becomes BLACK pawn at rank 4 -> "friendly" -> ch 0.
-        # Current position (ch 0-12):
-        assert tensor[4, 4, 0] == 1  # e4 pawn is BLACK on mirrored board -> friendly (ch 0)
+    def test_legal_en_passant_marks_target_square(self, converter):
+        """1.e4 Nf6 2.e5 d5 — white can play exd6 e.p.; d6 is the target.
+        White to move, so the board is not mirrored: d6 = (rank 5, file 3)."""
+        board = chess.Board()
+        for mv in ("e2e4", "g8f6", "e4e5", "d7d5"):
+            board.push_uci(mv)
+        tensor = converter.board_to_input_tensor(board)
+        assert tensor[5, 3, 18] == 1
+        assert np.sum(tensor[:, :, 18]) == 1  # exactly one square marked
 
-        # Previous position (ch 13-25): starting position mirrored
-        # Original white e2 pawn -> mirrored to BLACK at rank 6 -> friendly -> ch 13+0=13
-        assert tensor[6, 4, 13] == 1
 
-    def test_no_history_is_zeros(self, converter):
-        """Starting position has no history, so channels 13-103 should be zero for pieces"""
+class TestConstantPlanes:
+    def test_channel_19_ones(self, converter):
         board = chess.Board()
         tensor = converter.board_to_input_tensor(board)
-        for i in range(1, 8):
-            base = i * 13
-            # Piece planes should be zero (no history)
-            assert np.sum(tensor[:, :, base:base + 12]) == 0
-
-
-class TestRepetition:
-    def test_no_repetition_starting(self, converter):
-        """Starting position with no moves has no repetition"""
-        board = chess.Board()
-        tensor = converter.board_to_input_tensor(board)
-        print(tensor[0,0,12])
-        assert tensor[0, 0, 12] == 0
-
-    def test_repetition_detected(self, converter):
-        """After Nf3-Ng1-Nf3, the position has repeated"""
-        board = chess.Board()
-        board.push_uci("g1f3")
-        board.push_uci("g8f6")
-        board.push_uci("f3g1")
-        board.push_uci("f6g8")
-        # Now back to starting position — this is a repetition
-        tensor = converter.board_to_input_tensor(board)
-        assert tensor[0, 0, 12] == 1
-
-    def test_repetition_fills_plane(self, converter):
-        """Repetition value should be the same across all squares"""
-        board = chess.Board()
-        board.push_uci("g1f3")
-        board.push_uci("g8f6")
-        board.push_uci("f3g1")
-        board.push_uci("f6g8")
-        tensor = converter.board_to_input_tensor(board)
-        assert np.all(tensor[:, :, 12] == tensor[0, 0, 12])
+        assert np.all(tensor[:, :, 19] == 1)
 
 
 class TestFriendlyEnemyPerspective:

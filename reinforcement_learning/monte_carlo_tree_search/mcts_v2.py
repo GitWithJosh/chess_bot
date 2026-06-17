@@ -269,7 +269,7 @@ class SelfPlayGame:
 
         Returns:
             List of dicts, each containing:
-                - board_tensor: numpy array (8, 8, 112)
+                - board_tensor: numpy array (8, 8, 20)
                 - policy_target: numpy array (1858,)
                 - value_target: float (-1, 0, or 1) from the perspective of the side to move
         """
