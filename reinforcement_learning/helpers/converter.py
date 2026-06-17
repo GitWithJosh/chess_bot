@@ -7,17 +7,16 @@ class Converter:
     """
     Class for converting stuff
     """
-    def __init__(self):
+    def __init__(self, lookup_path: str="reinforcement_learning/move_lookup.json"):
         self.board = chess.Board()
         self.lookup = {}
-        with open("reinforcement_learning/move_lookup.json", "r") as f:
+        with open(lookup_path, "r") as f:
             self.lookup = json.load(f)
-        # Reverse map (uci -> index), built once. Callers reuse this instead of
-        # rebuilding the 1858-entry dict on every node expansion / move mask.
+
         self.index_lookup = {v: int(k) for k, v in self.lookup.items()}
 
 
-    def board_to_input_tensor(self, board:chess.Board) -> tf.Tensor:
+    def board_to_input_tensor(self, board:chess.Board, include_repetition: bool = False) -> np.ndarray:
         """Convert chess board to 8x8x112 tensor representation
 
             0-11: piece placement both colors (Friendly (pawns, knights, bishops, rooks, queens, king); Enemy (pawns, knights, bishops, rooks, queens, king))
@@ -33,6 +32,7 @@ class Converter:
 
             Args:
                 board: Chess board position
+                include_repetition: is_repetition() is very slow in python-chess; it's off by default for fast self-play. Turn it on once training is stable.
 
             Returns:
                 numpy array of shape (8, 8, 112) representing the board state
@@ -42,10 +42,10 @@ class Converter:
         else:
             oriented_board = board.copy()
 
-        tensor = np.zeros((8, 8, 112), dtype=getattr(np, "float16"))
+        tensor = np.zeros((8, 8, 112), dtype=np.float16)
 
         # Build a list of boards by walking back through the move stack
-        boards = [oriented_board.copy()]
+        boards = [oriented_board]
         temp_board = board.copy()
         for _ in range(7):
             if temp_board.move_stack:
@@ -55,35 +55,36 @@ class Converter:
                 else:
                     boards.append(temp_board.copy())
             else:
-                boards.append(None)  # No history available
+                boards.append(None)
+
+        # Every board in `boards` has been oriented (via mirror() when black is to
+        # move) so the side-to-move is always White. mirror() swaps piece colors, so
+        # the friendly pieces are always white-colored in this oriented frame.
+        friendly_color = chess.WHITE
 
         # Channels 0-103: piece placement for current + 7 previous positions
         # Each position gets 13 channels (12 piece planes + 1 repetition plane)
         for i, hist_board in enumerate(boards):
-            base_channel = i * 13
-
             if hist_board is None:
-                continue  # Leave as zeros if no history
+                continue
+            base = i * 13
 
-            # Determine who is "friendly" based on the CURRENT board's turn
-            friendly_color = board.turn
+            # Iterate only the ~32 occupied squares, not all 64 with piece_at()
+            for square, piece in hist_board.piece_map().items():
+                rank = square // 8
+                file = square % 8
+                ptype = piece.piece_type - 1  # 0-5
+                if piece.color == friendly_color:
+                    # Channels 0-5: friendly pieces (pawn, knight, bishop, rook, queen, king)
+                    tensor[rank, file, base + ptype] = 1
+                else:
+                    # Channels 6-11: enemy pieces
+                    tensor[rank, file, base + 6 + ptype] = 1
 
-            # Channels 0-5: friendly pieces (pawn, knight, bishop, rook, queen, king)
-            # Channels 6-11: enemy pieces
-            for square in chess.SQUARES:
-                piece = hist_board.piece_at(square)
-                if piece:
-                    rank = square // 8
-                    file = square % 8
-                    piece_type = piece.piece_type - 1  # 0-5
+            # Channel 12: repetition (skipped by default — expensive)
+            if include_repetition and hist_board.is_repetition(2):
+                tensor[:, :, base + 12] = 1.0
 
-                    if piece.color == friendly_color:
-                        tensor[rank, file, base_channel + piece_type] = 1
-                    else:
-                        tensor[rank, file, base_channel + 6 + piece_type] = 1
-
-            # Channel 12: repetition (set to 1 if the position has occurred at least once)
-            tensor[:, :, base_channel + 12] = float(hist_board.is_repetition(2)) 
 
         # Channels 104-107: castling rights
         tensor[:, :, 104] = float(oriented_board.has_queenside_castling_rights(chess.WHITE))
@@ -123,7 +124,7 @@ class Converter:
         """
         Mask illegal moves to remove them from the output and recalculate the probabilities for all legal moves (sum = 1).
         """
-        index_lookup = self.index_lookup
+        index_lookup = {v: int(k) for k, v in self.lookup.items()}
 
         mask = np.zeros(len(move_probabilities), dtype=bool)
 
