@@ -93,10 +93,11 @@ class Converter:
 
     def output_tensor_to_move(self, network_output: tf.Tensor) -> str:
         """
-        Takes a network output and converts it to a move in UIC chess notation
+        Takes a network output (raw policy logits) and converts it to a move in
+        UCI chess notation.
         """
-        move_probabilities = network_output[:1858]
-        legal_move_probabilities = self.mask_illegal_moves(self.board, move_probabilities)
+        move_logits = network_output[:1858]
+        legal_move_probabilities = self.mask_illegal_moves(self.board, move_logits)
         best_move_index = tf.argmax(legal_move_probabilities).numpy()
 
         move_uci = self._get_move_from_index(best_move_index)
@@ -106,13 +107,17 @@ class Converter:
 
         return move_uci
     
-    def mask_illegal_moves(self, board: chess.Board, move_probabilities: tf.Tensor) -> tf.Tensor:
+    def mask_illegal_moves(self, board: chess.Board, move_logits: tf.Tensor) -> tf.Tensor:
         """
-        Mask illegal moves to remove them from the output and recalculate the probabilities for all legal moves (sum = 1).
-        """
-        index_lookup = {v: int(k) for k, v in self.lookup.items()}
+        Mask illegal moves and return a probability distribution over the legal
+        moves only (sums to 1).
 
-        mask = np.zeros(len(move_probabilities), dtype=bool)
+        The policy head outputs RAW logits, so we mask the logits directly
+        (illegal → -inf) and apply a single softmax. No log() step is needed.
+        """
+        index_lookup = self.index_lookup
+
+        mask = np.zeros(len(move_logits), dtype=bool)
 
         for move in board.legal_moves:
             move_uci = move.uci()
@@ -128,13 +133,8 @@ class Converter:
             if move_uci in index_lookup:
                 mask[index_lookup[move_uci]] = True
 
-        # Undo the softmax by converting back to logits
-        logits = tf.math.log(move_probabilities)
-
-        # Set illegal moves to -inf
-        masked_logits = tf.where(mask, logits, tf.constant(float('-inf')))
-
-        # Re-apply softmax so legal moves sum to 1
+        # Illegal moves → -inf logit, then a single softmax over the legal logits.
+        masked_logits = tf.where(mask, move_logits, tf.constant(float('-inf')))
         return tf.nn.softmax(masked_logits)
 
     def _mirror_move_uci(self, move_uci:str) -> str:

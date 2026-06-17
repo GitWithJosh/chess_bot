@@ -142,24 +142,34 @@ class Node:
         self._create_edges(policy, converter)
 
     def _create_edges(self, policy: np.ndarray, converter: Converter) -> None:
-        """Create one edge per legal move with normalized network priors."""
+        """Create one edge per legal move, with priors from a softmax over the
+        legal moves' policy logits.
+
+        The policy head emits RAW logits, so a move's prior is its softmax value
+        restricted to the legal moves (equivalent to masking illegal logits to
+        -inf and softmaxing). The priors therefore sum to 1 over legal moves.
+        """
         # Reverse lookup is cached on the converter (built once, not per expansion)
         index_lookup = converter.index_lookup
 
-        for move in self.board.legal_moves:
+        moves = list(self.board.legal_moves)
+        if not moves:
+            return
+
+        logits = np.empty(len(moves), dtype=np.float64)
+        for i, move in enumerate(moves):
             lookup_key = move_to_lookup_key(move, self.board.turn)
-
-            if lookup_key in index_lookup:
-                prior = float(policy[index_lookup[lookup_key]])
-            else:
+            if lookup_key not in index_lookup:
                 raise AttributeError(f"Lookup key {lookup_key} not found in lookup")
-            self.edges.append(Edge(move, self, prior))
+            logits[i] = policy[index_lookup[lookup_key]]
 
-        # Normalize priors so they sum to 1 over legal moves
-        prior_sum = sum(edge.P for edge in self.edges)
-        if prior_sum > 0:
-            for edge in self.edges:
-                edge.P /= prior_sum
+        # Numerically stable softmax over the legal-move logits.
+        logits -= logits.max()
+        priors = np.exp(logits)
+        priors /= priors.sum()
+
+        for move, prior in zip(moves, priors):
+            self.edges.append(Edge(move, self, float(prior)))
 
     @staticmethod
     def _scalar_value(value) -> float:

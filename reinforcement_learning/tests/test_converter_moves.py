@@ -55,14 +55,14 @@ class TestGetMoveFromIndex:
 class TestMaskIllegalMoves:
     def test_output_sums_to_one(self, converter):
         board = chess.Board()
-        probs = tf.nn.softmax(tf.random.uniform([1858]))
-        masked = converter.mask_illegal_moves(board, probs)
+        logits = tf.random.normal([1858])  # raw policy logits (may be negative)
+        masked = converter.mask_illegal_moves(board, logits)
         assert abs(float(tf.reduce_sum(masked).numpy()) - 1.0) < 1e-5
 
     def test_illegal_moves_are_zero(self, converter):
         board = chess.Board()
-        probs = tf.nn.softmax(tf.random.uniform([1858]))
-        masked = converter.mask_illegal_moves(board, probs)
+        logits = tf.random.normal([1858])  # raw policy logits (may be negative)
+        masked = converter.mask_illegal_moves(board, logits)
 
         # Build set of legal move indices
         index_lookup = {v: int(k) for k, v in converter.lookup.items()}
@@ -83,8 +83,8 @@ class TestMaskIllegalMoves:
 
     def test_only_legal_moves_have_probability(self, converter):
         board = chess.Board()
-        probs = tf.nn.softmax(tf.random.uniform([1858]))
-        masked = converter.mask_illegal_moves(board, probs)
+        logits = tf.random.normal([1858])  # raw policy logits (may be negative)
+        masked = converter.mask_illegal_moves(board, logits)
         masked_np = masked.numpy()
 
         # Count non-zero entries
@@ -95,8 +95,8 @@ class TestMaskIllegalMoves:
     def test_works_for_black(self, converter):
         board = chess.Board()
         board.push_uci("e2e4")  # Now black to move
-        probs = tf.nn.softmax(tf.random.uniform([1858]))
-        masked = converter.mask_illegal_moves(board, probs)
+        logits = tf.random.normal([1858])  # raw policy logits (may be negative)
+        masked = converter.mask_illegal_moves(board, logits)
         assert abs(float(tf.reduce_sum(masked).numpy()) - 1.0) < 1e-5
 
 
@@ -105,7 +105,7 @@ class TestOutputTensorToMove:
         board = chess.Board()
         converter.board = board
         # Create a fake network output with uniform distribution
-        network_output = tf.nn.softmax(tf.random.uniform([1858]))
+        network_output = tf.random.normal([1858])  # raw policy logits
         move_uci = converter.output_tensor_to_move(network_output)
         move = chess.Move.from_uci(move_uci)
         assert move in board.legal_moves
@@ -114,7 +114,7 @@ class TestOutputTensorToMove:
         board = chess.Board()
         board.push_uci("e2e4")
         converter.board = board
-        network_output = tf.nn.softmax(tf.random.uniform([1858]))
+        network_output = tf.random.normal([1858])  # raw policy logits
         move_uci = converter.output_tensor_to_move(network_output)
         move = chess.Move.from_uci(move_uci)
         assert move in board.legal_moves
@@ -122,7 +122,7 @@ class TestOutputTensorToMove:
     def test_returns_string(self, converter):
         board = chess.Board()
         converter.board = board
-        network_output = tf.nn.softmax(tf.random.uniform([1858]))
+        network_output = tf.random.normal([1858])  # raw policy logits
         move_uci = converter.output_tensor_to_move(network_output)
         assert isinstance(move_uci, str)
         assert 4 <= len(move_uci) <= 5

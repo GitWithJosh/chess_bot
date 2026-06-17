@@ -7,6 +7,36 @@ from keras import layers
 from monte_carlo_tree_search.mcts_v2 import MCTS
 from monte_carlo_tree_search.nodes_and_edges_v2 import Node
 from helpers.converter import Converter
+from helpers.move_encoding import gather_indices_from_lookup_path
+
+
+class PolicyGather(layers.Layer):
+    """Gather the per-move policy logits from the (8, 8, 73) conv output.
+
+    Non-trainable. Holds a fixed index map (built from move_lookup via the
+    AlphaZero move encoding) from each of the ``num_moves`` move indices to a
+    flat cell of the row-major-flattened policy planes. Output is raw logits
+    (no activation) — softmax is applied downstream (loss / masking / MCTS).
+    """
+
+    def __init__(self, gather_indices, **kwargs):
+        super().__init__(trainable=False, **kwargs)
+        self.gather_indices = np.asarray(gather_indices, dtype=np.int32)
+        self._idx = tf.constant(self.gather_indices, dtype=tf.int32)
+
+    def call(self, inputs):
+        batch = tf.shape(inputs)[0]
+        # row-major flatten matches the (from_rank, from_file, plane) index math
+        flat = tf.reshape(inputs, (batch, -1))
+        return tf.gather(flat, self._idx, axis=1)  # (batch, num_moves)
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], int(self.gather_indices.shape[0]))
+
+    def get_config(self):
+        cfg = super().get_config()
+        cfg["gather_indices"] = self.gather_indices.tolist()
+        return cfg
 
 
 class BigNetwork:
@@ -35,10 +65,11 @@ class BigNetwork:
     mean-subtraction; Leela's "convs have bias" describes the BN-folded
     inference graph).
 
-    Policy head
-    -----------
-    Two Conv layers (no activation), Flatten and a final Dense producing
-    `num_moves` logits (default 1858). Softmax activation on the final Dense.
+    Policy head  (Leela POLICY_CONVOLUTION)
+    ---------------------------------------
+    Conv(3x3)→BN→ReLU → Conv(1x1)→73 planes (linear) → fixed gather to
+    `num_moves` raw logits (default 1858). No FC, no output softmax — the
+    softmax is applied downstream (from_logits loss, legal-move masking, MCTS).
 
     Value head  (WDL — Win / Draw / Loss)
     --------------------------------------
@@ -56,6 +87,7 @@ class BigNetwork:
         num_moves: int = 1858,
         se_ratio: int = 8,
         learning_rate: float = 0.001,
+        lookup_path: str = "reinforcement_learning/move_lookup.json",
     ):
         self.input_shape = input_shape
         self.num_res_blocks = num_res_blocks
@@ -63,6 +95,15 @@ class BigNetwork:
         self.num_moves = num_moves
         self.se_ratio = se_ratio
         self.learning_rate = learning_rate
+
+        # Fixed move-index → policy-plane-cell map for the gather-based head.
+        # Built from move_lookup (validated bijection); not trainable.
+        self._policy_gather_idx = gather_indices_from_lookup_path(lookup_path)
+        if len(self._policy_gather_idx) != num_moves:
+            raise ValueError(
+                f"move_lookup has {len(self._policy_gather_idx)} moves but "
+                f"num_moves={num_moves}"
+            )
 
         self.model = self._build()
         self._compile()
@@ -143,23 +184,31 @@ class BigNetwork:
 
     def _build_policy_head(self, x):
         """
-        Policy head — outputs move probabilities over `num_moves` moves.
+        Policy head — outputs raw move logits over `num_moves` moves (Leela
+        POLICY_CONVOLUTION). No FC, no output activation.
 
-        Two Conv layers (the second projects to several planes), then Flatten
-        and a final Dense to produce the `num_moves`-dimensional distribution.
+            Conv(3x3) FILTERS → FILTERS → BN → ReLU
+            Conv(1x1) FILTERS → 73       (linear; the move-encoding planes)
+            gather    73x8x8 cells → num_moves logits   (fixed, non-trainable)
+
+        Softmax is applied downstream (loss uses from_logits, and
+        masking / MCTS softmax over legal moves).
         """
         x = layers.Conv2D(
             self.num_filters, 3, padding="same", use_bias=False, name="policy_conv1"
         )(x)
+        x = layers.BatchNormalization(name="policy_bn")(x)
+        x = layers.ReLU(name="policy_relu")(x)
+
+        # Final projection to the 73 move-encoding planes. Linear: this output IS
+        # the policy logit field, so no BN and no activation here. Bias kept
+        # (no BN after it, so it is a live parameter).
         x = layers.Conv2D(
-            73,  # 73 output planes matching the move encoding
-            1,
-            padding="same",
-            use_bias=False,
-            name="policy_conv2",
+            73, 1, padding="same", use_bias=True, name="policy_conv2"
         )(x)
-        x = layers.Flatten(name="policy_flatten")(x)
-        x = layers.Dense(self.num_moves, activation="softmax", name="policy_output")(x)
+
+        # Gather the per-move logits from the 73-plane field (parameter-free).
+        x = PolicyGather(self._policy_gather_idx, name="policy_output")(x)
         return x
 
     def _build_value_head(self, x):
@@ -217,12 +266,14 @@ class BigNetwork:
     def _compile(self):
         """
         Policy loss : categorical cross-entropy vs. MCTS visit distribution.
-        Value loss  : categorical cross-entropy vs. WDL one-hot game result.
+                      The policy head emits raw logits, so from_logits=True.
+        Value loss  : categorical cross-entropy vs. WDL one-hot game result
+                      (value head still emits softmax probabilities).
         """
         self.model.compile(
             optimizer=keras.optimizers.Adam(learning_rate=self.learning_rate),
             loss={
-                "policy_output": "categorical_crossentropy",
+                "policy_output": keras.losses.CategoricalCrossentropy(from_logits=True),
                 "value_output": "categorical_crossentropy",  # changed from MSE
             },
         )
@@ -239,8 +290,10 @@ class BigNetwork:
             board_tensor: numpy array of shape (8, 8, 20)
 
         Returns:
-            Tuple of (move_probabilities, wdl_probabilities)
-                move_probabilities : numpy array of shape (num_moves,)
+            Tuple of (move_logits, wdl_probabilities)
+                move_logits        : numpy array of shape (num_moves,) — RAW
+                    logits (not normalized); apply softmax over legal moves
+                    downstream (see Converter.mask_illegal_moves / MCTS).
                 wdl_probabilities  : numpy array of shape (3,)  — [win, draw, loss]
         """
         input_batch = np.expand_dims(board_tensor, axis=0).astype(np.float32)
@@ -256,7 +309,8 @@ class BigNetwork:
             board_tensors: array-like of shape (K, 8, 8, 20)
 
         Returns:
-            Tuple of (policies (K, num_moves), wdl_values (K, 3)) as numpy arrays.
+            Tuple of (policy_logits (K, num_moves), wdl_values (K, 3)) as numpy
+            arrays. Policy is RAW logits — softmax over legal moves downstream.
         """
         x = np.asarray(board_tensors, dtype=np.float32)
         policy, value = self._get_infer_fn()(x)

@@ -4,15 +4,17 @@ import numpy as np
 from reinforcement_learning.networks.big_network import BigNetwork
 
 
-def test_predict_shapes_and_probabilities():
+def test_predict_shapes_and_logits():
     net = BigNetwork(num_res_blocks=1, num_filters=8, learning_rate=0.01)
     board = np.random.rand(8, 8, 20).astype(np.float32)
     policy, value = net.predict(board)
 
     assert policy.shape == (net.num_moves,)
     assert value.shape == (3,)
-    assert np.all(policy >= 0)
-    assert np.isclose(policy.sum(), 1.0, atol=1e-5)
+    # Policy head emits RAW logits: finite, and NOT a normalized distribution.
+    assert np.all(np.isfinite(policy))
+    # Value head is still a softmax distribution over WDL.
+    assert np.all(value >= 0)
     assert np.isclose(value.sum(), 1.0, atol=1e-5)
 
 
