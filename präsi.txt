@@ -1,0 +1,32 @@
+Slide 0 (Titelfolie):
+//Kurz sagen dass unsere Idee war ein NN Schach spielen zu lassen und dabei Supervised und Reinforcmenet learning vergleichen
+
+Slide 1 (Literatur):
+- (Buch Cover) - Neural Networks For Chess von Dominik Klein
+- "Quelle für Schach Netwerk Topologien und Implementationen, darunter AlphaZero und LeelaChess0"
+- "Orientierung an LeelaChess0:"
+- "20 Layer Residual Conv Blocks mit 256 Filtern und Squeeze und Excitation Layers"
+- "MCTS als Search Function"
+- "Input Schachbrett als Bitboards"
+- "Policy Head und Value Head"
+- "Moves Left Head nicht verwendet"
+- "Policy Head gibt die Wahrscheinlichkeit für alle Moves aus"
+- "Value Head gibt die Evaluation des Spielstands aus"
+- "Netwerk mit ~30M Parametern"
+- "Für Details die LeelaChess0 Open Source Dokumentation (https://lczero.org/dev/backend/nn/)"
+
+Slide 2 (Supervised Learning):
+(Aktueller Stand)
+- "Trainiert auf Lichess Database Daten"
+- "~2TB an Schachspiele (910 Mio.) auf >=2700 ELO und nicht Bullet gefiltert"
+- "Resultat: 324k Schachspiele mit allen Zügen und das Endresult (WDL)"
+- "Training mit zufälliger Position, categorical crossentropy loss für one-hot encoded move target und WDL target"
+- "50k Positionen in einer Epoche, 100k Positionen für Validierung"
+- "Trainiert für 6 Stunden auf Kaggle GPU"
+(Was funktioniert gut)
+- "Policy-only gewinnt gegen Random Bot"
+(Was funktioniert nicht so gut)
+- "Value Head für MCTS ist stark biased zu Draw"
+(Next Steps)
+- "Vergleich Stockfish pro Position als Value Target"
+- "Vergleich gleiche WDL Verteilung in den Daten"

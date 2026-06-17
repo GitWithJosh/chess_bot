@@ -4,7 +4,7 @@ PGN → training tensors for BigNetwork supervised learning.
 Run from the chess_bot root directory:
     python supervised_learning/process_pgn_data.py
 
-Output: supervised_learning/processed_data/chunk_w{worker}_XXXX.npz
+Output: supervised_learning/processed_data/chunk_src_<pgn_stem>_XXXX.npz
 Each file contains:
     boards   : float16  (N, 8, 8, 112)
     policies : float32  (N, 1858)   — one-hot move vector
@@ -106,31 +106,46 @@ def worker_fn(args: tuple) -> tuple[int, int, int, int]:
     if not remaining:
         return worker_id, 0, 0, 0
 
-    chunk_prefix = f"w{worker_id}_"
-    chunk_idx = len(glob.glob(os.path.join(OUT_DIR, f"chunk_{chunk_prefix}*.npz")))
-
     boards_buf   = np.empty((CHUNK_SIZE, 8, 8, 112), dtype=np.float16)
     policies_buf = np.zeros((CHUNK_SIZE, 1858),       dtype=np.float32)
     values_buf   = np.empty((CHUNK_SIZE, 3),           dtype=np.float32)
     buf_idx = 0
 
+    # Chunks are named after the source PGN and numbered from zero within each
+    # file (both set at the top of each file's loop below). This makes a file's
+    # chunks identifiable by name, so an interrupted file's partial chunks can
+    # be deleted before it is reprocessed — even if round-robin re-assigns the
+    # file to a different worker on resume.
+    cur_stem = ""
+    file_chunk_idx = 0
+
     def _save():
-        nonlocal buf_idx, chunk_idx
-        path = os.path.join(OUT_DIR, f"chunk_{chunk_prefix}{chunk_idx:04d}.npz")
+        nonlocal buf_idx, file_chunk_idx
+        name = f"chunk_src_{cur_stem}_{file_chunk_idx:04d}.npz"
         np.savez_compressed(
-            path,
+            os.path.join(OUT_DIR, name),
             boards=boards_buf[:buf_idx],
             policies=policies_buf[:buf_idx],
             values=values_buf[:buf_idx],
         )
-        print(f"  [w{worker_id}] chunk_{chunk_prefix}{chunk_idx:04d}.npz  {buf_idx:,} positions", flush=True)
-        chunk_idx += 1
+        print(f"  [w{worker_id}] {name}  {buf_idx:,} positions", flush=True)
+        file_chunk_idx += 1
         buf_idx = 0
 
     total_games = total_pos = skipped = 0
 
     for pgn_path in remaining:
         pgn_name = os.path.basename(pgn_path)
+        cur_stem = os.path.splitext(pgn_name)[0]
+        file_chunk_idx = 0
+
+        # Drop any chunks left from an interrupted run of this file. A file is
+        # only marked done once fully flushed, so chunks on disk for a not-done
+        # file are stale (possibly written by another worker before round-robin
+        # re-assigned the file here). Removing them first prevents duplication.
+        for stale in glob.glob(os.path.join(OUT_DIR, f"chunk_src_{glob.escape(cur_stem)}_*.npz")):
+            os.remove(stale)
+
         print(f"  [w{worker_id}] {pgn_name} ...", flush=True)
         with open(pgn_path, encoding="utf-8", errors="replace") as fh:
             while True:
@@ -164,10 +179,14 @@ def worker_fn(args: tuple) -> tuple[int, int, int, int]:
 
                     board.push(move)
 
+        # Flush this file's buffered positions before marking it done, so the
+        # resume unit (a whole PGN file) matches the data unit (a chunk).
+        # Otherwise an interrupted file is reprocessed — and round-robin may
+        # hand it to a different worker — on resume, duplicating positions that
+        # were already saved to disk.
+        if buf_idx:
+            _save()
         _mark_done(worker_id, pgn_name)
-
-    if buf_idx:
-        _save()
 
     return worker_id, total_games, total_pos, skipped
 
@@ -197,7 +216,7 @@ if __name__ == "__main__":
     print(f"Found {len(pgn_files)} PGN files — {len(all_done)} already done, {len(remaining_total)} remaining\n")
 
     if not remaining_total:
-        total_chunks = len(glob.glob(os.path.join(OUT_DIR, "chunk_w*.npz")))
+        total_chunks = len(glob.glob(os.path.join(OUT_DIR, "chunk_src_*.npz")))
         print(f"All done — {total_chunks} chunk file(s) in {OUT_DIR}/")
         sys.exit(0)
 
@@ -215,7 +234,7 @@ if __name__ == "__main__":
     total_games = sum(r[1] for r in results)
     total_pos   = sum(r[2] for r in results)
     skipped     = sum(r[3] for r in results)
-    total_chunks = len(glob.glob(os.path.join(OUT_DIR, "chunk_w*.npz")))
+    total_chunks = len(glob.glob(os.path.join(OUT_DIR, "chunk_src_*.npz")))
     elapsed = time.time() - t0
 
     print(f"\n=== Done in {elapsed:.0f}s ===")

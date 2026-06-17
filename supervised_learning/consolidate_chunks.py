@@ -13,7 +13,7 @@ import numpy as np
 OUT_DIR    = os.path.join(os.path.dirname(os.path.abspath(__file__)), "processed_data")
 CHUNK_SIZE = 50_000
 
-src_files = sorted(glob.glob(os.path.join(OUT_DIR, "chunk_w*.npz")))
+src_files = sorted(glob.glob(os.path.join(OUT_DIR, "chunk_src_*.npz")))
 if not src_files:
     print("No worker chunk files found.")
     raise SystemExit
