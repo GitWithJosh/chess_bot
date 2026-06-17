@@ -27,9 +27,13 @@ class BigNetwork:
     Each SE block contains:
         Conv(3x3) → BN → ReLU
         Conv(3x3) → BN
-        SE attention: GlobalAvgPool → Dense(C/se_ratio, relu) → Dense(C, sigmoid)
-                      → channel-wise scale of the second conv output
+        SE attention: GlobalAvgPool → Dense(C/se_ratio, relu)
+                      → scale Dense(C, sigmoid) AND bias Dense(C, linear)
+                      → (scale · conv_out) + bias   (Leela multiplicative + additive SE)
         Add(shortcut) → ReLU
+    Body convs use no bias (a bias before BatchNorm is cancelled by BN's
+    mean-subtraction; Leela's "convs have bias" describes the BN-folded
+    inference graph).
 
     Policy head
     -----------
@@ -38,7 +42,8 @@ class BigNetwork:
 
     Value head  (WDL — Win / Draw / Loss)
     --------------------------------------
-    Conv(1x1) → BN → ReLU → Flatten → Dense(num_filters, relu) → Dense(3, softmax).
+    Conv(1x1, FILTERS→32) → BN → ReLU → Conv(8x8 valid, →128) → ReLU
+    → Flatten → Dense(3, softmax).
     The three outputs are the probabilities for winning, drawing, and losing.
     Loss: categorical cross-entropy against the actual game result one-hot vector.
     """
@@ -49,7 +54,7 @@ class BigNetwork:
         num_res_blocks: int = 20,
         num_filters: int = 256,
         num_moves: int = 1858,
-        se_ratio: int = 16,
+        se_ratio: int = 8,
         learning_rate: float = 0.001,
     ):
         self.input_shape = input_shape
@@ -71,21 +76,26 @@ class BigNetwork:
 
     def _build_se_block(self, x, block_name: str):
         """
-        Squeeze-and-Excitation residual block.
+        Squeeze-and-Excitation residual block (Leela-style, multiplicative + additive).
 
         Architecture:
             shortcut = x
             x = Conv(3x3) → BN → ReLU
             x = Conv(3x3) → BN
             # SE attention on x (before adding shortcut)
-            se = GlobalAvgPool(x)
-            se = Dense(C // se_ratio, relu)(se)
-            se = Dense(C, sigmoid)(se)          # per-channel scale in [0, 1]
-            x  = x * se                         # channel-wise rescaling
-            x  = Add([shortcut, x])
-            x  = ReLU(x)
+            se   = GlobalAvgPool(x)                 # (batch, C)
+            se   = Dense(C // se_ratio, relu)(se)
+            # Leela uses one FC → 2C split into a scale W and a bias B; here that
+            # is two parallel Dense(C) layers (mathematically identical, and it
+            # avoids slicing a single tensor).
+            Z    = Dense(C, sigmoid)(se)            # per-channel gate in [0, 1]
+            B    = Dense(C, linear)(se)             # per-channel additive bias
+            x    = x * Z + B                        # (Z × input) + B
+            x    = Add([shortcut, x])
+            x    = ReLU(x)
         """
         C = self.num_filters
+        bottleneck = max(1, C // self.se_ratio)
         shortcut = x
 
         # --- First conv ---
@@ -104,26 +114,29 @@ class BigNetwork:
         # --- Squeeze: global average pooling → (batch, C) ---
         se = layers.GlobalAveragePooling2D(name=f"{block_name}_se_squeeze")(x)
 
-        # --- Excitation: two FC layers ---
+        # --- Excitation bottleneck ---
         se = layers.Dense(
-            max(1, C // self.se_ratio),
+            bottleneck,
             activation="relu",
             use_bias=True,
             name=f"{block_name}_se_fc1",
         )(se)
-        se = layers.Dense(
-            C,
-            activation="sigmoid",
-            use_bias=True,
-            name=f"{block_name}_se_fc2",
+
+        # --- Scale (W → sigmoid) and additive bias (B → linear) ---
+        scale = layers.Dense(
+            C, activation="sigmoid", use_bias=True, name=f"{block_name}_se_scale_w"
+        )(se)
+        bias = layers.Dense(
+            C, activation=None, use_bias=True, name=f"{block_name}_se_bias_b"
         )(se)
 
         # --- Reshape to (batch, 1, 1, C) for broadcasting ---
-        se = layers.Reshape((1, 1, C), name=f"{block_name}_se_reshape")(se)
+        scale = layers.Reshape((1, 1, C), name=f"{block_name}_se_scale_reshape")(scale)
+        bias = layers.Reshape((1, 1, C), name=f"{block_name}_se_bias_reshape")(bias)
 
-        # --- Channel-wise scale + residual add ---
-        x = layers.Multiply(name=f"{block_name}_se_scale")([x, se])
-        x = layers.Add(name=f"{block_name}_add")([shortcut, x])
+        # --- (Z × input) + B, then residual skip, then ReLU ---
+        x = layers.Multiply(name=f"{block_name}_se_scale_mul")([x, scale])
+        x = layers.Add(name=f"{block_name}_se_add")([x, bias, shortcut])
         x = layers.ReLU(name=f"{block_name}_relu2")(x)
 
         return x
@@ -153,14 +166,23 @@ class BigNetwork:
         """
         Value head — outputs WDL probabilities (Win, Draw, Loss).
 
-        Single 1x1 conv for channel reduction, then two FC layers.
-        Softmax over three classes instead of a scalar tanh.
+        Leela VALUE_WDL common part (Conv → Conv → Dense):
+            Conv(1x1) FILTERS → 32          → BN → ReLU
+            Conv(8x8 valid) 32 → 128         → ReLU   (collapses the 8x8 board
+                                                       into a length-128 vector)
+            Dense 128 → 3, softmax
         """
-        x = layers.Conv2D(1, 1, use_bias=False, name="value_conv")(x)
+        # Channel-reduction conv (no bias: it is cancelled by the following BN)
+        x = layers.Conv2D(32, 1, use_bias=False, name="value_conv1")(x)
         x = layers.BatchNormalization(name="value_bn")(x)
-        x = layers.ReLU(name="value_relu")(x)
-        x = layers.Flatten(name="value_flatten")(x)
-        x = layers.Dense(self.num_filters, activation="relu", name="value_dense")(x)
+        x = layers.ReLU(name="value_relu1")(x)
+
+        # 8x8 'valid' conv spans the whole board → (1, 1, 128); a convolution
+        # producing the length-128 vector (not a Dense). Bias kept: no BN here.
+        x = layers.Conv2D(128, 8, padding="valid", use_bias=True, name="value_conv2")(x)
+        x = layers.ReLU(name="value_relu2")(x)
+
+        x = layers.Flatten(name="value_flatten")(x)  # (1, 1, 128) → 128
         x = layers.Dense(3, activation="softmax", name="value_output")(x)
         return x
 
