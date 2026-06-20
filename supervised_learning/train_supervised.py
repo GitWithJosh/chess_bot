@@ -94,7 +94,7 @@ FIRST_N_SAVE_ALL  = 12       # checkpoint every chunk for the first N processed
 SAVE_EVERY_MID    = 4        # then every Nth chunk until MID_UNTIL
 MID_UNTIL         = 40       # switch to SAVE_EVERY after this many chunks
 SAVE_EVERY        = 40       # thereafter, checkpoint every Nth chunk
-VAL_CHUNKS        = 4        # hold out this many chunks for validation (0 = off)
+VAL_CHUNKS        = 2        # hold out this many chunks for validation (0 = off); 2 x 50k = 100k
 SHUFFLE_SEED      = 42
 
 # TEMPORARY: cap training to the first N chunks of the shuffled order per epoch
@@ -105,11 +105,15 @@ CKPT_PREFIX  = "sl"
 STATE_FILE   = os.path.join(OUT_DIR, "train_state.json")
 METRICS_CSV  = os.path.join(OUT_DIR, "metrics.csv")
 
-# Learning-rate schedule: reduce on plateau (val_policy_acc, checked every chunk).
-LR_INIT       = 0.001  # starting LR — matches BigNetwork Adam default
+# Learning-rate schedule: reduce on plateau (val_loss, checked every chunk).
+LR_INIT       = 0.0001  # starting LR
 LR_FACTOR     = 0.5    # multiply by this on each plateau
-LR_PATIENCE   = 3      # consecutive chunks without improvement before reducing
+LR_PATIENCE   = 10      # consecutive chunks without improvement before reducing
 LR_MIN        = 1e-9   # floor
+
+# Decoupled weight decay (AdamW). AlphaZero used L2 = 1e-4; AdamW applies it
+# as decoupled decay (scaled by LR each step), which is the cleaner formulation.
+WEIGHT_DECAY  = 1e-4
 
 BEST_CKPT_PATH = os.path.join(OUT_DIR, "sl_best.weights.h5")
 
@@ -221,14 +225,18 @@ def main() -> None:
     print(f"Data dir  : {DATA_DIR}")
     print(f"Out dir   : {OUT_DIR}")
     print(f"Chunks    : {len(train_chunks)} train | {len(val_chunks)} val")
-    print(f"Epochs    : {EPOCHS} | batch {BATCH_SIZE}\n")
+    print(f"Epochs    : {EPOCHS} | batch {BATCH_SIZE}")
+    print(f"Optimizer : AdamW (lr {LR_INIT}, weight_decay {WEIGHT_DECAY})")
+    print(f"Per-chunk metrics are shown as train/val.\n")
 
     # --- Build model (same config as RL side) ---
     net = BigNetwork()
-    # Add a policy top-1 accuracy metric for monitoring move-match.
-    # Safe to recompile here: no training has happened, so optimizer state is empty.
+    # Recompile to (a) add a policy top-1 accuracy metric for move-match monitoring
+    # and (b) swap the optimizer to AdamW with decoupled weight decay (BigNetwork
+    # builds with plain Adam, no regularisation). Safe here: no training has
+    # happened yet, so there's no optimizer state to discard.
     net.model.compile(
-        optimizer=net.model.optimizer,
+        optimizer=keras.optimizers.AdamW(learning_rate=LR_INIT, weight_decay=WEIGHT_DECAY),
         loss={
             # MUST match BigNetwork._compile: the policy head emits RAW LOGITS, so
             # policy loss is from_logits=True. A plain "categorical_crossentropy"
@@ -243,7 +251,7 @@ def main() -> None:
     # --- Resume (restarts from the last CHECKPOINT, not the last fitted chunk,
     #     so no training is silently lost between checkpoint boundaries) ---
     current_lr       = LR_INIT
-    best_val_acc     = 0.0
+    best_val_loss    = float("inf")
     lr_plateau_count = 0
 
     state = _load_state()
@@ -258,7 +266,7 @@ def main() -> None:
             resume_skip        = state["pos_in_epoch"]
             global_chunk_count = state["global_chunk_count"]
             current_lr         = state.get("current_lr", LR_INIT)
-            best_val_acc       = state.get("best_val_acc", 0.0)
+            best_val_loss      = state.get("best_val_loss", float("inf"))
             lr_plateau_count   = state.get("lr_plateau_count", 0)
             _set_lr(net.model, current_lr)
             print(f"Resumed from {os.path.basename(ckpt)} "
@@ -344,7 +352,7 @@ def main() -> None:
             if val_data is not None:
                 # return_dict=True is required: in Keras 3, evaluate's metrics_names
                 # lumps per-output accuracy under a "compile_metrics" placeholder,
-                # so positional unpacking would drop val_policy_acc.
+                # so positional unpacking would drop the per-head metrics.
                 vmap = net.model.evaluate(
                     val_data[0], val_data[1], batch_size=BATCH_SIZE,
                     verbose=0, return_dict=True,  # type: ignore[arg-type]
@@ -354,12 +362,12 @@ def main() -> None:
                 row["val_value_loss"]  = round(vmap.get("value_output_loss", 0.0), 5)
                 row["val_policy_acc"]  = round(vmap.get("policy_output_accuracy", 0.0), 5)
 
-                val_acc = float(row["val_policy_acc"])
-                if val_acc > best_val_acc + 1e-4:
-                    best_val_acc     = val_acc
+                val_loss = float(row["val_loss"])
+                if val_loss < best_val_loss - 1e-4:
+                    best_val_loss    = val_loss
                     lr_plateau_count = 0
                     net.save(BEST_CKPT_PATH)
-                    print(f"    new best val pacc {val_acc:.5f} → sl_best.weights.h5",
+                    print(f"    new best val loss {val_loss:.5f} → sl_best.weights.h5",
                           flush=True)
                 else:
                     lr_plateau_count += 1
@@ -377,11 +385,18 @@ def main() -> None:
 
             _append_metrics(row, metrics_header)
 
+            # Per-chunk line shows train/val side by side for both heads, so over-
+            # vs under-fitting is readable live (not just in metrics.csv).
+            def _pair(train, val):
+                """'train/val' if a validation set exists, else just 'train'."""
+                return f"{train}" if val == "" else f"{train}/{val}"
+
             msg = (f"[e{epoch} {pos_in_epoch+1}/{len(order)}] "
-                   f"{row['chunk_file']}  loss {row['loss']}  "
-                   f"pacc {row['policy_acc']}  ({row['seconds']}s)")
-            if row["val_policy_acc"] != "":
-                msg += f"  | val pacc {row['val_policy_acc']}  lr {current_lr:.1e}"
+                   f"{row['chunk_file']}  ({row['seconds']}s)  lr {current_lr:.1e}  | "
+                   f"loss {_pair(row['loss'], row['val_loss'])}  "
+                   f"pacc {_pair(row['policy_acc'], row['val_policy_acc'])}  "
+                   f"ploss {_pair(row['policy_loss'], row['val_policy_loss'])}  "
+                   f"vloss {_pair(row['value_loss'], row['val_value_loss'])}")
             print(msg, flush=True)
 
             if do_ckpt:
@@ -395,7 +410,7 @@ def main() -> None:
                     "global_chunk_count": global_chunk_count,
                     "last_checkpoint":    ckpt_path,
                     "current_lr":         current_lr,
-                    "best_val_acc":       best_val_acc,
+                    "best_val_loss":      best_val_loss,
                     "lr_plateau_count":   lr_plateau_count,
                 })
                 print(f"    saved {os.path.basename(ckpt_path)}", flush=True)
