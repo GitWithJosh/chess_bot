@@ -223,3 +223,6 @@ __marimo__/
 *.pgn
 *.npz
 *.weights.h5
+*.csv
+*.rtbw
+*.rtbz 
