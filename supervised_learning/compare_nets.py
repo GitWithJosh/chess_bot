@@ -29,13 +29,16 @@ import random
 import sys
 
 # ============================ CONFIG — edit, then run ============================
-NET_A = "supervised_learning/checkpoints/sl_new.weights.h5"   # usually the newer net
-NET_B = "supervised_learning/checkpoints/sl_best.weights.h5"  # the baseline
-MODE = "both"        # "raw" | "mcts" | "both"
-SIMS = 200           # MCTS simulations per move
+NET_A = "supervised_learning/checkpoints/sl_best.weights.h5"   # usually the newer net
+NET_B = "supervised_learning/checkpoints/old_sl_best.weights.h5"  # the baseline
+MODE = "raw"        # "raw" | "mcts" | "both"
+SIMS = 150           # MCTS simulations per move
 BATCH_SIZE = 16      # MCTS leaf batch size
-OPENINGS = 25        # distinct random openings; total games = 2 x this, per mode
-OPENING_PLIES = 4    # random plies used to seed each opening
+OPENINGS = {         # distinct random openings per mode; total games = 2 x this
+    "raw": 50,      # raw policy is one forward pass per move -> cheap, play lots
+    "mcts": 8,      # mcts is ~200 sims per move -> expensive, keep modest (esp. CPU)
+}
+OPENING_PLIES = 3    # random plies used to seed each opening
 SEED = 7
 OUT_DIR = os.path.join("supervised_learning", "results")
 MAX_PLIES = 400      # adjudicate a draw past this so a shuffling net can't hang the match
@@ -79,7 +82,15 @@ def raw_move(net: BigNetwork, converter: Converter, board: chess.Board) -> chess
     move_uci = converter._get_move_from_index(best_index)
     if board.turn == chess.BLACK:
         move_uci = mirror_move_uci(move_uci)
-    return chess.Move.from_uci(move_uci)
+    move = chess.Move.from_uci(move_uci)
+    # Queen promotions are stored in the lookup without the 'q' suffix, so a
+    # decoded pawn push to the back rank comes back with promotion=None. Restore
+    # the queen, else board.san() writes an illegal bare 'b1' that breaks PGN parsing.
+    if (move.promotion is None
+            and chess.square_rank(move.to_square) in (0, 7)
+            and board.piece_type_at(move.from_square) == chess.PAWN):
+        move = chess.Move(move.from_square, move.to_square, promotion=chess.QUEEN)
+    return move
 
 
 def select_move(net, converter, board, mode, sims, batch_size):
@@ -205,10 +216,12 @@ def main():
 
     modes = ["raw", "mcts"] if MODE == "both" else [MODE]
     for mode in modes:
-        print(f"\n=== Match ({mode}{', ' + str(SIMS) + ' sims' if mode == 'mcts' else ''}) ===")
+        openings = OPENINGS[mode]
+        print(f"\n=== Match ({mode}{', ' + str(SIMS) + ' sims' if mode == 'mcts' else ''}, "
+              f"{openings} openings -> {2 * openings} games) ===")
         a_scores, games = run_match(
             net_a, net_b, name_a, name_b, converter, mode, SIMS,
-            BATCH_SIZE, OPENINGS, OPENING_PLIES, SEED,
+            BATCH_SIZE, openings, OPENING_PLIES, SEED,
         )
         print("\n" + summarize(a_scores, name_a, name_b))
         save_pgn(games, os.path.join(OUT_DIR, f"match_{name_a}_vs_{name_b}_{mode}.pgn"))

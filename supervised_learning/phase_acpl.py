@@ -30,10 +30,10 @@ import chess.engine
 import chess.pgn
 
 # ============================ CONFIG — edit, then run ============================
-PGNS = ["supervised_learning/results/match_*_mcts.pgn"]  # path(s) or glob(s)
+PGNS = ["supervised_learning/results/match_*.pgn"]  # path(s) or glob(s)
 DEPTH = 12          # Stockfish search depth per position
 STOCKFISH = None    # None = auto-detect (PATH, $STOCKFISH_PATH, C:\stockfish\stockfish.exe)
-MAX_GAMES = None    # cap games per file (None = all); set small to dry-run
+MAX_GAMES = 200      # cap games per file (None = all); analyzing all 1000 is too slow
 THREADS = 1         # Stockfish Threads option
 HASH_MB = 128       # Stockfish Hash (MB)
 # ================================================================================
