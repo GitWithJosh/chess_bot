@@ -2,10 +2,10 @@
 Assemble game + puzzle + tablebase manifests into balanced training chunks.
 
 Run from the chess_bot root (after the three extractors have produced pools/):
-    python supervised_learning/process_game_data.py
-    python supervised_learning/process_puzzle_data.py
-    python supervised_learning/process_tablebase_data.py
-    python supervised_learning/build_dataset.py
+    python supervised_learning/create_dataset/process_game_data.py
+    python supervised_learning/create_dataset/process_puzzle_data.py
+    python supervised_learning/create_dataset/process_tablebase_data.py
+    python supervised_learning/create_dataset/build_dataset.py
 
 Every output chunk (50k positions) is simultaneously:
     * source-mixed  85% games / 10% puzzles / 5% tablebase, and

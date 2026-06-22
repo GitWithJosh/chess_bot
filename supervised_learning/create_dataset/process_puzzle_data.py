@@ -2,8 +2,8 @@
 Lichess puzzle CSV -> puzzle manifest (fen,move_idx,wdl rows).
 
 Run from the chess_bot root:
-    python supervised_learning/process_puzzle_data.py            # full run
-    python supervised_learning/process_puzzle_data.py 50000      # test: first 50k CSV rows
+    python supervised_learning/create_dataset/process_puzzle_data.py          # full run
+    python supervised_learning/create_dataset/process_puzzle_data.py 50000    # test: first 50k CSV rows
 
 Puzzle convention (Lichess): the FEN is the position BEFORE the opponent's
 setup move. Moves[0] is that setup move (the opponent's blunder reply); the

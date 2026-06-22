@@ -2,11 +2,11 @@
 PGN games -> game manifest shards (fen,move_idx,wdl rows).
 
 Run from the chess_bot root:
-    python supervised_learning/process_game_data.py            # full run
-    python supervised_learning/process_game_data.py 3          # test: first 3 PGN files
+    python supervised_learning/create_dataset/process_game_data.py        # full run
+    python supervised_learning/create_dataset/process_game_data.py 3      # test: first 3 PGN files
 
-Same parsing/labelling as process_pgn_data.py (every mainline position, WDL from
-the game result relative to the side to move), but instead of writing encoded
+Same parsing/labelling as the old PGN-only path (every mainline position, WDL
+from the game result relative to the side to move), but instead of writing encoded
 chunks it emits the lightweight manifest the assembler (build_dataset.py) mixes
 and balances. Board encoding is deferred to the assembler so it only runs on the
 positions actually kept after 33/33/33 balancing — not all ~22M.

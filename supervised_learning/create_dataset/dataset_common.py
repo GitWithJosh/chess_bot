@@ -17,8 +17,9 @@ train_supervised.py expects:
     values   float32 (3,)        one-hot [win, draw, loss] at wdl
 
 Keeping move-indexing, board encoding and the WDL convention in ONE place is
-what guarantees puzzle/TB/game samples are byte-identical to the existing
-PGN-only path (process_pgn_data.py), so the network sees a consistent encoding.
+what guarantees game/puzzle/TB samples encode byte-identically to the
+inference-time Converter (verified by inspect/verify_pipeline.py), so the
+network sees a consistent encoding at train and play time.
 """
 
 import os
@@ -32,7 +33,7 @@ WDL_WIN, WDL_DRAW, WDL_LOSS = 0, 1, 2
 N_WDL = 3
 POLICY_SIZE = 1858
 
-_ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+_ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
 
 def repo_root() -> str:

@@ -2,8 +2,8 @@
 Syzygy endgame tablebase -> mate-sequence manifest (fen,move_idx,wdl rows).
 
 Run from the chess_bot root:
-    python supervised_learning/process_tablebase_data.py            # full run
-    python supervised_learning/process_tablebase_data.py 20000      # test: ~20k positions
+    python supervised_learning/create_dataset/process_tablebase_data.py        # full run
+    python supervised_learning/create_dataset/process_tablebase_data.py 20000  # test: ~20k positions
 
 Idea (the "sense of goal" data): pick a decisive <=5-piece material config, set
 up a random legal position, then play the tablebase-optimal line and record
