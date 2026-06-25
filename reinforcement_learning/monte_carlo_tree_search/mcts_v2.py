@@ -1,11 +1,14 @@
-"""Monte Carlo Tree Search for AlphaZero-style chess self-play."""
-import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # CPU-only self-play
-os.environ["OMP_NUM_THREADS"] = "1"        # one TF thread per worker — avoids oversubscription
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"   # quiet the logs from each worker
+"""Monte Carlo Tree Search for AlphaZero-style chess self-play.
+
+Includes:
+  - Sequential MCTS (``search``) and batched virtual-loss MCTS (``search_batched``)
+    that evaluates leaves in groups for efficient GPU use.
+  - ``SelfPlayGame``: one self-play game with optional resignation adjudication
+    and a PGN record of the moves played.
+  - ``play_games_parallel``: generate several games across CPU processes.
+"""
 
 import multiprocessing as mp
-
 from typing import Any
 
 import chess
@@ -32,23 +35,20 @@ class MCTS:
         self,
         network: Any,
         converter: Converter,
-        max_moves: int = 150,
         num_simulations: int = 100,
-
         c_puct: float = 1.5,
         dirichlet_alpha: float = 0.3,
         dirichlet_epsilon: float = 0.25,
     ):
         self.network = network
         self.converter = converter
-        self.max_moves = max_moves
         self.num_simulations = num_simulations
         self.c_puct = c_puct
         self.dirichlet_alpha = dirichlet_alpha
         self.dirichlet_epsilon = dirichlet_epsilon
 
     def search(self, root: Node, add_noise: bool = True) -> Node:
-        """Run MCTS simulations from the given root node.
+        """Run sequential MCTS simulations (one leaf eval per network call).
 
         Args:
             root: The root node to search from
@@ -100,6 +100,99 @@ class MCTS:
             # negated value (opponent's loss is my gain).
             value = -value
             edge.update(value)
+
+    def search_batched(
+        self, root: Node, add_noise: bool = False, batch_size: int = 16
+    ) -> Node:
+        """MCTS that batches leaf evaluations to use the GPU efficiently.
+
+        Plain MCTS evaluates one leaf per network call (batch size 1), which
+        leaves a deep ResNet's GPU mostly idle. Here we collect up to
+        ``batch_size`` leaves per round using *virtual loss* (a temporary penalty
+        on each selected path so concurrent selections diverge to different
+        leaves), evaluate them all in a single network call, then back up.
+
+        Equivalent in search quality to the sequential version for typical
+        batch sizes, but far higher throughput on GPU.
+
+        Args:
+            root: Root node to search from.
+            add_noise: Add Dirichlet noise to root priors (self-play exploration).
+            batch_size: Max leaves gathered per network call.
+
+        Returns:
+            The root node with updated visit counts.
+        """
+        if root.is_terminal:
+            return root
+        if root.is_leaf:
+            root.expand(self.network, self.converter)
+        if add_noise and len(root.edges) > 0:
+            self._add_dirichlet_noise(root)
+
+        sims_done = 0
+        while sims_done < self.num_simulations:
+            n_this = min(batch_size, self.num_simulations - sims_done)
+
+            leaves: list[Node] = []          # unique nodes needing a network eval
+            leaf_index: dict[int, int] = {}  # id(node) -> position in `leaves`
+            pending: list[tuple[list[Edge], Node]] = []  # (path, leaf) per sim
+
+            for _ in range(n_this):
+                node = root
+                path: list[Edge] = []
+
+                # SELECT — walk down with virtual loss until a leaf/terminal
+                while not node.is_leaf and not node.is_terminal:
+                    edge = node.select_edge(self.c_puct)
+                    edge.add_virtual_loss()
+                    path.append(edge)
+                    node = node.get_child_node(edge)
+
+                if node.is_terminal:
+                    # No network eval needed; back up the exact value now.
+                    self._backpropagate_batched(path, node.terminal_value)
+                    continue
+
+                if id(node) not in leaf_index:
+                    leaf_index[id(node)] = len(leaves)
+                    leaves.append(node)
+                pending.append((path, node))
+
+            if not leaves:
+                sims_done += n_this
+                continue
+
+            # EVALUATE — one batched network call for all distinct leaves
+            tensors = [self.converter.board_to_input_tensor(n.board) for n in leaves]
+            policies, values = self.network.predict_batch(tensors)
+
+            # EXPAND each distinct leaf once
+            for node in leaves:
+                if node.is_leaf:
+                    idx = leaf_index[id(node)]
+                    node.expand_from_eval(policies[idx], self.converter)
+
+            scalars = [Node._scalar_value(values[i]) for i in range(len(leaves))]
+
+            # BACKUP — every collected sim, using its leaf's value
+            for path, node in pending:
+                self._backpropagate_batched(path, scalars[leaf_index[id(node)]])
+
+            sims_done += n_this
+
+        return root
+
+    def _backpropagate_batched(self, search_path: list[Edge], value: float):
+        """Back up through a path that had virtual loss applied during selection.
+
+        Same sign-flipping as _backpropagate, but uses
+        revert_virtual_loss_and_update so the virtual loss added in the SELECT
+        phase is undone (N stays, the -1 is removed and the real value folded in).
+        """
+        for edge in reversed(search_path):
+            value = -value
+            edge.revert_virtual_loss_and_update(value)
 
     def _add_dirichlet_noise(self, root: Node):
         """Add Dirichlet noise to root node priors for exploration.
@@ -169,31 +262,36 @@ class SelfPlayGame:
         mcts: The MCTS instance to use for search
         temperature_threshold: Move number after which temperature drops to 0
         max_moves: Maximum number of moves before declaring a draw
+        resign_threshold: Resign if the best edge's Q stays below this for
+            ``resign_moves`` consecutive moves. None disables resignation.
+        resign_moves: Consecutive below-threshold moves required to resign.
+        search_batch_size: Leaves per batched network call during search. 1 is
+            effectively sequential (fine on CPU); higher helps on GPU.
     """
 
     def __init__(
         self,
         mcts: MCTS,
         temperature_threshold: int = 30,
-        max_moves: int = 300,
-        resign_threshold: float = None, # Set None to disable, or ~-0.9
-        resign_moves: int = 4,         # Consecutive moves below threshold before resigning
+        max_moves: int = 150,
+        resign_threshold: float | None = None,
+        resign_moves: int = 4,
+        search_batch_size: int = 8,
     ):
         self.mcts = mcts
         self.temperature_threshold = temperature_threshold
         self.max_moves = max_moves
         self.resign_threshold = resign_threshold
         self.resign_moves = resign_moves
-
-        self.record = None
-
+        self.search_batch_size = search_batch_size
+        self.record = None  # populated by play(): result, move count, PGN, etc.
 
     def play(self) -> list[dict]:
         """Play a full self-play game and return training data.
 
         Returns:
             List of dicts, each containing:
-                - board_tensor: numpy array (8, 8, 112)
+                - board_tensor: numpy array (8, 8, 20)
                 - policy_target: numpy array (1858,)
                 - value_target: float (-1, 0, or 1) from the perspective of the side to move
         """
@@ -204,13 +302,14 @@ class SelfPlayGame:
         resign_count = 0
         resigned_side = None
 
-
         while not board.is_game_over() and move_count < self.max_moves:
             # Pick temperature based on move number
             temperature = 1.0 if move_count < self.temperature_threshold else 0.0
 
-            # Run MCTS
-            root = self.mcts.search(root, add_noise=True)
+            # Run MCTS (batched leaf evaluation)
+            root = self.mcts.search_batched(
+                root, add_noise=True, batch_size=self.search_batch_size
+            )
 
             # --- Adjudication: resign if the side to move is hopelessly lost ---
             if self.resign_threshold is not None and root.edges:
@@ -222,8 +321,7 @@ class SelfPlayGame:
                 if resign_count >= self.resign_moves:
                     resigned_side = board.turn  # this side gives up; opponent wins
                     break
-        # ------------------------------------------------------------------
-
+            # ------------------------------------------------------------------
 
             # Store training sample (before making the move)
             board_tensor = self.mcts.converter.board_to_input_tensor(board)
@@ -238,7 +336,6 @@ class SelfPlayGame:
 
             # Select and play the move
             move = self.mcts.get_best_move(root, temperature=temperature)
-
             board.push(move)
             move_count += 1
 
@@ -251,8 +348,8 @@ class SelfPlayGame:
         # Determine game outcome
         result = self._get_game_result(board, move_count, resigned_side)
         print(f"  Game over after {move_count} moves: {result}")
-        
-        # Build a PGN record of the game for logging (board holds the full move stack)
+
+        # Build a PGN record of the game for logging (board holds the move stack)
         game_node = chess.pgn.Game.from_board(board)
         game_node.headers["Event"] = "self-play"
         game_node.headers["Result"] = result
@@ -267,7 +364,10 @@ class SelfPlayGame:
         # Assign value targets based on game outcome
         return self._assign_values(training_data, result)
 
-    def _get_game_result(self, board: chess.Board, move_count: int, resigned_side=None) -> str:
+    def _get_game_result(
+        self, board: chess.Board, move_count: int, resigned_side=None
+    ) -> str:
+        """Get the game result string."""
         if resigned_side is not None:
             return "0-1" if resigned_side == chess.WHITE else "1-0"
         if move_count >= self.max_moves:
@@ -295,47 +395,78 @@ class SelfPlayGame:
 
         return training_data
 
+
+# ----------------------------------------------------------------------
+# Parallel self-play across CPU processes
+# ----------------------------------------------------------------------
+
 def _selfplay_worker(args):
-    (weight_path, lookup_path, num_simulations, num_res_blocks,
-     num_filters, n_games, max_moves, temperature_threshold, seed) = args
+    # Limit each worker to a single TF thread BEFORE importing TensorFlow, so N
+    # workers use N cores cleanly instead of each grabbing all of them.
+    import os
+    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["TF_NUM_INTRAOP_THREADS"] = "1"
+    os.environ["TF_NUM_INTEROP_THREADS"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"   # CPU-only workers
 
-    np.random.seed(seed)  # CRITICAL: without distinct seeds every worker plays identical games
+    (weight_path, lookup_path, num_simulations, num_res_blocks, num_filters,
+     n_games, max_moves, temperature_threshold, resign_threshold,
+     search_batch_size, seed) = args
 
-    from networks.big_network import BigNetwork
-    network = BigNetwork(num_res_blocks=num_res_blocks, num_filters=num_filters)
+    np.random.seed(seed) # distinct seed per worker, else identical games
+
+    # Lazy import: keep TensorFlow out of the parent until a worker needs it.
+    from reinforcement_learning.networks.big_network import BigNetwork
+    network = BigNetwork(
+        num_res_blocks=num_res_blocks,
+        num_filters=num_filters,
+        lookup_path=lookup_path,
+    )
     if weight_path:
         network.load(weight_path)
 
     converter = Converter(lookup_path=lookup_path)
     mcts = MCTS(network=network, converter=converter, num_simulations=num_simulations)
 
-    games = []
+    games, records = [], []
     for _ in range(n_games):
-        game = SelfPlayGame(mcts, temperature_threshold=temperature_threshold,
-                            max_moves=max_moves)
+        game = SelfPlayGame(
+            mcts,
+            temperature_threshold=temperature_threshold,
+            max_moves=max_moves,
+            resign_threshold=resign_threshold,
+            search_batch_size=search_batch_size,
+        )
         games.append(game.play())
-    return games
+        records.append(game.record)
+    return games, records
+
 
 def play_games_parallel(
     n_games: int,
     weight_path: str,
     lookup_path: str,
     num_simulations: int,
-    num_res_blocks: int = 10,
+    num_res_blocks: int = 20,
     num_filters: int = 256,
     num_workers: int = None,
     max_moves: int = 150,
     temperature_threshold: int = 30,
+    resign_threshold: float | None = None,
+    search_batch_size: int = 8,
 ):
     """Generate n_games of self-play across processes.
 
-    Returns a list of games, each a list of position-sample dicts
-    (same nested shape as the old play_n_games — flatten before training).
+    Returns:
+        (games, records)
+          games   : list of games, each a list of position-sample dicts
+                    (flatten before training)
+          records : matching list of PGN record dicts (one per game)
     """
     if num_workers is None:
         num_workers = mp.cpu_count()
 
-    # Split games across workers (each worker plays several to amortize TF startup)
+    # Split games across workers (each plays several to amortize TF startup)
     per_worker = [n_games // num_workers] * num_workers
     for i in range(n_games % num_workers):
         per_worker[i] += 1
@@ -343,8 +474,9 @@ def play_games_parallel(
 
     seeds = np.random.randint(0, 2**31 - 1, size=len(per_worker))
     args = [
-        (weight_path, lookup_path, num_simulations, num_res_blocks,
-         num_filters, g, max_moves, temperature_threshold, int(seeds[i]))
+        (weight_path, lookup_path, num_simulations, num_res_blocks, num_filters,
+         g, max_moves, temperature_threshold, resign_threshold,
+         search_batch_size, int(seeds[i]))
         for i, g in enumerate(per_worker)
     ]
 
@@ -352,103 +484,6 @@ def play_games_parallel(
     with ctx.Pool(processes=len(args)) as pool:
         results = pool.map(_selfplay_worker, args)
 
-    return [game for worker_games in results for game in worker_games]
-
-
-def play_n_games(n:int, load_network:bool, network_path:str, mcts:MCTS, converter:Converter, network):
-
-    print(f"Initializing network and converter to play {n} games...")
-    if load_network:
-        network.load(network_path)
-
-    training_data = []
-
-    for i in range(n):
-        game = SelfPlayGame(mcts, temperature_threshold=30, max_moves=300)
-        game_data = game.play()
-        training_data.append(game_data)
-
-        print(f"Game {1} finished")
-
-    return training_data
-
-def train_on_game_batch(batch_size:int, weight_file):
-
-    from networks.smaller_network import SmallerNetwork
-    network = SmallerNetwork(num_res_blocks=5, num_filters=128)
-    converter = Converter()
-    mcts = MCTS(
-        network=network,
-        converter=converter,
-        num_simulations=10
-    )
-    training_data = play_n_games(batch_size,True,weight_file,mcts,converter, network)
-
-    print("\nTraining on collected data...")
-
-    # TODO: DOES NOT WORK YET as training data is nested, list comprehension needs to b adjusted
-    board_tensors = np.array([s["board_tensor"] for s in training_data])
-    policy_targets = np.array([s["policy_target"] for s in training_data])
-    value_targets = np.array([[s["value_target"]] for s in training_data], dtype=np.float32)
-
-    history = network.train(
-        board_tensors, policy_targets, value_targets,
-        epochs=1, batch_size=32, verbose=1,
-    )
-    print(f"Training loss: {history.history['loss'][0]:.4f}")
-
-def play_single_game():
-    """Play one self-play game and print the results."""
-    import time
-    from reinforcement_learning.networks.big_network import BigNetwork
-
-    print("Initializing network and converter...")
-    network = BigNetwork(num_res_blocks=10, num_filters=256)
-    converter = Converter()  # add lookup_path=... if not running from repo root
-
-    mcts = MCTS(
-        network=network,
-        converter=converter,
-        num_simulations=10,  # low for a speed test; use 100+ for real games
-    )
-
-    game = SelfPlayGame(
-        mcts,
-        temperature_threshold=30,
-        max_moves=150,
-        resign_threshold=None,  # explicitly disabled
-    )
-
-    print("Starting self-play game...")
-    t0 = time.perf_counter()
-    training_data = game.play()
-    elapsed = time.perf_counter() - t0
-
-    print(f"\nGame finished in {elapsed:.1f}s "
-          f"({elapsed / max(len(training_data), 1):.2f}s per position)")
-    print(f"Collected {len(training_data)} training samples")
-    print(f"  Board tensor shape: {training_data[0]['board_tensor'].shape}")
-    print(f"  Policy target sum:  {training_data[0]['policy_target'].sum():.4f}")
-    print(f"  Value target:       {training_data[0]['value_target']}")
-
-    # Show how to train the network from this data
-    # print("\nTraining on collected data...")
-    # board_tensors = np.array([s["board_tensor"] for s in training_data])
-    # policy_targets = np.array([s["policy_target"] for s in training_data])
-    # value_targets = np.array(
-    #     [[s["value_target"]] for s in training_data], dtype=np.float32
-    # )
-
-    # history = network.train(
-    #     board_tensors,
-    #     policy_targets,
-    #     value_targets,
-    #     epochs=1,
-    #     batch_size=32,
-    #     verbose=1,
-    # )
-    # print(f"Training loss: {history.history['loss'][0]:.4f}")
-
-
-if __name__ == "__main__":
-    play_single_game()
+    all_games = [game for worker_games, _ in results for game in worker_games]
+    all_records = [rec for _, worker_records in results for rec in worker_records]
+    return all_games, all_records

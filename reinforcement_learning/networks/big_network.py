@@ -1,13 +1,42 @@
 import chess
 import numpy as np
+import tensorflow as tf
 import keras
 from keras import layers
-#import tensorflow as tf
-
 
 from reinforcement_learning.monte_carlo_tree_search.mcts_v2 import MCTS
 from reinforcement_learning.monte_carlo_tree_search.nodes_and_edges_v2 import Node
 from reinforcement_learning.helpers.converter import Converter
+from reinforcement_learning.helpers.move_encoding import gather_indices_from_lookup_path
+
+
+class PolicyGather(layers.Layer):
+    """Gather the per-move policy logits from the (8, 8, 73) conv output.
+
+    Non-trainable. Holds a fixed index map (built from move_lookup via the
+    AlphaZero move encoding) from each of the ``num_moves`` move indices to a
+    flat cell of the row-major-flattened policy planes. Output is raw logits
+    (no activation) — softmax is applied downstream (loss / masking / MCTS).
+    """
+
+    def __init__(self, gather_indices, **kwargs):
+        super().__init__(trainable=False, **kwargs)
+        self.gather_indices = np.asarray(gather_indices, dtype=np.int32)
+        self._idx = tf.constant(self.gather_indices, dtype=tf.int32)
+
+    def call(self, inputs):
+        batch = tf.shape(inputs)[0]
+        # row-major flatten matches the (from_rank, from_file, plane) index math
+        flat = tf.reshape(inputs, (batch, -1))
+        return tf.gather(flat, self._idx, axis=1)  # (batch, num_moves)
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], int(self.gather_indices.shape[0]))
+
+    def get_config(self):
+        cfg = super().get_config()
+        cfg["gather_indices"] = self.gather_indices.tolist()
+        return cfg
 
 
 class BigNetwork:
@@ -19,8 +48,8 @@ class BigNetwork:
 
     Input
     -----
-    Shape: (8, 8, 112)  — channels-last, matching TensorFlow/Keras defaults.
-    The 112 planes encode the board history used by AlphaZero/Leela.
+    Shape: (8, 8, 20)  — channels-last, matching TensorFlow/Keras defaults.
+    The 20 planes encode the current position only (no move history).
 
     Residual tower
     --------------
@@ -28,30 +57,37 @@ class BigNetwork:
     Each SE block contains:
         Conv(3x3) → BN → ReLU
         Conv(3x3) → BN
-        SE attention: GlobalAvgPool → Dense(C/se_ratio, relu) → Dense(C, sigmoid)
-                      → channel-wise scale of the second conv output
+        SE attention: GlobalAvgPool → Dense(C/se_ratio, relu)
+                      → scale Dense(C, sigmoid) AND bias Dense(C, linear)
+                      → (scale · conv_out) + bias   (Leela multiplicative + additive SE)
         Add(shortcut) → ReLU
+    Body convs use no bias (a bias before BatchNorm is cancelled by BN's
+    mean-subtraction; Leela's "convs have bias" describes the BN-folded
+    inference graph).
 
-    Policy head
-    -----------
-    Two Conv layers (no activation), Flatten and a final Dense producing
-    `num_moves` logits (default 1858). Softmax activation on the final Dense.
+    Policy head  (Leela POLICY_CONVOLUTION)
+    ---------------------------------------
+    Conv(3x3)→BN→ReLU → Conv(1x1)→73 planes (linear) → fixed gather to
+    `num_moves` raw logits (default 1858). No FC, no output softmax — the
+    softmax is applied downstream (from_logits loss, legal-move masking, MCTS).
 
     Value head  (WDL — Win / Draw / Loss)
     --------------------------------------
-    Conv(1x1) → BN → ReLU → Flatten → Dense(num_filters, relu) → Dense(3, softmax).
+    Conv(1x1, FILTERS→32) → BN → ReLU → Conv(8x8 valid, →128) → ReLU
+    → Flatten → Dense(3, softmax).
     The three outputs are the probabilities for winning, drawing, and losing.
     Loss: categorical cross-entropy against the actual game result one-hot vector.
     """
 
     def __init__(
         self,
-        input_shape: tuple = (8, 8, 112),
-        num_res_blocks: int = 10,
+        input_shape: tuple = (8, 8, 20),
+        num_res_blocks: int = 20,
         num_filters: int = 256,
         num_moves: int = 1858,
-        se_ratio: int = 16,
+        se_ratio: int = 8,
         learning_rate: float = 0.001,
+        lookup_path: str = "reinforcement_learning/move_lookup.json",
     ):
         self.input_shape = input_shape
         self.num_res_blocks = num_res_blocks
@@ -60,13 +96,20 @@ class BigNetwork:
         self.se_ratio = se_ratio
         self.learning_rate = learning_rate
 
-        # self._infer = tf.function(
-        #     lambda x: self.model(x, training=False),
-        #     reduce_retracing=True,
-        # )
+        # Fixed move-index → policy-plane-cell map for the gather-based head.
+        # Built from move_lookup (validated bijection); not trainable.
+        self._policy_gather_idx = gather_indices_from_lookup_path(lookup_path)
+        if len(self._policy_gather_idx) != num_moves:
+            raise ValueError(
+                f"move_lookup has {len(self._policy_gather_idx)} moves but "
+                f"num_moves={num_moves}"
+            )
 
         self.model = self._build()
         self._compile()
+
+        self._infer_fn = None          # cached tf.function (see _get_infer_fn)
+        self._search_converter = None  # reused across search_for_best_move calls
 
     # ------------------------------------------------------------------
     # Block builders
@@ -74,21 +117,26 @@ class BigNetwork:
 
     def _build_se_block(self, x, block_name: str):
         """
-        Squeeze-and-Excitation residual block.
+        Squeeze-and-Excitation residual block (Leela-style, multiplicative + additive).
 
         Architecture:
             shortcut = x
             x = Conv(3x3) → BN → ReLU
             x = Conv(3x3) → BN
             # SE attention on x (before adding shortcut)
-            se = GlobalAvgPool(x)
-            se = Dense(C // se_ratio, relu)(se)
-            se = Dense(C, sigmoid)(se)          # per-channel scale in [0, 1]
-            x  = x * se                         # channel-wise rescaling
-            x  = Add([shortcut, x])
-            x  = ReLU(x)
+            se   = GlobalAvgPool(x)                 # (batch, C)
+            se   = Dense(C // se_ratio, relu)(se)
+            # Leela uses one FC → 2C split into a scale W and a bias B; here that
+            # is two parallel Dense(C) layers (mathematically identical, and it
+            # avoids slicing a single tensor).
+            Z    = Dense(C, sigmoid)(se)            # per-channel gate in [0, 1]
+            B    = Dense(C, linear)(se)             # per-channel additive bias
+            x    = x * Z + B                        # (Z × input) + B
+            x    = Add([shortcut, x])
+            x    = ReLU(x)
         """
         C = self.num_filters
+        bottleneck = max(1, C // self.se_ratio)
         shortcut = x
 
         # --- First conv ---
@@ -107,63 +155,83 @@ class BigNetwork:
         # --- Squeeze: global average pooling → (batch, C) ---
         se = layers.GlobalAveragePooling2D(name=f"{block_name}_se_squeeze")(x)
 
-        # --- Excitation: two FC layers ---
+        # --- Excitation bottleneck ---
         se = layers.Dense(
-            max(1, C // self.se_ratio),
+            bottleneck,
             activation="relu",
             use_bias=True,
             name=f"{block_name}_se_fc1",
         )(se)
-        se = layers.Dense(
-            C,
-            activation="sigmoid",
-            use_bias=True,
-            name=f"{block_name}_se_fc2",
+
+        # --- Scale (W → sigmoid) and additive bias (B → linear) ---
+        scale = layers.Dense(
+            C, activation="sigmoid", use_bias=True, name=f"{block_name}_se_scale_w"
+        )(se)
+        bias = layers.Dense(
+            C, activation=None, use_bias=True, name=f"{block_name}_se_bias_b"
         )(se)
 
         # --- Reshape to (batch, 1, 1, C) for broadcasting ---
-        se = layers.Reshape((1, 1, C), name=f"{block_name}_se_reshape")(se)
+        scale = layers.Reshape((1, 1, C), name=f"{block_name}_se_scale_reshape")(scale)
+        bias = layers.Reshape((1, 1, C), name=f"{block_name}_se_bias_reshape")(bias)
 
-        # --- Channel-wise scale + residual add ---
-        x = layers.Multiply(name=f"{block_name}_se_scale")([x, se])
-        x = layers.Add(name=f"{block_name}_add")([shortcut, x])
+        # --- (Z × input) + B, then residual skip, then ReLU ---
+        x = layers.Multiply(name=f"{block_name}_se_scale_mul")([x, scale])
+        x = layers.Add(name=f"{block_name}_se_add")([x, bias, shortcut])
         x = layers.ReLU(name=f"{block_name}_relu2")(x)
 
         return x
 
     def _build_policy_head(self, x):
         """
-        Policy head — outputs move probabilities over `num_moves` moves.
+        Policy head — outputs raw move logits over `num_moves` moves (Leela
+        POLICY_CONVOLUTION). No FC, no output activation.
 
-        Two Conv layers (the second projects to several planes), then Flatten
-        and a final Dense to produce the `num_moves`-dimensional distribution.
+            Conv(3x3) FILTERS → FILTERS → BN → ReLU
+            Conv(1x1) FILTERS → 73       (linear; the move-encoding planes)
+            gather    73x8x8 cells → num_moves logits   (fixed, non-trainable)
+
+        Softmax is applied downstream (loss uses from_logits, and
+        masking / MCTS softmax over legal moves).
         """
         x = layers.Conv2D(
             self.num_filters, 3, padding="same", use_bias=False, name="policy_conv1"
         )(x)
+        x = layers.BatchNormalization(name="policy_bn")(x)
+        x = layers.ReLU(name="policy_relu")(x)
+
+        # Final projection to the 73 move-encoding planes. Linear: this output IS
+        # the policy logit field, so no BN and no activation here. Bias kept
+        # (no BN after it, so it is a live parameter).
         x = layers.Conv2D(
-            73,  # 73 output planes matching the move encoding
-            1,
-            padding="same",
-            use_bias=False,
-            name="policy_conv2",
+            73, 1, padding="same", use_bias=True, name="policy_conv2"
         )(x)
-        x = layers.Flatten(name="policy_flatten")(x)
-        x = layers.Dense(self.num_moves, activation="softmax", name="policy_output")(x)
+
+        # Gather the per-move logits from the 73-plane field (parameter-free).
+        x = PolicyGather(self._policy_gather_idx, name="policy_output")(x)
         return x
 
     def _build_value_head(self, x):
         """
         Value head — outputs WDL probabilities (Win, Draw, Loss).
 
-        Single 1x1 conv for channel reduction, then two FC layers.
-        Softmax over three classes instead of a scalar tanh.
+        Leela VALUE_WDL common part (Conv → Conv → Dense):
+            Conv(1x1) FILTERS → 32          → BN → ReLU
+            Conv(8x8 valid) 32 → 128         → ReLU   (collapses the 8x8 board
+                                                       into a length-128 vector)
+            Dense 128 → 3, softmax
         """
-        x = layers.Conv2D(1, 1, use_bias=False, name="value_conv")(x)
+        # Channel-reduction conv (no bias: it is cancelled by the following BN)
+        x = layers.Conv2D(32, 1, use_bias=False, name="value_conv1")(x)
         x = layers.BatchNormalization(name="value_bn")(x)
-        x = layers.ReLU(name="value_relu")(x)
-        x = layers.Flatten(name="value_flatten")(x)
-        x = layers.Dense(self.num_filters, activation="relu", name="value_dense")(x)
+        x = layers.ReLU(name="value_relu1")(x)
+
+        # 8x8 'valid' conv spans the whole board → (1, 1, 128); a convolution
+        # producing the length-128 vector (not a Dense). Bias kept: no BN here.
+        x = layers.Conv2D(128, 8, padding="valid", use_bias=True, name="value_conv2")(x)
+        x = layers.ReLU(name="value_relu2")(x)
+
+        x = layers.Flatten(name="value_flatten")(x)  # (1, 1, 128) → 128
         x = layers.Dense(3, activation="softmax", name="value_output")(x)
         return x
 
@@ -198,12 +266,14 @@ class BigNetwork:
     def _compile(self):
         """
         Policy loss : categorical cross-entropy vs. MCTS visit distribution.
-        Value loss  : categorical cross-entropy vs. WDL one-hot game result.
+                      The policy head emits raw logits, so from_logits=True.
+        Value loss  : categorical cross-entropy vs. WDL one-hot game result
+                      (value head still emits softmax probabilities).
         """
         self.model.compile(
             optimizer=keras.optimizers.Adam(learning_rate=self.learning_rate),
             loss={
-                "policy_output": "categorical_crossentropy",
+                "policy_output": keras.losses.CategoricalCrossentropy(from_logits=True),
                 "value_output": "categorical_crossentropy",  # changed from MSE
             },
         )
@@ -217,37 +287,84 @@ class BigNetwork:
         Run inference on a single board position.
 
         Args:
-            board_tensor: numpy array of shape (8, 8, 112)
+            board_tensor: numpy array of shape (8, 8, 20)
 
         Returns:
-            Tuple of (move_probabilities, wdl_probabilities)
-                move_probabilities : numpy array of shape (num_moves,)
+            Tuple of (move_logits, wdl_probabilities)
+                move_logits        : numpy array of shape (num_moves,) — RAW
+                    logits (not normalized); apply softmax over legal moves
+                    downstream (see Converter.mask_illegal_moves / MCTS).
                 wdl_probabilities  : numpy array of shape (3,)  — [win, draw, loss]
         """
         input_batch = np.expand_dims(board_tensor, axis=0).astype(np.float32)
-        policy, value = self.model(input_batch, training=False)
-        return np.asarray(policy[0]), np.asarray(value[0])
-    
-    def search_for_best_move(self, board: chess.Board, num_simulations: int) -> chess.Move:
+        policy, value = self._get_infer_fn()(input_batch)
+        return policy[0].numpy(), value[0].numpy()
+
+    def predict_batch(self, board_tensors) -> tuple[np.ndarray, np.ndarray]:
+        """Run inference on a batch of positions in a single call.
+
+        Used by MCTS.search_batched so the GPU sees real batches.
+
+        Args:
+            board_tensors: array-like of shape (K, 8, 8, 20)
+
+        Returns:
+            Tuple of (policy_logits (K, num_moves), wdl_values (K, 3)) as numpy
+            arrays. Policy is RAW logits — softmax over legal moves downstream.
+        """
+        x = np.asarray(board_tensors, dtype=np.float32)
+        policy, value = self._get_infer_fn()(x)
+        return policy.numpy(), value.numpy()
+
+    def _get_infer_fn(self):
+        """Lazily build a tf.function for low-overhead inference.
+
+        model.predict() carries heavy per-call overhead that dominates when it's
+        invoked once per MCTS simulation (batch of 1); a traced tf.function is
+        far cheaper. Built lazily so it traces after weights are loaded —
+        load_weights mutates the existing variables in place, so a later load is
+        reflected without rebuilding.
+        """
+        if self._infer_fn is None:
+            @tf.function(input_signature=[
+                tf.TensorSpec(shape=(None,) + tuple(self.input_shape),
+                              dtype=tf.float32)
+            ])
+            def _infer(x):
+                return self.model(x, training=False)
+            self._infer_fn = _infer
+        return self._infer_fn
+
+    def search_for_best_move(
+        self, board: chess.Board, num_simulations: int, batch_size: int = 16
+    ) -> chess.Move:
         """
         Select the best move for the given position using MCTS search.
+
+        Uses batched (virtual-loss) MCTS so leaf evaluations are sent to the
+        network in groups of ``batch_size`` — far faster on GPU than batch-1.
 
         Args:
             board: The current chess board position
             num_simulations: Number of MCTS simulations to run
+            batch_size: Leaves evaluated per network call (set 1 for the old
+                sequential behaviour)
 
         Returns:
             The best move according to MCTS (greedy, most-visited)
         """
-        converter = Converter()
+        if self._search_converter is None:
+            self._search_converter = Converter()
+        converter = self._search_converter
         mcts = MCTS(
             network=self,
             converter=converter,
             num_simulations=num_simulations,
         )
         root = Node(board)
-        root = mcts.search(root, add_noise=False)
+        root = mcts.search_batched(root, add_noise=False, batch_size=batch_size)
         return mcts.get_best_move(root, temperature=0)
+
     def outcome_to_wdl(self, outcomes: np.ndarray) -> np.ndarray:
         """
         Converts scalar game outcomes to WDL one-hot vectors.
@@ -273,7 +390,7 @@ class BigNetwork:
         Train the network on a batch of positions.
 
         Args:
-            board_tensors  : numpy array of shape (batch_size, 8, 8, 112)
+            board_tensors  : numpy array of shape (batch_size, 8, 8, 20)
             policy_targets : numpy array of shape (batch_size, num_moves)
                              MCTS visit-count distributions (sum to 1 per row).
             value_targets  : numpy array of shape (batch_size, 3)
