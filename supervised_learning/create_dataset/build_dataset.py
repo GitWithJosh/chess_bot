@@ -19,8 +19,10 @@ MAXIMISE the number of balanced chunks the available pools support (the
 draw-heavy games make win/loss the binding classes; puzzles refill win and
 tablebase refills loss, so more of the abundant draws survive).
 
-Output: supervised_learning/processed_data/chunk_XXXX.npz  (boards/policies/values),
-the exact format train_supervised.py consumes.
+Output: supervised_learning/processed_data/chunk_XXXX.npz  (boards/policies/
+values/sources), the exact format train_supervised.py consumes. The sources
+array (uint8, see dataset_common.SOURCE_IDS) tags every position with its data
+source, enabling per-source val metrics and per-source loss weighting.
 """
 
 import glob
@@ -169,6 +171,7 @@ def route(files: list[str], counts, N: int, q: dict) -> None:
 
     for path in files:
         src = _source_of(path)
+        src_id = dc.SOURCE_IDS[src]
         with open(path, encoding="utf-8") as f:
             for line in f:
                 w = int(line[line.rfind(",") + 1:])
@@ -184,7 +187,9 @@ def route(files: list[str], counts, N: int, q: dict) -> None:
                     rank[key] = r + 1
                     kept_ptr[key] = ptr + 1
                     target = r // q[key]          # contiguous -> few active files
-                    cache.write(target, line)
+                    # Routed rows carry the source id as a 4th field, so the
+                    # encoder can emit the per-sample sources array.
+                    cache.write(target, f"{line.rstrip(chr(10))},{src_id}\n")
     cache.close()
 
 
@@ -192,25 +197,34 @@ def route(files: list[str], counts, N: int, q: dict) -> None:
 # Pass C — encode each per-chunk manifest into the npz format (parallel).
 # ---------------------------------------------------------------------------
 
+def _parse_routed_line(line: str) -> tuple[str, int, int, int]:
+    """fen,move_idx,wdl,source_id — the manifest row plus the id route() added."""
+    fen, mi, w, s = line.rstrip("\n").rsplit(",", 3)
+    return fen, int(mi), int(w), int(s)
+
+
 def encode_chunk(args) -> tuple[str, int]:
     chunk_path, seed = args
     with open(chunk_path, encoding="utf-8") as f:
-        rows = [dc.parse_manifest_line(l) for l in f]
+        rows = [_parse_routed_line(l) for l in f]
     random.Random(seed).shuffle(rows)          # shuffle sources/classes within the chunk
 
     n = len(rows)
     boards   = np.empty((n, 8, 8, 20), dtype=np.float16)
     policies = np.zeros((n, dc.POLICY_SIZE), dtype=np.float32)
     values   = np.zeros((n, dc.N_WDL),       dtype=np.float32)
-    for i, (fen, idx, wdl) in enumerate(rows):
+    sources  = np.zeros(n,                   dtype=np.uint8)
+    for i, (fen, idx, wdl, src) in enumerate(rows):
         b, p, v = dc.encode_sample(fen, idx, wdl)
         boards[i] = b
         policies[i] = p
         values[i] = v
+        sources[i] = src
 
     cid = os.path.splitext(os.path.basename(chunk_path))[0][1:]  # "c0007" -> "0007"
     out = os.path.join(OUT_DIR, f"chunk_{cid}.npz")
-    np.savez_compressed(out, boards=boards, policies=policies, values=values)
+    np.savez_compressed(out, boards=boards, policies=policies, values=values,
+                        sources=sources)
     return out, n
 
 

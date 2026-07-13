@@ -1,45 +1,54 @@
 """
 Probe the value head for the source<->label shortcuts the mixed dataset can teach.
 
-Three test sets, all built from positions the training pipeline provably never
+Three test sets, built from positions the training pipeline provably never
 trained on, with labels that are known with certainty:
 
   Probe A  (tablebase draws)   Random legal <=5-piece positions that Syzygy says
-           are DRAWN. The tablebase extractor skips draws, and >2700 games rarely
-           reach 5 pieces, so training contained (almost) no drawn 5-piece
-           positions. If the value head learned "few pieces => decisive", it will
-           put low probability on draw here. Decisive positions from the same
-           material configs are generated too, as the in-distribution control.
+           are DRAWN (the tablebase extractor skips draws; >2700 games rarely
+           reach 5 pieces). Decisive positions from the same material configs
+           are generated too, as the in-distribution control. Confirmed 2026-07:
+           the net calls IMBALANCED draws decisive (KNNvK: P(draw)=0.08) while
+           equal-material draws are fine — see the per-material table.
 
   Probe B  (puzzle defenders)  Defender-to-move positions from forced-mate
            (mateIn*) lichess puzzles — the plies process_puzzle_data.py skips.
-           These are provably LOST for the side to move, but they look exactly
-           like the (all-win) puzzle positions the net trained on. If the net
-           says "win" here, it is reading puzzle-ness, not the board.
-           Solver-to-move positions from the same puzzles are the control.
+           Provably LOST for the side to move, but they look exactly like the
+           (all-win) puzzle positions the net trained on. Confirmed 2026-07:
+           argmax=win on 49% of them. Solver positions are the control.
 
   Calibration + Stockfish agreement (games)  Positions sampled from Batch*.pgn,
-           balanced across win/draw/loss outcomes like the training chunks.
-           Calibration: bucket the predicted win probability and compare with the
-           realised outcome frequency. Agreement: for a subsample, compare the
-           net's expected score against Stockfish (worst outliers are printed —
-           these are the "horribly misjudged" positions, with FENs).
+           WDL-balanced like the training chunks. Calibration: predicted win%
+           vs realised outcome frequency. Agreement: net expected score vs
+           Stockfish (worst outliers printed with FENs).
 
-Run from anywhere (paths resolve like the other inspect tools):
-    python supervised_learning/inspect/probe_value_head.py            # full run
-    python supervised_learning/inspect/probe_value_head.py --quick    # smoke test
+Before/after comparison workflow — the position sets and Stockfish evals are
+generated ONCE and persisted (results/probes/positions/, sf_cache.csv); later
+runs re-use them, so runs with different weights are measured on identical data:
 
-Output: printed report + per-position CSVs in supervised_learning/results/probes/.
+    python .../probe_value_head.py --tag baseline                       # 1st run
+    python .../probe_value_head.py --weights new.h5 --tag after-fix     # later
+    python .../probe_value_head.py --compare baseline after-fix         # diff
+
+Each run writes report.<tag>.txt, per-position CSVs (*.<tag>.csv) and
+summary.<tag>.json into supervised_learning/results/probes/.
+
+IMPORTANT for future data changes: if defender-side puzzle rows are ever added
+to the training data, exclude the puzzle ids in positions/probe_puzzle_ids.txt
+from the extractor, otherwise probe B stops being held-out. (--quick smoke runs
+use small fresh sets and touch neither the saved positions nor the SF cache.)
 """
 
 import argparse
 import csv
 import glob
+import json
 import os
 import random
 import sys
 import threading
 import time
+from datetime import date
 
 import numpy as np
 
@@ -82,6 +91,8 @@ WEIGHTS_DEFAULT = os.path.join(
     REPO_ROOT, "supervised_learning", "checkpoints", "sl_best.weights.h5"
 )
 OUT_DIR = os.path.join(REPO_ROOT, "supervised_learning", "results", "probes")
+POS_DIR = os.path.join(OUT_DIR, "positions")
+SF_CACHE_PATH = os.path.join(OUT_DIR, "sf_cache.csv")
 PUZZLE_CSV = os.path.join(
     REPO_ROOT, "supervised_learning", "supervised_data", "lichess_db_puzzle.csv"
 )
@@ -105,7 +116,7 @@ WDL_NAMES = ("win", "draw", "loss")
 
 
 # ---------------------------------------------------------------------------
-# Position generation (all TF-free, runs before the network is loaded)
+# Position generation (all TF-free)
 # ---------------------------------------------------------------------------
 
 def gen_probe_a(n_draw: int, n_extra: int, n_decisive: int, rng: random.Random):
@@ -160,14 +171,14 @@ def gen_probe_a(n_draw: int, n_extra: int, n_decisive: int, rng: random.Random):
 
 
 def gen_probe_b(n_defender: int, n_solver: int):
-    """Rows (fen, group, true_class) from forced-mate (mateIn*) puzzles.
+    """Rows (fen, group, true_class, puzzle_id) from forced-mate (mateIn*) puzzles.
 
     Same parsing/validation as process_puzzle_data._solver_positions, but the
     line must END IN CHECKMATE and the defender-to-move plies are kept too:
     group=defender is provably lost, group=solver provably winning.
     """
     csv.field_size_limit(10 ** 7)
-    rows: list[tuple[str, str, int]] = []
+    rows: list[tuple[str, str, int, str]] = []
     n_def = n_sol = puzzles = 0
     t0 = time.time()
     with open(PUZZLE_CSV, newline="", encoding="utf-8") as f:
@@ -199,13 +210,14 @@ def gen_probe_b(n_defender: int, n_solver: int):
             if not ok or not board.is_checkmate():
                 continue
             puzzles += 1
+            pid = row.get("PuzzleId", "")
             for fen in defender_fens:
                 if n_def < n_defender:
-                    rows.append((fen, "defender", dc.WDL_LOSS))
+                    rows.append((fen, "defender", dc.WDL_LOSS, pid))
                     n_def += 1
             for fen in solver_fens:
                 if n_sol < n_solver:
-                    rows.append((fen, "solver", dc.WDL_WIN))
+                    rows.append((fen, "solver", dc.WDL_WIN, pid))
                     n_sol += 1
     print(f"  probe B: {n_def:,} defender + {n_sol:,} solver positions "
           f"from {puzzles:,} mate puzzles ({time.time() - t0:.0f}s)")
@@ -259,6 +271,58 @@ def gen_calibration(per_class: int, plies_per_game: int, rng: random.Random):
 
 
 # ---------------------------------------------------------------------------
+# Position-set persistence — later runs (other weights) reuse identical sets
+# ---------------------------------------------------------------------------
+
+_POS_FILES = {
+    "a": "positions_probe_a.csv",
+    "b": "positions_probe_b.csv",
+    "calib": "positions_calib.csv",
+    "sf": "positions_sf.csv",
+}
+
+
+def _positions_exist() -> bool:
+    return all(os.path.exists(os.path.join(POS_DIR, f)) for f in _POS_FILES.values())
+
+
+def save_positions(rows_a, rows_b, rows_c, rows_sf) -> None:
+    os.makedirs(POS_DIR, exist_ok=True)
+
+    def _w(name, header, rows):
+        with open(os.path.join(POS_DIR, name), "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(header)
+            w.writerows(rows)
+
+    _w(_POS_FILES["a"], ["fen", "group", "true"], rows_a)
+    _w(_POS_FILES["b"], ["fen", "group", "true", "puzzle_id"], rows_b)
+    _w(_POS_FILES["calib"], ["fen", "true", "ply", "pieces"], rows_c)
+    _w(_POS_FILES["sf"], ["fen", "true", "ply", "pieces"], rows_sf)
+    # Puzzle ids used by probe B — exclude these from training data if
+    # defender-side puzzle rows are ever added to the dataset.
+    ids = sorted({r[3] for r in rows_b if r[3]})
+    with open(os.path.join(POS_DIR, "probe_puzzle_ids.txt"), "w") as f:
+        f.write("\n".join(ids) + "\n")
+    print(f"  saved position sets -> {POS_DIR}  ({len(ids):,} probe puzzle ids)")
+
+
+def load_positions():
+    def _r(name):
+        with open(os.path.join(POS_DIR, name), newline="", encoding="utf-8") as f:
+            return list(csv.reader(f))[1:]
+
+    rows_a = [(fen, g, int(t)) for fen, g, t in _r(_POS_FILES["a"])]
+    rows_b = [(fen, g, int(t), pid) for fen, g, t, pid in _r(_POS_FILES["b"])]
+    rows_c = [(fen, int(t), int(p), int(n)) for fen, t, p, n in _r(_POS_FILES["calib"])]
+    rows_sf = [(fen, int(t), int(p), int(n)) for fen, t, p, n in _r(_POS_FILES["sf"])]
+    print(f"  loaded saved position sets from {POS_DIR}\n"
+          f"    probe A {len(rows_a):,} | probe B {len(rows_b):,} | "
+          f"calibration {len(rows_c):,} | SF subset {len(rows_sf):,}")
+    return rows_a, rows_b, rows_c, rows_sf
+
+
+# ---------------------------------------------------------------------------
 # Inference
 # ---------------------------------------------------------------------------
 
@@ -293,7 +357,23 @@ def predict_wdl(net, fens: list[str]) -> np.ndarray:
 # Reporting helpers
 # ---------------------------------------------------------------------------
 
-def report_group(title: str, preds: np.ndarray, expected: int) -> None:
+class _Tee:
+    """Duplicate stdout into report.<tag>.txt so the printed report is kept."""
+
+    def __init__(self, path: str):
+        self.file = open(path, "w", encoding="utf-8")
+        self.stdout = sys.stdout
+
+    def write(self, s: str) -> None:
+        self.stdout.write(s)
+        self.file.write(s)
+
+    def flush(self) -> None:
+        self.stdout.flush()
+        self.file.flush()
+
+
+def report_group(title: str, preds: np.ndarray, expected: int) -> dict:
     n = len(preds)
     mean = preds.mean(axis=0)
     share = np.bincount(preds.argmax(axis=1), minlength=3) / n
@@ -302,68 +382,168 @@ def report_group(title: str, preds: np.ndarray, expected: int) -> None:
     print(f"    argmax share    W {share[0]:5.1%}  D {share[1]:5.1%}  L {share[2]:5.1%}")
     print(f"    true class = {WDL_NAMES[expected]}: mean P = {mean[expected]:.3f}, "
           f"argmax-correct = {share[expected]:5.1%}")
+    return {"n": n, "p_true": round(float(mean[expected]), 4),
+            "acc": round(float(share[expected]), 4),
+            "mean_wdl": [round(float(x), 4) for x in mean]}
 
 
-def save_csv(name: str, header: list[str], rows: list) -> str:
-    path = os.path.join(OUT_DIR, name)
-    with open(path, "w", newline="", encoding="utf-8") as f:
+def material_sig(fen: str) -> str:
+    board_part = fen.split()[0]
+    w = "".join(sorted(c for c in board_part if c.isupper() and c != "K"))
+    b = "".join(sorted(c.upper() for c in board_part if c.islower() and c != "k"))
+    sides = sorted([w or "-", b or "-"], key=lambda s: (-len(s), s))
+    return f"K{sides[0]} v K{sides[1]}".replace("K-", "K")
+
+
+def material_table(rows, preds) -> dict:
+    """Per-material stats for the drawn probe-A groups (the shortcut lives here)."""
+    agg: dict[str, list] = {}
+    for i, (fen, group, _true) in enumerate(rows):
+        if not group.startswith("draw"):
+            continue
+        a = agg.setdefault(material_sig(fen), [0, 0.0, 0])
+        a[0] += 1
+        a[1] += float(preds[i][1])
+        a[2] += int(int(np.argmax(preds[i])) == dc.WDL_DRAW)
+    out = {}
+    print(f"\n  drawn positions by material (n>=25):")
+    print(f"    {'material':<12s} {'n':>5s} {'meanP(draw)':>12s} {'argmax=draw':>12s}")
+    for sig, (n, sd, na) in sorted(agg.items(), key=lambda kv: -kv[1][0]):
+        if n >= 25:
+            print(f"    {sig:<12s} {n:>5d} {sd/n:>12.3f} {na/n:>12.1%}")
+            out[sig] = {"n": n, "p_draw": round(sd / n, 4), "acc": round(na / n, 4)}
+    return out
+
+
+def save_csv(name: str, header: list[str], rows: list) -> None:
+    with open(os.path.join(OUT_DIR, name), "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(header)
         w.writerows(rows)
-    return path
 
 
 # ---------------------------------------------------------------------------
-# Stockfish agreement
+# Stockfish agreement (with persistent eval cache: identical basis across runs)
 # ---------------------------------------------------------------------------
 
-def sf_analyse(rows, depth: int, workers: int):
-    """rows: (fen, true, ply, pieces). Returns per-row dicts incl. SF expectation."""
-    chunks = [rows[i::workers] for i in range(workers)]
-    results: list[list[dict]] = [[] for _ in range(workers)]
-    counter = {"done": 0}
-    lock = threading.Lock()
-    t0 = time.time()
+def load_sf_cache() -> dict:
+    cache = {}
+    if os.path.exists(SF_CACHE_PATH):
+        with open(SF_CACHE_PATH, newline="", encoding="utf-8") as f:
+            for fen, depth, cp, sf_e in list(csv.reader(f))[1:]:
+                cache[(fen, int(depth))] = (int(cp), float(sf_e))
+    return cache
 
-    def work(widx: int) -> None:
-        eng = chess.engine.SimpleEngine.popen_uci(STOCKFISH)
-        try:
+
+def save_sf_cache(cache: dict) -> None:
+    with open(SF_CACHE_PATH, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["fen", "depth", "cp", "sf_e"])
+        for (fen, depth), (cp, sf_e) in cache.items():
+            w.writerow([fen, depth, cp, sf_e])
+
+
+def sf_analyse(rows, depth: int, workers: int, cache: dict):
+    """rows: (fen, true, ply, pieces). Fills cache for misses, returns row dicts."""
+    missing = [r for r in rows if (r[0], depth) not in cache]
+    if missing:
+        print(f"    {len(rows) - len(missing):,} cached, "
+              f"{len(missing):,} to analyse", flush=True)
+        chunks = [missing[i::workers] for i in range(workers)]
+        counter = {"done": 0}
+        lock = threading.Lock()
+        t0 = time.time()
+
+        def work(widx: int) -> None:
+            eng = chess.engine.SimpleEngine.popen_uci(STOCKFISH)
             try:
-                eng.configure({"UCI_ShowWDL": True})
-            except Exception:
-                pass
-            for fen, true, ply, pieces in chunks[widx]:
-                board = chess.Board(fen)
                 try:
-                    info = eng.analyse(board, chess.engine.Limit(depth=depth))
-                except chess.engine.EngineError:
-                    continue
-                score = info["score"].pov(board.turn)
-                wdl_info = info.get("wdl")
-                wdl = (wdl_info.pov(board.turn) if wdl_info is not None
-                       else score.wdl(ply=board.ply()))
-                results[widx].append({
-                    "fen": fen, "true": true, "ply": ply, "pieces": pieces,
-                    "cp": score.score(mate_score=32000),
-                    "sf_e": wdl.expectation(),
-                })
-                with lock:
-                    counter["done"] += 1
-                    if counter["done"] % 200 == 0:
-                        rate = counter["done"] / max(time.time() - t0, 1e-9)
-                        print(f"    SF {counter['done']:,}/{len(rows):,} "
-                              f"({rate:.1f} pos/s)", flush=True)
-        finally:
-            eng.quit()
+                    eng.configure({"UCI_ShowWDL": True})
+                except Exception:
+                    pass
+                for fen, _true, _ply, _pieces in chunks[widx]:
+                    board = chess.Board(fen)
+                    try:
+                        info = eng.analyse(board, chess.engine.Limit(depth=depth))
+                    except chess.engine.EngineError:
+                        continue
+                    score = info["score"].pov(board.turn)
+                    wdl_info = info.get("wdl")
+                    wdl = (wdl_info.pov(board.turn) if wdl_info is not None
+                           else score.wdl(ply=board.ply()))
+                    with lock:
+                        cache[(fen, depth)] = (score.score(mate_score=32000),
+                                               wdl.expectation())
+                        counter["done"] += 1
+                        if counter["done"] % 200 == 0:
+                            rate = counter["done"] / max(time.time() - t0, 1e-9)
+                            print(f"    SF {counter['done']:,}/{len(missing):,} "
+                                  f"({rate:.1f} pos/s)", flush=True)
+            finally:
+                eng.quit()
 
-    threads = [threading.Thread(target=work, args=(w,)) for w in range(workers)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    flat = [r for part in results for r in part]
-    print(f"    SF done: {len(flat):,} positions in {time.time() - t0:.0f}s")
-    return flat
+        threads = [threading.Thread(target=work, args=(w,)) for w in range(workers)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        print(f"    SF done: {counter['done']:,} new evals in {time.time() - t0:.0f}s")
+    else:
+        print(f"    all {len(rows):,} evals served from sf_cache.csv")
+    return [{"fen": fen, "true": true, "ply": ply, "pieces": pieces,
+             "cp": cache[(fen, depth)][0], "sf_e": cache[(fen, depth)][1]}
+            for fen, true, ply, pieces in rows if (fen, depth) in cache]
+
+
+# ---------------------------------------------------------------------------
+# Summary compare
+# ---------------------------------------------------------------------------
+
+def _headline(s: dict) -> list[tuple[str, float]]:
+    """Ordered headline metrics of a summary (labels shared across runs)."""
+    out = []
+    for g, label in (("draw_train", "A drawn/train"), ("draw_extra", "A drawn/extra"),
+                     ("win_train", "A won ctrl"), ("loss_train", "A lost ctrl")):
+        if g in s.get("probe_a", {}):
+            out.append((f"{label:<15s} P(true)", s["probe_a"][g]["p_true"]))
+            out.append((f"{label:<15s} argmax-ok", s["probe_a"][g]["acc"]))
+    for g, label in (("solver", "B solver"), ("defender", "B defender")):
+        if g in s.get("probe_b", {}):
+            out.append((f"{label:<15s} P(true)", s["probe_b"][g]["p_true"]))
+            out.append((f"{label:<15s} argmax-ok", s["probe_b"][g]["acc"]))
+    c = s.get("calibration", {})
+    for k, label in (("value_ce", "calib value CE"), ("argmax_acc", "calib argmax acc"),
+                     ("ece", "calib ECE(win)")):
+        if k in c:
+            out.append((label, c[k]))
+    f = s.get("sf", {})
+    for k, label in (("mae", "SF MAE"), ("corr", "SF corr"),
+                     ("mae_opening", "SF MAE opening"),
+                     ("mae_middlegame", "SF MAE middlegame"),
+                     ("mae_endgame", "SF MAE endgame")):
+        if k in f:
+            out.append((label, f[k]))
+    return out
+
+
+def compare(tag_a: str, tag_b: str) -> None:
+    def _load(tag):
+        path = os.path.join(OUT_DIR, f"summary.{tag}.json")
+        if not os.path.exists(path):
+            print(f"ERROR: {path} not found")
+            sys.exit(1)
+        with open(path) as f:
+            return json.load(f)
+
+    a, b = _load(tag_a), _load(tag_b)
+    hb = dict(_headline(b))
+    print(f"=== Probe comparison: {tag_a} vs {tag_b} ===")
+    print(f"  {'metric':<28s} {tag_a:>12s} {tag_b:>12s} {'delta':>9s}")
+    for label, va in _headline(a):
+        vb = hb.get(label)
+        delta = f"{vb - va:+.4f}" if vb is not None else "n/a"
+        vb_s = f"{vb:.4f}" if vb is not None else "n/a"
+        print(f"  {label:<28s} {va:>12.4f} {vb_s:>12s} {delta:>9s}")
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +553,12 @@ def sf_analyse(rows, depth: int, workers: int):
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--weights", default=WEIGHTS_DEFAULT)
+    ap.add_argument("--tag", default=None,
+                    help="label for this run's outputs (default: weights file stem)")
+    ap.add_argument("--regen-positions", action="store_true",
+                    help="regenerate + overwrite the saved position sets")
+    ap.add_argument("--compare", nargs=2, metavar=("TAG_A", "TAG_B"),
+                    help="print summary.<tag>.json side by side and exit")
     ap.add_argument("--probe-a", type=int, default=3000, help="drawn TB positions")
     ap.add_argument("--probe-a-extra", type=int, default=1000)
     ap.add_argument("--probe-a-decisive", type=int, default=1500, help="per class")
@@ -381,23 +567,44 @@ def main() -> None:
     ap.add_argument("--sf", type=int, default=1800, help="positions to check with Stockfish")
     ap.add_argument("--sf-depth", type=int, default=12)
     ap.add_argument("--sf-workers", type=int, default=4)
-    ap.add_argument("--quick", action="store_true", help="tiny smoke-test sizes")
+    ap.add_argument("--quick", action="store_true",
+                    help="tiny smoke-test sizes; does not touch saved positions/cache")
     args = ap.parse_args()
 
+    if args.compare:
+        compare(*args.compare)
+        return
+
+    persist = not args.quick
+    tag = args.tag or os.path.splitext(os.path.splitext(
+        os.path.basename(args.weights))[0])[0]      # foo.weights.h5 -> foo
     if args.quick:
         args.probe_a, args.probe_a_extra, args.probe_a_decisive = 120, 60, 60
         args.probe_b, args.calib, args.sf, args.sf_workers = 150, 200, 40, 2
+        tag += "-quick"
 
     os.makedirs(OUT_DIR, exist_ok=True)
+    sys.stdout = _Tee(os.path.join(OUT_DIR, f"report.{tag}.txt"))
     rng = random.Random(SEED)
 
     print("=== Value-head probes ===")
-    print(f"weights: {args.weights}\n\nGenerating position sets (TF-free) ...")
-    rows_a = gen_probe_a(args.probe_a, args.probe_a_extra, args.probe_a_decisive, rng)
-    rows_b = gen_probe_b(args.probe_b, args.probe_b)
-    rows_c = gen_calibration(args.calib, plies_per_game=4, rng=rng)
+    print(f"weights: {args.weights}\ntag    : {tag}\n")
+
+    if persist and _positions_exist() and not args.regen_positions:
+        rows_a, rows_b, rows_c, rows_sf = load_positions()
+    else:
+        print("Generating position sets (TF-free) ...")
+        rows_a = gen_probe_a(args.probe_a, args.probe_a_extra, args.probe_a_decisive, rng)
+        rows_b = gen_probe_b(args.probe_b, args.probe_b)
+        rows_c = gen_calibration(args.calib, plies_per_game=4, rng=rng)
+        rows_sf = rng.sample(rows_c, min(args.sf, len(rows_c)))
+        if persist:
+            save_positions(rows_a, rows_b, rows_c, rows_sf)
 
     net = load_net(args.weights)
+    summary = {"tag": tag, "weights": os.path.basename(args.weights),
+               "date": date.today().isoformat(),
+               "probe_a": {}, "probe_b": {}, "calibration": {}, "sf": {}}
 
     # ---- Probe A ---------------------------------------------------------
     print("\n--- Probe A: <=5-piece Syzygy positions (value head vs tablebase truth) ---")
@@ -411,8 +618,9 @@ def main() -> None:
     for g, label in groups_a.items():
         idx = [i for i, r in enumerate(rows_a) if r[1] == g]
         if idx:
-            report_group(label, preds_a[idx], rows_a[idx[0]][2])
-    save_csv("probe_a.csv", ["fen", "group", "true", "p_win", "p_draw", "p_loss"],
+            summary["probe_a"][g] = report_group(label, preds_a[idx], rows_a[idx[0]][2])
+    summary["probe_a_materials"] = material_table(rows_a, preds_a)
+    save_csv(f"probe_a.{tag}.csv", ["fen", "group", "true", "p_win", "p_draw", "p_loss"],
              [(r[0], r[1], WDL_NAMES[r[2]], *np.round(preds_a[i], 4))
               for i, r in enumerate(rows_a)])
 
@@ -425,18 +633,20 @@ def main() -> None:
     ):
         idx = [i for i, r in enumerate(rows_b) if r[1] == g]
         if idx:
-            report_group(label, preds_b[idx], exp)
-    save_csv("probe_b.csv", ["fen", "group", "true", "p_win", "p_draw", "p_loss"],
-             [(r[0], r[1], WDL_NAMES[r[2]], *np.round(preds_b[i], 4))
+            summary["probe_b"][g] = report_group(label, preds_b[idx], exp)
+    save_csv(f"probe_b.{tag}.csv",
+             ["fen", "group", "true", "puzzle_id", "p_win", "p_draw", "p_loss"],
+             [(r[0], r[1], WDL_NAMES[r[2]], r[3], *np.round(preds_b[i], 4))
               for i, r in enumerate(rows_b)])
 
     # ---- Calibration ------------------------------------------------------
     print("\n--- Calibration: predicted win% vs realised outcome (balanced game positions) ---")
     preds_c = predict_wdl(net, [r[0] for r in rows_c])
     true_c = np.array([r[1] for r in rows_c])
-    print(f"  value CE on this set: "
-          f"{-np.log(np.clip(preds_c[np.arange(len(true_c)), true_c], 1e-9, 1)).mean():.4f}"
-          f"   (argmax accuracy {np.mean(preds_c.argmax(axis=1) == true_c):.1%})")
+    value_ce = float(-np.log(np.clip(
+        preds_c[np.arange(len(true_c)), true_c], 1e-9, 1)).mean())
+    argmax_acc = float(np.mean(preds_c.argmax(axis=1) == true_c))
+    print(f"  value CE on this set: {value_ce:.4f}   (argmax accuracy {argmax_acc:.1%})")
     print(f"  {'pred win prob':>14s} {'n':>6s} {'mean pred':>10s} {'actual win%':>12s}")
     ece, n_all = 0.0, len(rows_c)
     for lo in np.arange(0.0, 1.0, 0.1):
@@ -448,7 +658,9 @@ def main() -> None:
         ece += m.sum() / n_all * abs(mean_p - actual)
         print(f"  {lo:>6.1f}-{hi:<6.1f} {m.sum():>6,} {mean_p:>10.3f} {actual:>12.3f}")
     print(f"  expected calibration error (win prob): {ece:.4f}")
-    save_csv("calibration.csv",
+    summary["calibration"] = {"n": n_all, "value_ce": round(value_ce, 4),
+                              "argmax_acc": round(argmax_acc, 4), "ece": round(float(ece), 4)}
+    save_csv(f"calibration.{tag}.csv",
              ["fen", "true", "ply", "pieces", "p_win", "p_draw", "p_loss"],
              [(r[0], WDL_NAMES[r[1]], r[2], r[3], *np.round(preds_c[i], 4))
               for i, r in enumerate(rows_c)])
@@ -456,9 +668,11 @@ def main() -> None:
     # ---- Stockfish agreement ----------------------------------------------
     print(f"\n--- Stockfish agreement (depth {args.sf_depth}, "
           f"{args.sf_workers} engines) ---")
-    sub_idx = rng.sample(range(len(rows_c)), min(args.sf, len(rows_c)))
-    sf_rows = sf_analyse([rows_c[i] for i in sub_idx], args.sf_depth, args.sf_workers)
-    fen_to_pred = {rows_c[i][0]: preds_c[i] for i in sub_idx}
+    cache = load_sf_cache() if persist else {}
+    sf_rows = sf_analyse(rows_sf, args.sf_depth, args.sf_workers, cache)
+    if persist:
+        save_sf_cache(cache)
+    fen_to_pred = {r[0]: preds_c[i] for i, r in enumerate(rows_c)}
     out_rows = []
     for r in sf_rows:
         p = fen_to_pred[r["fen"]]
@@ -470,24 +684,32 @@ def main() -> None:
     diffs = np.array([r[6] for r in out_rows])
     e_sf = np.array([r[4] for r in out_rows], dtype=np.float64)
     e_net_arr = np.array([r[5] for r in out_rows], dtype=np.float64)
+    summary["sf"] = {"n": len(out_rows), "depth": args.sf_depth,
+                     "mae": round(float(diffs.mean()), 4),
+                     "corr": round(float(np.corrcoef(e_sf, e_net_arr)[0, 1]), 4)}
     print(f"  n={len(out_rows):,}  MAE(expected score) = {diffs.mean():.4f}  "
-          f"corr = {np.corrcoef(e_sf, e_net_arr)[0, 1]:.3f}")
-    for lo, hi, label in ((25, 33, "opening-ish (25-32 pieces)"),
-                          (13, 25, "middlegame (13-24 pieces)"),
-                          (2, 13, "endgame (<=12 pieces)")):
+          f"corr = {summary['sf']['corr']:.3f}")
+    for lo, hi, label, key in ((25, 33, "opening-ish (25-32 pieces)", "mae_opening"),
+                               (13, 25, "middlegame (13-24 pieces)", "mae_middlegame"),
+                               (2, 13, "endgame (<=12 pieces)", "mae_endgame")):
         m = np.array([(lo <= r[2] < hi) for r in out_rows])
         if m.sum():
+            summary["sf"][key] = round(float(diffs[m].mean()), 4)
             print(f"    {label:<28s} n={m.sum():>5,}  MAE = {diffs[m].mean():.4f}")
     print("\n  worst 12 disagreements (net vs SF):")
     for r in sorted(out_rows, key=lambda r: -r[6])[:12]:
         print(f"    dE={r[6]:.2f}  net W/D/L {r[7]:.2f}/{r[8]:.2f}/{r[9]:.2f} "
               f"E={r[5]:.2f} | SF cp {r[3]:>6} E={r[4]:.2f} | pieces {r[2]:>2} "
               f"ply {r[1]:>3}\n      {r[0]}")
-    save_csv("sf_agreement.csv",
+    save_csv(f"sf_agreement.{tag}.csv",
              ["fen", "ply", "pieces", "sf_cp", "sf_e", "net_e", "abs_diff",
               "p_win", "p_draw", "p_loss"], out_rows)
 
-    print(f"\nDone. CSVs in {OUT_DIR}")
+    with open(os.path.join(OUT_DIR, f"summary.{tag}.json"), "w") as f:
+        json.dump(summary, f, indent=2)
+    print(f"\nDone. Outputs tagged '{tag}' in {OUT_DIR}")
+    print(f"Compare runs with: python supervised_learning/inspect/probe_value_head.py "
+          f"--compare {tag} <other-tag>")
 
 
 if __name__ == "__main__":

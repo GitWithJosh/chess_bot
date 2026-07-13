@@ -33,6 +33,14 @@ WDL_WIN, WDL_DRAW, WDL_LOSS = 0, 1, 2
 N_WDL = 3
 POLICY_SIZE = 1858
 
+# Per-sample source ids stored in each chunk's "sources" uint8 array (written
+# by build_dataset.py). Enables per-source val metrics and, later, per-source
+# loss weighting in training. 3/4 are reserved for planned data additions
+# (puzzle defender-side rows, drawn tablebase rows). MUST stay in sync with
+# the SOURCE_NAMES copy in train_supervised.py (duplicated there so the
+# training script stays standalone on Kaggle).
+SOURCE_IDS = {"game": 0, "puzzle": 1, "tablebase": 2, "puzzle_def": 3, "tb_draw": 4}
+
 _ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
 

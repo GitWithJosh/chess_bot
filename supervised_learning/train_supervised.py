@@ -9,6 +9,8 @@ Data: supervised_learning/processed_data/chunk_*.npz, each containing
     boards   float16 (N, 8, 8, 20)
     policies float32 (N, 1858)   one-hot move
     values   float32 (N, 3)      one-hot WDL
+    sources  uint8   (N,)        per-sample source id (newer chunks only; see
+                                 SOURCE_NAMES) — enables per-source val metrics
 Trains by calling net.model.fit() directly (NOT net.train(), which would
 re-encode the already-final WDL targets).
 
@@ -105,17 +107,28 @@ CKPT_PREFIX  = "sl"
 STATE_FILE   = os.path.join(OUT_DIR, "train_state.json")
 METRICS_CSV  = os.path.join(OUT_DIR, "metrics.csv")
 
-# Learning-rate schedule: reduce on plateau (val_loss, checked every chunk).
-LR_INIT       = 0.0001  # starting LR
-LR_FACTOR     = 0.5    # multiply by this on each plateau
-LR_PATIENCE   = 10      # consecutive chunks without improvement before reducing
-LR_MIN        = 1e-9   # floor
+# Learning-rate schedule: fixed lc0/AlphaZero-style steps over training progress
+# (fraction of all planned chunk-fits; derived from global_chunk_count, so it is
+# resume-safe). Replaces the earlier ReduceLROnPlateau logic, which fired on
+# val-loss noise (patience 10 chunks vs ±0.02 per-chunk eval noise): the 2026-07
+# run had collapsed to lr<=6.25e-6 by chunk 172/398, so the last half of the
+# data trained at an effectively zero LR.
+LR_SCHEDULE = (
+    (0.0, 1e-4),   # base LR
+    (0.7, 1e-5),   # /10 after 70% of the planned chunks
+    (0.9, 1e-6),   # /10 again after 90%
+)
 
 # Decoupled weight decay (AdamW). AlphaZero used L2 = 1e-4; AdamW applies it
 # as decoupled decay (scaled by LR each step), which is the cleaner formulation.
 WEIGHT_DECAY  = 1e-4
 
 BEST_CKPT_PATH = os.path.join(OUT_DIR, "sl_best.weights.h5")
+
+# Per-sample source ids in the chunks' "sources" array. MUST stay in sync with
+# dataset_common.SOURCE_IDS (duplicated here so this script stays standalone on
+# Kaggle). Older chunks have no "sources" array -> per-source metrics skipped.
+SOURCE_NAMES = {0: "game", 1: "puzzle", 2: "tablebase", 3: "puzzle_def", 4: "tb_draw"}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -151,7 +164,18 @@ def _load_chunk(path: str):
         boards   = d["boards"].astype(np.float32)   # Keras wants float32 input
         policies = d["policies"]
         values   = d["values"]
-    return boards, policies, values
+        sources  = d["sources"] if "sources" in d.files else None
+    return boards, policies, values, sources
+
+
+def _scheduled_lr(chunks_done: int, total_planned: int) -> float:
+    """Step LR from LR_SCHEDULE based on the fraction of planned chunks done."""
+    frac = chunks_done / max(1, total_planned)
+    lr = LR_SCHEDULE[0][1]
+    for threshold, value in LR_SCHEDULE:
+        if frac >= threshold:
+            lr = value
+    return lr
 
 
 def _should_checkpoint(global_chunk_count: int) -> bool:
@@ -218,6 +242,9 @@ def main() -> None:
     else:
         train_chunks, val_chunks = full_chunks, []
 
+    n_per_epoch = len(train_chunks) if LIMIT_CHUNKS is None else min(LIMIT_CHUNKS, len(train_chunks))
+    total_planned = EPOCHS * n_per_epoch
+
     print(f"  ({len(tail_chunks)} undersized tail chunk(s) excluded from train and val)")
 
     print(f"=== Supervised Training ===")
@@ -226,17 +253,25 @@ def main() -> None:
     print(f"Out dir   : {OUT_DIR}")
     print(f"Chunks    : {len(train_chunks)} train | {len(val_chunks)} val")
     print(f"Epochs    : {EPOCHS} | batch {BATCH_SIZE}")
-    print(f"Optimizer : AdamW (lr {LR_INIT}, weight_decay {WEIGHT_DECAY})")
+    print(f"Optimizer : AdamW (weight_decay {WEIGHT_DECAY}, kernels only)")
+    print(f"LR steps  : " + "  ".join(f"{int(f*100)}%->{lr:.0e}" for f, lr in LR_SCHEDULE)
+          + f"  (of {total_planned} planned chunks)")
     print(f"Per-chunk metrics are shown as train/val.\n")
 
     # --- Build model (same config as RL side) ---
     net = BigNetwork()
-    # Recompile to (a) add a policy top-1 accuracy metric for move-match monitoring
-    # and (b) swap the optimizer to AdamW with decoupled weight decay (BigNetwork
-    # builds with plain Adam, no regularisation). Safe here: no training has
-    # happened yet, so there's no optimizer state to discard.
+    # Recompile to (a) add top-1 accuracy metrics for both heads and (b) swap
+    # the optimizer to AdamW with decoupled weight decay (BigNetwork builds
+    # with plain Adam, no regularisation). Safe here: no training has happened
+    # yet, so there's no optimizer state to discard.
+    optimizer = keras.optimizers.AdamW(learning_rate=LR_SCHEDULE[0][1], weight_decay=WEIGHT_DECAY)
+    # Decay only the conv/dense kernels: pulling BN params and biases toward
+    # zero is standard to avoid (they don't contribute to capacity the way
+    # kernels do). Patterns are matched against variable paths like
+    # "se_block_0_bn1/gamma" and "policy_conv2/bias".
+    optimizer.exclude_from_weight_decay(var_names=["_bn", "/bias"])
     net.model.compile(
-        optimizer=keras.optimizers.AdamW(learning_rate=LR_INIT, weight_decay=WEIGHT_DECAY),
+        optimizer=optimizer,
         loss={
             # MUST match BigNetwork._compile: the policy head emits RAW LOGITS, so
             # policy loss is from_logits=True. A plain "categorical_crossentropy"
@@ -244,15 +279,14 @@ def main() -> None:
             "policy_output": keras.losses.CategoricalCrossentropy(from_logits=True),
             "value_output":  "categorical_crossentropy",
         },
-        # Top-1 move match. argmax is softmax-invariant, so accuracy is correct on logits.
-        metrics={"policy_output": "accuracy"},
+        # Top-1 match for both heads. argmax is softmax-invariant, so policy
+        # accuracy is correct on logits; value accuracy = argmax WDL correct.
+        metrics={"policy_output": "accuracy", "value_output": "accuracy"},
     )
 
     # --- Resume (restarts from the last CHECKPOINT, not the last fitted chunk,
     #     so no training is silently lost between checkpoint boundaries) ---
-    current_lr       = LR_INIT
-    best_val_loss    = float("inf")
-    lr_plateau_count = 0
+    best_val_loss = float("inf")
 
     state = _load_state()
     start_epoch = 0
@@ -265,33 +299,53 @@ def main() -> None:
             start_epoch        = state["epoch"]
             resume_skip        = state["pos_in_epoch"]
             global_chunk_count = state["global_chunk_count"]
-            current_lr         = state.get("current_lr", LR_INIT)
             best_val_loss      = state.get("best_val_loss", float("inf"))
-            lr_plateau_count   = state.get("lr_plateau_count", 0)
-            _set_lr(net.model, current_lr)
             print(f"Resumed from {os.path.basename(ckpt)} "
                   f"(epoch {start_epoch}, {resume_skip} chunks into epoch, "
-                  f"{global_chunk_count} total, lr {current_lr:.2e})\n")
+                  f"{global_chunk_count} total, lr "
+                  f"{_scheduled_lr(global_chunk_count, total_planned):.2e})\n")
 
     # --- Preload validation set once (small) ---
+    # If every val chunk carries a "sources" array, also build per-source
+    # subsets so value/policy quality can be tracked per data source (games /
+    # puzzles / tablebase ...). Costs one extra evaluate-pass worth of compute
+    # per chunk and duplicates the val arrays once in RAM — fine on Kaggle.
     val_data = None
+    val_subsets: list[tuple[str, tuple]] = []   # (source_name, (X, y_dict))
     if val_chunks:
-        vb, vp, vv = [], [], []
+        vb, vp, vv, vs = [], [], [], []
         for vc in val_chunks:
-            b, p, v = _load_chunk(vc)
-            vb.append(b); vp.append(p); vv.append(v)
-        val_data = (
-            np.concatenate(vb),
-            {"policy_output": np.concatenate(vp), "value_output": np.concatenate(vv)},
-        )
-        del vb, vp, vv
+            b, p, v, s = _load_chunk(vc)
+            vb.append(b); vp.append(p); vv.append(v); vs.append(s)
+        vx = np.concatenate(vb)
+        vpol, vval = np.concatenate(vp), np.concatenate(vv)
+        val_data = (vx, {"policy_output": vpol, "value_output": vval})
+        if all(s is not None for s in vs):
+            src = np.concatenate(vs)
+            for sid in np.unique(src):
+                name = SOURCE_NAMES.get(int(sid), f"src{int(sid)}")
+                m = src == sid
+                val_subsets.append(
+                    (name, (vx[m], {"policy_output": vpol[m], "value_output": vval[m]}))
+                )
+            print("Per-source val subsets: "
+                  + ", ".join(f"{n} ({len(sx):,})" for n, (sx, _) in val_subsets) + "\n")
+        else:
+            print("Val chunks carry no 'sources' array — per-source val metrics off.\n")
+        del vb, vp, vv, vs
 
     metrics_header = [
         "epoch", "global_chunk", "chunk_file", "n_pos",
-        "loss", "policy_loss", "value_loss", "policy_acc",
-        "val_loss", "val_policy_loss", "val_value_loss", "val_policy_acc",
+        "loss", "policy_loss", "value_loss", "policy_acc", "value_acc",
+        "val_loss", "val_policy_loss", "val_value_loss",
+        "val_policy_acc", "val_value_acc",
         "learning_rate", "seconds",
     ]
+    for name, _ in val_subsets:
+        metrics_header += [f"val_ploss_{name}", f"val_pacc_{name}",
+                           f"val_vloss_{name}", f"val_vacc_{name}"]
+
+    current_lr = _scheduled_lr(global_chunk_count, total_planned)
 
     for epoch in range(start_epoch, EPOCHS):
         # Per-epoch deterministic order: seeded by epoch alone, so it's identical
@@ -312,7 +366,14 @@ def main() -> None:
             chunk_path = train_chunks[ci]
             t0 = time.time()
 
-            boards, policies, values = _load_chunk(chunk_path)
+            new_lr = _scheduled_lr(global_chunk_count, total_planned)
+            if new_lr != current_lr:
+                print(f"    LR {current_lr:.0e} → {new_lr:.0e}  "
+                      f"({global_chunk_count}/{total_planned} chunks done)", flush=True)
+            current_lr = new_lr
+            _set_lr(net.model, current_lr)
+
+            boards, policies, values, _ = _load_chunk(chunk_path)
 
             hist = net.model.fit(
                 boards,
@@ -334,10 +395,9 @@ def main() -> None:
                 "policy_loss": round(h["policy_output_loss"][-1], 5),
                 "value_loss":  round(h["value_output_loss"][-1], 5),
                 "policy_acc":  round(h["policy_output_accuracy"][-1], 5),
-                "val_loss": "", "val_policy_loss": "",
-                "val_value_loss": "", "val_policy_acc": "",
+                "value_acc":   round(h["value_output_accuracy"][-1], 5),
                 "learning_rate": current_lr,
-                "seconds": round(time.time() - t0, 1),
+                "seconds": 0.0,
             }
 
             del boards, policies, values
@@ -347,8 +407,9 @@ def main() -> None:
             is_last_in_epoch = pos_in_epoch == len(order) - 1
             do_ckpt = _should_checkpoint(global_chunk_count) or is_last_in_epoch
 
-            # Validate every chunk — cheap on P100, gives clean signal for
-            # ReduceLROnPlateau and lets us track the best model precisely.
+            # Validate every chunk — cheap on P100, gives a clean curve and
+            # lets us track the best model precisely.
+            src_msg = ""
             if val_data is not None:
                 # return_dict=True is required: in Keras 3, evaluate's metrics_names
                 # lumps per-output accuracy under a "compile_metrics" placeholder,
@@ -361,28 +422,34 @@ def main() -> None:
                 row["val_policy_loss"] = round(vmap.get("policy_output_loss", 0.0), 5)
                 row["val_value_loss"]  = round(vmap.get("value_output_loss", 0.0), 5)
                 row["val_policy_acc"]  = round(vmap.get("policy_output_accuracy", 0.0), 5)
+                row["val_value_acc"]   = round(vmap.get("value_output_accuracy", 0.0), 5)
+
+                # Per-source val metrics (only when the chunks carry sources).
+                src_parts = []
+                for name, (sx, sy) in val_subsets:
+                    sm = net.model.evaluate(sx, sy, batch_size=BATCH_SIZE,
+                                            verbose=0, return_dict=True)  # type: ignore[arg-type]
+                    row[f"val_ploss_{name}"] = round(sm["policy_output_loss"], 5)
+                    row[f"val_pacc_{name}"]  = round(sm["policy_output_accuracy"], 5)
+                    row[f"val_vloss_{name}"] = round(sm["value_output_loss"], 5)
+                    row[f"val_vacc_{name}"]  = round(sm["value_output_accuracy"], 5)
+                    src_parts.append(
+                        f"{name} v{sm['value_output_loss']:.3f}/a{sm['value_output_accuracy']:.2f}"
+                        f" p{sm['policy_output_loss']:.3f}/a{sm['policy_output_accuracy']:.2f}"
+                    )
+                if src_parts:
+                    src_msg = "    per-source val:  " + "  |  ".join(src_parts)
 
                 val_loss = float(row["val_loss"])
                 if val_loss < best_val_loss - 1e-4:
-                    best_val_loss    = val_loss
-                    lr_plateau_count = 0
+                    best_val_loss = val_loss
                     net.save(BEST_CKPT_PATH)
                     print(f"    new best val loss {val_loss:.5f} → sl_best.weights.h5",
                           flush=True)
-                else:
-                    lr_plateau_count += 1
-                    if lr_plateau_count >= LR_PATIENCE:
-                        old_lr = current_lr
-                        new_lr = max(LR_MIN, old_lr * LR_FACTOR)
-                        if new_lr < old_lr - 1e-12:
-                            _set_lr(net.model, new_lr)
-                            current_lr = new_lr
-                            print(f"    LR {old_lr:.2e} → {new_lr:.2e}"
-                                  f"  (plateau {lr_plateau_count} chunks)", flush=True)
-                        lr_plateau_count = 0
 
-                row["learning_rate"] = current_lr
-
+            row["seconds"] = round(time.time() - t0, 1)
+            for hcol in metrics_header:
+                row.setdefault(hcol, "")
             _append_metrics(row, metrics_header)
 
             # Per-chunk line shows train/val side by side for both heads, so over-
@@ -396,22 +463,24 @@ def main() -> None:
                    f"loss {_pair(row['loss'], row['val_loss'])}  "
                    f"pacc {_pair(row['policy_acc'], row['val_policy_acc'])}  "
                    f"ploss {_pair(row['policy_loss'], row['val_policy_loss'])}  "
-                   f"vloss {_pair(row['value_loss'], row['val_value_loss'])}")
+                   f"vloss {_pair(row['value_loss'], row['val_value_loss'])}  "
+                   f"vacc {_pair(row['value_acc'], row['val_value_acc'])}")
             print(msg, flush=True)
+            if src_msg:
+                print(src_msg, flush=True)
 
             if do_ckpt:
                 ckpt_path = _ckpt_path(global_chunk_count)
                 net.save(ckpt_path)
                 # pos_in_epoch+1 = chunks completed in this epoch as of this checkpoint.
                 # Next epoch resets to 0 (handled by start_epoch comparison on resume).
+                # The LR is NOT stored: it re-derives from global_chunk_count.
                 _save_state({
                     "epoch":              epoch if not is_last_in_epoch else epoch + 1,
                     "pos_in_epoch":       (pos_in_epoch + 1) if not is_last_in_epoch else 0,
                     "global_chunk_count": global_chunk_count,
                     "last_checkpoint":    ckpt_path,
-                    "current_lr":         current_lr,
                     "best_val_loss":      best_val_loss,
-                    "lr_plateau_count":   lr_plateau_count,
                 })
                 print(f"    saved {os.path.basename(ckpt_path)}", flush=True)
 
