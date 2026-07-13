@@ -49,7 +49,7 @@ FENS = [
 
 # Weights. None -> sl_best.weights.h5 in supervised_learning/checkpoints,
 # else the newest sl_*.weights.h5 there. Or set an explicit path.
-WEIGHTS_PATH: str | None = None
+WEIGHTS_PATH: str | None = "supervised_learning/checkpoints/sl_best.weights.h5"
 
 # Stockfish. None -> auto-detect (PATH, then known local installs below).
 # Set an explicit path to the executable to override.

@@ -99,7 +99,7 @@ SHUFFLE_SEED      = 42
 
 # TEMPORARY: cap training to the first N chunks of the shuffled order per epoch
 # (for quick test runs). Set to None to train on all chunks.
-LIMIT_CHUNKS      = 200
+LIMIT_CHUNKS      = None
 
 CKPT_PREFIX  = "sl"
 STATE_FILE   = os.path.join(OUT_DIR, "train_state.json")
