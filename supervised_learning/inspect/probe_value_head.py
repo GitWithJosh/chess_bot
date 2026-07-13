@@ -33,10 +33,11 @@ runs re-use them, so runs with different weights are measured on identical data:
 Each run writes report.<tag>.txt, per-position CSVs (*.<tag>.csv) and
 summary.<tag>.json into supervised_learning/results/probes/.
 
-IMPORTANT for future data changes: if defender-side puzzle rows are ever added
-to the training data, exclude the puzzle ids in positions/probe_puzzle_ids.txt
-from the extractor, otherwise probe B stops being held-out. (--quick smoke runs
-use small fresh sets and touch neither the saved positions nor the SF cache.)
+Held-out guarantee: process_puzzle_data.py automatically skips the puzzle ids
+in positions/probe_puzzle_ids.txt (do NOT delete that file), so probe B stays
+held-out even though defender rows are now part of training. (--quick smoke
+runs use small fresh sets and touch neither the saved positions nor the SF
+cache.)
 """
 
 import argparse

@@ -34,12 +34,12 @@ N_WDL = 3
 POLICY_SIZE = 1858
 
 # Per-sample source ids stored in each chunk's "sources" uint8 array (written
-# by build_dataset.py). Enables per-source val metrics and, later, per-source
-# loss weighting in training. 3/4 are reserved for planned data additions
-# (puzzle defender-side rows, drawn tablebase rows). MUST stay in sync with
-# the SOURCE_NAMES copy in train_supervised.py (duplicated there so the
-# training script stays standalone on Kaggle).
-SOURCE_IDS = {"game": 0, "puzzle": 1, "tablebase": 2, "puzzle_def": 3, "tb_draw": 4}
+# by build_dataset.py). Enables per-source val metrics in training. Defender-
+# side puzzle rows count as "puzzle" and drawn tablebase rows as "tablebase" —
+# the source describes where the position came from, not its label. MUST stay
+# in sync with the SOURCE_NAMES copy in train_supervised.py (duplicated there
+# so the training script stays standalone on Kaggle).
+SOURCE_IDS = {"game": 0, "puzzle": 1, "tablebase": 2}
 
 _ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
@@ -155,10 +155,18 @@ def board_to_input_tensor(board: chess.Board) -> np.ndarray:
 
 
 def encode_sample(fen: str, move_idx: int, wdl: int):
-    """One manifest row -> (board (8,8,20) f16, policy (1858,) f32, value (3,) f32)."""
+    """One manifest row -> (board (8,8,20) f16, policy (1858,) f32, value (3,) f32).
+
+    move_idx -1 marks a VALUE-ONLY row (drawn tablebase positions, which have
+    no single best move): the policy target stays all-zero, whose categorical
+    cross-entropy loss and gradient are exactly 0. train_supervised.py also
+    derives per-sample policy weights from policies.sum(axis=1), so these rows
+    are excluded from the policy accuracy metric as well.
+    """
     boards = board_to_input_tensor(chess.Board(fen))
     policy = np.zeros(POLICY_SIZE, dtype=np.float32)
-    policy[move_idx] = 1.0
+    if move_idx >= 0:
+        policy[move_idx] = 1.0
     value = np.zeros(N_WDL, dtype=np.float32)
     value[wdl] = 1.0
     return boards, policy, value

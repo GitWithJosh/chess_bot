@@ -12,12 +12,17 @@ Every output chunk (50k positions) is simultaneously:
     * WDL-balanced  ~1/3 win / 1/3 draw / 1/3 loss   (the value head was
       collapsing to "draw" on the draw-heavy raw games).
 
-Because puzzles are all wins and tablebase walks are wins+losses (no draws),
-the per-chunk source x WDL split isn't free: the only spare freedom is how the
-2.5% tablebase slice divides between win and loss. We pick that split to
-MAXIMISE the number of balanced chunks the available pools support (the
-draw-heavy games make win/loss the binding classes; puzzles refill win and
-tablebase refills loss, so more of the abundant draws survive).
+The within-source WDL splits are FIXED (2026-07 anti-shortcut experiment:
+puzzles now carry defender-side loss rows and tablebase carries drawn rows,
+so no source is a single-class giveaway the value head can exploit):
+
+              win     draw    loss   | total
+    game     13,334  15,834  13,332  | 42,500
+    puzzle    2,500       0   2,500  |  5,000
+    tablebase   833     833     834  |  2,500
+    total    16,667  16,667  16,666  | 50,000
+
+The chunk count is whatever the scarcest (source, wdl) pool supports.
 
 Output: supervised_learning/processed_data/chunk_XXXX.npz  (boards/policies/
 values/sources), the exact format train_supervised.py consumes. The sources
@@ -47,6 +52,9 @@ CHUNK_SIZE = 50_000
 SRC_GAME, SRC_PUZZLE, SRC_TB = 42_500, 5_000, 2_500
 # Target WDL mix per chunk (must sum to CHUNK_SIZE).
 COL_WIN, COL_DRAW, COL_LOSS = 16_667, 16_667, 16_666
+# Fixed within-source WDL splits (see module docstring); games fill the rest.
+PUZ_WIN, PUZ_LOSS = 2_500, 2_500              # puzzles: solver wins / defender losses
+TB_WIN, TB_DRAW, TB_LOSS = 833, 833, 834      # tablebase: ~1/3 each
 
 MAX_CHUNKS = None         # cap output chunks (None = as many as the pools allow)
 ASSEMBLE_WORKERS = 8      # parallel encoders; each holds ~0.5 GB while writing a chunk
@@ -87,35 +95,30 @@ def count_groups(files: list[str]) -> dict[tuple[str, int], int]:
 
 
 # ---------------------------------------------------------------------------
-# Plan — choose the tablebase win/loss split that maximises the chunk count,
-# and derive the per-chunk quota for every (source, wdl) group.
+# Plan — fixed per-(source, wdl) quotas; the chunk count is whatever the
+# scarcest pool supports.
 # ---------------------------------------------------------------------------
 
 def plan(counts: dict[tuple[str, int], int]):
-    def c(s, w): return counts.get((s, w), 0)
+    q = {
+        ("puzzle", dc.WDL_WIN):     PUZ_WIN,
+        ("puzzle", dc.WDL_LOSS):    PUZ_LOSS,
+        ("tablebase", dc.WDL_WIN):  TB_WIN,
+        ("tablebase", dc.WDL_DRAW): TB_DRAW,
+        ("tablebase", dc.WDL_LOSS): TB_LOSS,
+        ("game", dc.WDL_WIN):  COL_WIN  - PUZ_WIN  - TB_WIN,
+        ("game", dc.WDL_DRAW): COL_DRAW - TB_DRAW,
+        ("game", dc.WDL_LOSS): COL_LOSS - PUZ_LOSS - TB_LOSS,
+    }
+    assert sum(q.values()) == CHUNK_SIZE and all(v >= 0 for v in q.values())
+    assert PUZ_WIN + PUZ_LOSS == SRC_PUZZLE
+    assert TB_WIN + TB_DRAW + TB_LOSS == SRC_TB
 
-    best = None  # (N, tb_win, quotas)
-    for tb_win in range(0, SRC_TB + 1):
-        tb_loss = SRC_TB - tb_win
-        q = {
-            ("puzzle", dc.WDL_WIN):    SRC_PUZZLE,           # puzzles are all wins
-            ("tablebase", dc.WDL_WIN): tb_win,
-            ("tablebase", dc.WDL_LOSS): tb_loss,
-            ("game", dc.WDL_WIN):  COL_WIN  - SRC_PUZZLE - tb_win,
-            ("game", dc.WDL_DRAW): COL_DRAW,                  # all draws come from games
-            ("game", dc.WDL_LOSS): COL_LOSS - tb_loss,
-        }
-        if any(v < 0 for v in q.values()):
-            continue
-        # N is bounded by the scarcest pool relative to its per-chunk demand.
-        N = min((c(s, w) // per) for (s, w), per in q.items() if per > 0)
-        if best is None or N > best[0]:
-            best = (N, tb_win, q)
-
-    N, tb_win, q = best
+    # N is bounded by the scarcest pool relative to its per-chunk demand.
+    N = min(counts.get(k, 0) // per for k, per in q.items() if per > 0)
     if MAX_CHUNKS is not None:
         N = min(N, MAX_CHUNKS)
-    return N, tb_win, q
+    return N, q
 
 
 # ---------------------------------------------------------------------------
@@ -256,11 +259,11 @@ def main() -> None:
         tot = sum(row.values())
         print(f"  {s:10s} win {row[0]:>10,}  draw {row[1]:>10,}  loss {row[2]:>10,}  | {tot:>11,}")
 
-    N, tb_win, q = plan(counts)
+    N, q = plan(counts)
     if N <= 0:
         print("\nERROR: pools too small / imbalanced to build even one balanced chunk.")
         sys.exit(1)
-    print(f"\nPlan: {N} chunks of {CHUNK_SIZE:,}  (tablebase split {tb_win} win / {SRC_TB - tb_win} loss per chunk)")
+    print(f"\nPlan: {N} chunks of {CHUNK_SIZE:,}")
     print("  per-chunk quota:")
     for (s, w), per in sorted(q.items()):
         if per > 0:

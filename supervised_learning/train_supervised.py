@@ -7,7 +7,10 @@ apples-to-apples.
 
 Data: supervised_learning/processed_data/chunk_*.npz, each containing
     boards   float16 (N, 8, 8, 20)
-    policies float32 (N, 1858)   one-hot move
+    policies float32 (N, 1858)   one-hot move; ALL-ZERO for value-only rows
+                                 (drawn tablebase positions) -> 0 policy loss,
+                                 and policies.sum(1) doubles as the per-sample
+                                 policy weight so metrics skip those rows
     values   float32 (N, 3)      one-hot WDL
     sources  uint8   (N,)        per-sample source id (newer chunks only; see
                                  SOURCE_NAMES) — enables per-source val metrics
@@ -127,8 +130,9 @@ BEST_CKPT_PATH = os.path.join(OUT_DIR, "sl_best.weights.h5")
 
 # Per-sample source ids in the chunks' "sources" array. MUST stay in sync with
 # dataset_common.SOURCE_IDS (duplicated here so this script stays standalone on
-# Kaggle). Older chunks have no "sources" array -> per-source metrics skipped.
-SOURCE_NAMES = {0: "game", 1: "puzzle", 2: "tablebase", 3: "puzzle_def", 4: "tb_draw"}
+# Kaggle). Defender-side puzzle rows count as "puzzle", drawn tablebase rows as
+# "tablebase". Older chunks have no "sources" array -> per-source metrics skipped.
+SOURCE_NAMES = {0: "game", 1: "puzzle", 2: "tablebase"}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -166,6 +170,31 @@ def _load_chunk(path: str):
         values   = d["values"]
         sources  = d["sources"] if "sources" in d.files else None
     return boards, policies, values, sources
+
+
+def _targets_and_weights(policies: np.ndarray, values: np.ndarray):
+    """(y, sample_weight) for fit/evaluate, in MODEL-OUTPUT ORDER (lists).
+
+    Keras 3 constraints (verified locally): sample_weight must mirror y's
+    structure AND resolve against the model's OUTPUT structure. BigNetwork
+    builds its model with LIST outputs [policy, value], so both y and
+    sample_weight must be lists here — dict forms fail (a partial dict raises
+    ValueError, a full dict fails with KeyError: 0 during path resolution).
+
+    Policy weight = policies.sum(1): value-only rows (drawn tablebase
+    positions, all-zero policy target) get 0, one-hot rows get 1. Their policy
+    CE and gradient are already exactly 0; the weight additionally keeps them
+    out of the policy ACCURACY metric (weighted metrics divide by sum(w)).
+    The reported policy LOSS still averages over all rows (Keras divides the
+    weighted sum by the row count, not by sum(w)), so with 833 value-only rows
+    per 50k chunk it reads ~1.7% below the true per-one-hot-row CE — a
+    constant reporting dilution, not a training effect. The value head gets
+    all-ones (identical to unweighted).
+    """
+    psw = policies.sum(axis=1).astype(np.float32)
+    y = [policies, values]
+    sw = [psw, np.ones(len(psw), dtype=np.float32)]
+    return y, sw
 
 
 def _scheduled_lr(chunks_done: int, total_planned: int) -> float:
@@ -279,9 +308,14 @@ def main() -> None:
             "policy_output": keras.losses.CategoricalCrossentropy(from_logits=True),
             "value_output":  "categorical_crossentropy",
         },
-        # Top-1 match for both heads. argmax is softmax-invariant, so policy
-        # accuracy is correct on logits; value accuracy = argmax WDL correct.
-        metrics={"policy_output": "accuracy", "value_output": "accuracy"},
+        # Top-1 match for both heads, as WEIGHTED metrics (verified locally):
+        # Keras 3 applies sample_weight to losses only; metrics passed via
+        # `metrics=` stay unweighted. weighted_metrics divide by sum(w), which
+        # is what excludes the value-only rows (policy weight 0) from policy
+        # accuracy. History/evaluate key names are unchanged
+        # (<output>_accuracy). argmax is softmax-invariant, so policy accuracy
+        # is correct on logits; value accuracy = argmax WDL correct.
+        weighted_metrics={"policy_output": "accuracy", "value_output": "accuracy"},
     )
 
     # --- Resume (restarts from the last CHECKPOINT, not the last fitted chunk,
@@ -310,8 +344,12 @@ def main() -> None:
     # subsets so value/policy quality can be tracked per data source (games /
     # puzzles / tablebase ...). Costs one extra evaluate-pass worth of compute
     # per chunk and duplicates the val arrays once in RAM — fine on Kaggle.
+    # Per-sample POLICY weights are derived from the targets themselves:
+    # value-only rows (drawn tablebase positions) carry an all-zero policy
+    # vector -> weight 0, one-hot rows -> weight 1. Their policy CE is already
+    # exactly 0; the weight additionally keeps them out of policy accuracy.
     val_data = None
-    val_subsets: list[tuple[str, tuple]] = []   # (source_name, (X, y_dict))
+    val_subsets: list[tuple[str, np.ndarray, list, list]] = []  # (source_name, X, y, sw)
     if val_chunks:
         vb, vp, vv, vs = [], [], [], []
         for vc in val_chunks:
@@ -319,17 +357,17 @@ def main() -> None:
             vb.append(b); vp.append(p); vv.append(v); vs.append(s)
         vx = np.concatenate(vb)
         vpol, vval = np.concatenate(vp), np.concatenate(vv)
-        val_data = (vx, {"policy_output": vpol, "value_output": vval})
+        val_y, val_sw = _targets_and_weights(vpol, vval)
+        val_data = (vx, val_y, val_sw)
         if all(s is not None for s in vs):
             src = np.concatenate(vs)
             for sid in np.unique(src):
                 name = SOURCE_NAMES.get(int(sid), f"src{int(sid)}")
                 m = src == sid
-                val_subsets.append(
-                    (name, (vx[m], {"policy_output": vpol[m], "value_output": vval[m]}))
-                )
+                sub_y, sub_sw = _targets_and_weights(vpol[m], vval[m])
+                val_subsets.append((name, vx[m], sub_y, sub_sw))
             print("Per-source val subsets: "
-                  + ", ".join(f"{n} ({len(sx):,})" for n, (sx, _) in val_subsets) + "\n")
+                  + ", ".join(f"{n} ({len(sx):,})" for n, sx, _, _ in val_subsets) + "\n")
         else:
             print("Val chunks carry no 'sources' array — per-source val metrics off.\n")
         del vb, vp, vv, vs
@@ -341,7 +379,7 @@ def main() -> None:
         "val_policy_acc", "val_value_acc",
         "learning_rate", "seconds",
     ]
-    for name, _ in val_subsets:
+    for name, _, _, _ in val_subsets:
         metrics_header += [f"val_ploss_{name}", f"val_pacc_{name}",
                            f"val_vloss_{name}", f"val_vacc_{name}"]
 
@@ -375,9 +413,11 @@ def main() -> None:
 
             boards, policies, values, _ = _load_chunk(chunk_path)
 
+            y_fit, sw_fit = _targets_and_weights(policies, values)
             hist = net.model.fit(
                 boards,
-                {"policy_output": policies, "value_output": values},
+                y_fit,
+                sample_weight=sw_fit,
                 batch_size=BATCH_SIZE,
                 epochs=1,
                 shuffle=True,          # shuffle WITHIN the chunk
@@ -416,6 +456,7 @@ def main() -> None:
                 # so positional unpacking would drop the per-head metrics.
                 vmap = net.model.evaluate(
                     val_data[0], val_data[1], batch_size=BATCH_SIZE,
+                    sample_weight=val_data[2],
                     verbose=0, return_dict=True,  # type: ignore[arg-type]
                 )
                 row["val_loss"]        = round(vmap.get("loss", 0.0), 5)
@@ -426,8 +467,9 @@ def main() -> None:
 
                 # Per-source val metrics (only when the chunks carry sources).
                 src_parts = []
-                for name, (sx, sy) in val_subsets:
+                for name, sx, sy, ssw in val_subsets:
                     sm = net.model.evaluate(sx, sy, batch_size=BATCH_SIZE,
+                                            sample_weight=ssw,
                                             verbose=0, return_dict=True)  # type: ignore[arg-type]
                     row[f"val_ploss_{name}"] = round(sm["policy_output_loss"], 5)
                     row[f"val_pacc_{name}"]  = round(sm["policy_output_accuracy"], 5)

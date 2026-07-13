@@ -1,9 +1,10 @@
 """
-Syzygy endgame tablebase -> mate-sequence manifest (fen,move_idx,wdl rows).
+Syzygy endgame tablebase -> mate-sequence + drawn-position manifest
+(fen,move_idx,wdl rows).
 
 Run from the chess_bot root:
-    python supervised_learning/create_dataset/process_tablebase_data.py        # full run
-    python supervised_learning/create_dataset/process_tablebase_data.py 20000  # test: ~20k positions
+    python supervised_learning/create_dataset/process_tablebase_data.py             # full run
+    python supervised_learning/create_dataset/process_tablebase_data.py 20000 8000  # test: ~20k decisive + ~8k drawn
 
 Idea (the "sense of goal" data): pick a decisive <=5-piece material config, set
 up a random legal position, then play the tablebase-optimal line and record
@@ -17,8 +18,17 @@ every position of it — BUT only if the line actually reaches checkmate:
 A walk that fails to mate (DTZ is distance-to-zeroing, not to mate, so a few
 lines stall) is discarded entirely, so no shuffling moves leak into the policy
 targets. The position colours are also flipped 50% of the time so the strong
-side is White/Black equally often. Draws are intentionally skipped — they're
-abundant in the game data; what's scarce is this win/loss "drive to mate" signal.
+side is White/Black equally often.
+
+DRAWN positions (added 2026-07): random legal positions the tablebase scores
+as exactly drawn, labeled DRAW with NO policy target (move_idx = -1 -> all-zero
+policy row, which contributes zero policy loss/gradient; there is no single
+best move in a drawn position). Without them, every <=5-piece training
+position was decisive, teaching the net "material imbalance with few pieces
+=> someone wins" — probed at P(draw)=0.09-0.46 on tablebase-certain draws
+(see inspect/probe_value_head.py). Sampled from the same MATERIALS as the
+walks plus KNN-vs-K (the worst probe offender), with randomised halfmove
+clocks so the clock plane can't become a draw/decisive tell.
 
 Output: supervised_learning/pools/pool_tablebase_w{worker}.csv
 """
@@ -38,7 +48,8 @@ import dataset_common as dc  # noqa: E402
 TB_DIR   = os.path.join(dc.repo_root(), "supervised_learning", "supervised_data", "syzygy_3-4-5")
 OUT_DIR  = os.path.join(dc.repo_root(), "supervised_learning", "pools")
 
-TARGET_POSITIONS = 1_000_000   # assembler needs ~5%/chunk; 1M covers ~400 chunks with margin
+TARGET_POSITIONS = 1_000_000   # decisive walk positions; ~1,667/chunk -> covers ~600 chunks
+TARGET_DRAWS     = 500_000     # drawn positions; 833/chunk -> covers ~600 chunks
 N_WORKERS        = 12
 MAX_PLIES        = 250         # safety cap per walk (DTZ lines run longer than shortest mate)
 SEED             = 1234
@@ -56,6 +67,12 @@ MATERIALS = [
 ]
 
 _PIECE = {"Q": chess.QUEEN, "R": chess.ROOK, "B": chess.BISHOP, "N": chess.KNIGHT, "P": chess.PAWN}
+
+# Materials for the DRAWN rows: same configs as the walks (so drawn and
+# decisive positions are distributionally alike and only the label differs),
+# plus KNN-vs-K — never force-mateable, and the position the probe showed the
+# net misjudges hardest (P(draw)=0.08 while the truth is ~always draw).
+DRAW_MATERIALS = MATERIALS + [("NN", "")]
 
 
 def _random_position(rng: random.Random, material: tuple[str, str]) -> chess.Board | None:
@@ -155,13 +172,13 @@ def _walk(tb, board, lut, out) -> int:
     return 0
 
 
-def worker_fn(args) -> tuple[int, int]:
-    worker_id, target, seed = args
+def worker_fn(args) -> tuple[int, int, int]:
+    worker_id, target, target_draws, seed = args
     rng = random.Random(seed)
     lut = dc.load_move_lut()
     tb = chess.syzygy.open_tablebase(TB_DIR)
     out_path = os.path.join(OUT_DIR, f"pool_tablebase_w{worker_id}.csv")
-    written = 0
+    written = draws = 0
     with open(out_path, "w", encoding="utf-8") as out:
         while written < target:
             board = _random_position(rng, rng.choice(MATERIALS))
@@ -170,27 +187,46 @@ def worker_fn(args) -> tuple[int, int]:
             if tb.probe_wdl(board) == 0:     # skip drawn starts; we want mate sequences
                 continue
             written += _walk(tb, board, lut, out)
+        # Drawn rows: exactly-drawn random positions, DRAW label, no policy
+        # target (move_idx -1 -> all-zero policy row; see module docstring).
+        # Cheap compared to the walks: one WDL probe per candidate, no DTZ.
+        while draws < target_draws:
+            board = _random_position(rng, rng.choice(DRAW_MATERIALS))
+            if board is None:
+                continue
+            if tb.probe_wdl(board) != 0:     # exactly drawn only (|1| cursed excluded)
+                continue
+            # Randomise the halfmove clock: the walk rows carry varied clocks,
+            # so a constant 0 here would make the clock plane a class tell.
+            board.halfmove_clock = rng.randint(0, 30)
+            out.write(dc.manifest_line(board.fen(), -1, dc.WDL_DRAW))
+            draws += 1
     tb.close()
-    return worker_id, written
+    return worker_id, written, draws
 
 
 def main() -> None:
     target_total = int(sys.argv[1]) if len(sys.argv) > 1 else TARGET_POSITIONS
+    target_draws = int(sys.argv[2]) if len(sys.argv) > 2 else TARGET_DRAWS
     os.makedirs(OUT_DIR, exist_ok=True)
     per = max(1, target_total // N_WORKERS)
+    per_draws = max(1, target_draws // N_WORKERS)
 
-    print("=== Tablebase Data Processor (mate-sequence walks) ===")
+    print("=== Tablebase Data Processor (mate-sequence walks + drawn positions) ===")
     print(f"TB dir : {TB_DIR}")
     print(f"Out    : {OUT_DIR}/pool_tablebase_w*.csv")
-    print(f"Target : {target_total:,} positions across {N_WORKERS} workers ({per:,} each)\n")
+    print(f"Target : {target_total:,} decisive + {target_draws:,} drawn positions "
+          f"across {N_WORKERS} workers ({per:,} + {per_draws:,} each)\n")
 
     t0 = time.time()
-    work = [(w, per, SEED + w) for w in range(N_WORKERS)]
+    work = [(w, per, per_draws, SEED + w) for w in range(N_WORKERS)]
     with multiprocessing.Pool(processes=N_WORKERS) as pool:
         results = pool.map(worker_fn, work)
 
     total = sum(r[1] for r in results)
-    print(f"=== Done in {time.time() - t0:.0f}s — {total:,} positions across {len(results)} shards ===")
+    total_draws = sum(r[2] for r in results)
+    print(f"=== Done in {time.time() - t0:.0f}s — {total:,} decisive + "
+          f"{total_draws:,} drawn positions across {len(results)} shards ===")
 
 
 if __name__ == "__main__":
