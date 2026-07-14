@@ -3,12 +3,17 @@
 Includes:
   - Sequential MCTS (``search``) and batched virtual-loss MCTS (``search_batched``)
     that evaluates leaves in groups for efficient GPU use.
+  - An evaluation cache shared across the whole search/game: transposed
+    positions reuse (priors, value) instead of re-running the network — network
+    calls are the dominant self-play cost.
+  - First Play Urgency (FPU) so the tree searches deep instead of broad.
   - ``SelfPlayGame``: one self-play game with optional resignation adjudication
     and a PGN record of the moves played.
   - ``play_games_parallel``: generate several games across CPU processes.
 """
 
 import multiprocessing as mp
+import time
 from typing import Any
 
 import chess
@@ -29,6 +34,15 @@ class MCTS:
         c_puct: Exploration constant for PUCT formula
         dirichlet_alpha: Alpha parameter for Dirichlet noise at the root
         dirichlet_epsilon: Weight of Dirichlet noise vs network prior
+        fpu_reduction: First Play Urgency reduction. An unvisited edge's Q is
+            taken as ``parent value_estimate - fpu_reduction`` (clamped to -1)
+            instead of 0.0. Without this, in losing positions (all explored
+            Q < 0) every untried move looks better than every explored one, so
+            the tree grows broad instead of deep (the ~4-ply problem).
+            Leela-typical range 0.2-0.4. Set to None to restore old behavior.
+        eval_cache_max: Max entries in the evaluation cache (position ->
+            (legal-move priors, value)). Entries are ~(#legal moves) floats, so
+            even 200k entries is only tens of MB. FIFO eviction when full.
     """
 
     def __init__(
@@ -39,6 +53,8 @@ class MCTS:
         c_puct: float = 1.5,
         dirichlet_alpha: float = 0.3,
         dirichlet_epsilon: float = 0.25,
+        fpu_reduction: float | None = 0.3,
+        eval_cache_max: int = 200_000,
     ):
         self.network = network
         self.converter = converter
@@ -46,6 +62,103 @@ class MCTS:
         self.c_puct = c_puct
         self.dirichlet_alpha = dirichlet_alpha
         self.dirichlet_epsilon = dirichlet_epsilon
+        self.fpu_reduction = fpu_reduction
+
+        # Evaluation cache. IMPORTANT: entries are only valid for the weights
+        # that produced them — call clear_cache() after (re)loading/training
+        # weights if you keep using the same MCTS object.
+        self.eval_cache_max = eval_cache_max
+        self._eval_cache: dict = {}
+        self.cache_hits = 0
+        self.cache_misses = 0
+
+    # ------------------------------------------------------------------
+    # Evaluation cache
+    # ------------------------------------------------------------------
+
+    def clear_cache(self):
+        """Drop all cached evaluations (call after the network weights change)."""
+        self._eval_cache.clear()
+        self.cache_hits = 0
+        self.cache_misses = 0
+
+    @staticmethod
+    def _position_key(board: chess.Board):
+        """Cache key for a position's network evaluation.
+
+        Uses python-chess's transposition key (pieces, turn, castling, en
+        passant) *plus the halfmove clock*: the clock must be included because
+        it is part of the 20-plane input encoding (plane 17), so two positions
+        differing only in the clock genuinely evaluate differently.
+        """
+        try:
+            return (board._transposition_key(), board.halfmove_clock)
+        except AttributeError:  # private API fallback: FEN minus move counters
+            return (" ".join(board.fen().split(" ")[:4]), board.halfmove_clock)
+
+    def _cache_put(self, key, priors: np.ndarray, value: float):
+        cache = self._eval_cache
+        if len(cache) >= self.eval_cache_max:
+            cache.pop(next(iter(cache)))  # FIFO eviction (dicts keep insert order)
+        cache[key] = (priors, value)
+
+    def _expand_leaf(self, node: Node) -> float:
+        """Evaluate + expand a single leaf, via the cache when possible.
+
+        Returns the scalar value of the position from the node's perspective.
+        This replaces direct Node.expand calls in the search paths.
+        """
+        if node.is_terminal:
+            return node.terminal_value
+
+        key = self._position_key(node.board)
+        hit = self._eval_cache.get(key)
+        if hit is not None:
+            self.cache_hits += 1
+            priors, value = hit
+        else:
+            self.cache_misses += 1
+            tensor = self.converter.board_to_input_tensor(node.board)
+            policy, raw_value = self.network.predict(tensor)
+            moves, priors = node._compute_priors(policy, self.converter)
+            value = Node._scalar_value(raw_value)
+            self._cache_put(key, priors, value)
+            node.value_estimate = value
+            if node.is_leaf:
+                node._create_edges_from_priors(priors, moves)
+            return value
+
+        node.value_estimate = value
+        if node.is_leaf:
+            node._create_edges_from_priors(priors)
+        return value
+
+    # ------------------------------------------------------------------
+    # Selection helpers
+    # ------------------------------------------------------------------
+
+    def _fpu(self, node: Node, at_noised_root: bool) -> float | None:
+        """First Play Urgency value for the children of ``node``.
+
+        Everywhere: the parent's own value estimate minus a reduction — an
+        unvisited move is assumed slightly worse than the position it comes
+        from, so the search deepens promising lines instead of fanning out.
+
+        At the root *while Dirichlet noise is active*: optimistic FPU (+1.0),
+        the lc0 convention, so the injected noise can actually pull unvisited
+        root moves into the search (a pessimistic root FPU would mute the
+        exploration noise exists to provide).
+        """
+        if self.fpu_reduction is None:
+            return None  # legacy behavior: unvisited Q = 0.0
+        if at_noised_root:
+            return 1.0
+        v = node.value_estimate - self.fpu_reduction
+        return -1.0 if v < -1.0 else v
+
+    # ------------------------------------------------------------------
+    # Sequential search
+    # ------------------------------------------------------------------
 
     def search(self, root: Node, add_noise: bool = True) -> Node:
         """Run sequential MCTS simulations (one leaf eval per network call).
@@ -57,12 +170,15 @@ class MCTS:
         Returns:
             The root node with updated visit counts
         """
+        if root.is_terminal:
+            return root
         # Expand root if it's a leaf
         if root.is_leaf:
-            root.expand(self.network, self.converter)
+            self._expand_leaf(root)
 
         # Add Dirichlet noise to root priors for exploration
-        if add_noise and len(root.edges) > 0:
+        noise_on = add_noise and len(root.edges) > 0
+        if noise_on:
             self._add_dirichlet_noise(root)
 
         for _ in range(self.num_simulations):
@@ -71,15 +187,14 @@ class MCTS:
 
             # 1. SELECT — walk down the tree using PUCT until we hit a leaf
             while not node.is_leaf and not node.is_terminal:
-                edge = node.select_edge(self.c_puct)
+                fpu = self._fpu(node, noise_on and node is root)
+                edge = node.select_edge(self.c_puct, fpu)
                 search_path.append(edge)
                 node = node.get_child_node(edge)
 
-            # 2. EXPAND & EVALUATE — expand the leaf and get the network value
-            if node.is_terminal:
-                value = node.terminal_value
-            else:
-                value = node.expand(self.network, self.converter)
+            # 2. EXPAND & EVALUATE — expand the leaf and get its value
+            #    (terminal value, cached evaluation, or network call)
+            value = self._expand_leaf(node)
 
             # 3. BACKPROPAGATE — update all edges in the search path
             # Value must be flipped at each level since players alternate
@@ -101,6 +216,10 @@ class MCTS:
             value = -value
             edge.update(value)
 
+    # ------------------------------------------------------------------
+    # Batched search
+    # ------------------------------------------------------------------
+
     def search_batched(
         self, root: Node, add_noise: bool = False, batch_size: int = 16
     ) -> Node:
@@ -110,7 +229,8 @@ class MCTS:
         leaves a deep ResNet's GPU mostly idle. Here we collect up to
         ``batch_size`` leaves per round using *virtual loss* (a temporary penalty
         on each selected path so concurrent selections diverge to different
-        leaves), evaluate them all in a single network call, then back up.
+        leaves), looks each leaf up in the evaluation cache, evaluates the
+        misses in a single network call, then backs up.
 
         Equivalent in search quality to the sequential version for typical
         batch sizes, but far higher throughput on GPU.
@@ -126,15 +246,16 @@ class MCTS:
         if root.is_terminal:
             return root
         if root.is_leaf:
-            root.expand(self.network, self.converter)
-        if add_noise and len(root.edges) > 0:
+            self._expand_leaf(root)
+        noise_on = add_noise and len(root.edges) > 0
+        if noise_on:
             self._add_dirichlet_noise(root)
 
         sims_done = 0
         while sims_done < self.num_simulations:
             n_this = min(batch_size, self.num_simulations - sims_done)
 
-            leaves: list[Node] = []          # unique nodes needing a network eval
+            leaves: list[Node] = []          # unique nodes needing an evaluation
             leaf_index: dict[int, int] = {}  # id(node) -> position in `leaves`
             pending: list[tuple[list[Edge], Node]] = []  # (path, leaf) per sim
 
@@ -144,7 +265,8 @@ class MCTS:
 
                 # SELECT — walk down with virtual loss until a leaf/terminal
                 while not node.is_leaf and not node.is_terminal:
-                    edge = node.select_edge(self.c_puct)
+                    fpu = self._fpu(node, noise_on and node is root)
+                    edge = node.select_edge(self.c_puct, fpu)
                     edge.add_virtual_loss()
                     path.append(edge)
                     node = node.get_child_node(edge)
@@ -159,29 +281,62 @@ class MCTS:
                     leaves.append(node)
                 pending.append((path, node))
 
-            if not leaves:
-                sims_done += n_this
-                continue
+            if leaves:
+                # EVALUATE — cache lookups + one batched call for the misses,
+                # EXPAND each distinct leaf once (done inside the helper)
+                values = self._evaluate_and_expand_batch(leaves)
 
-            # EVALUATE — one batched network call for all distinct leaves
-            tensors = [self.converter.board_to_input_tensor(n.board) for n in leaves]
-            policies, values = self.network.predict_batch(tensors)
-
-            # EXPAND each distinct leaf once
-            for node in leaves:
-                if node.is_leaf:
-                    idx = leaf_index[id(node)]
-                    node.expand_from_eval(policies[idx], self.converter)
-
-            scalars = [Node._scalar_value(values[i]) for i in range(len(leaves))]
-
-            # BACKUP — every collected sim, using its leaf's value
-            for path, node in pending:
-                self._backpropagate_batched(path, scalars[leaf_index[id(node)]])
+                # BACKUP — every collected sim, using its leaf's value
+                for path, node in pending:
+                    self._backpropagate_batched(path, values[leaf_index[id(node)]])
 
             sims_done += n_this
 
         return root
+
+    def _evaluate_and_expand_batch(self, leaves: list[Node]) -> list[float]:
+        """Evaluate distinct leaves (cache first, one network call for misses)
+        and expand each; returns scalar values aligned with ``leaves``."""
+        n = len(leaves)
+        priors_list: list = [None] * n
+        values: list[float] = [0.0] * n
+        keys = [self._position_key(node.board) for node in leaves]
+
+        miss_idx: list[int] = []
+        for i, key in enumerate(keys):
+            hit = self._eval_cache.get(key)
+            if hit is not None:
+                self.cache_hits += 1
+                priors_list[i], values[i] = hit
+            else:
+                self.cache_misses += 1
+                miss_idx.append(i)
+
+        if miss_idx:
+            tensors = [
+                self.converter.board_to_input_tensor(leaves[i].board)
+                for i in miss_idx
+            ]
+            policies, raw_values = self.network.predict_batch(tensors)
+            for j, i in enumerate(miss_idx):
+                node = leaves[i]
+                moves, priors = node._compute_priors(policies[j], self.converter)
+                value = Node._scalar_value(raw_values[j])
+                values[i] = value
+                self._cache_put(keys[i], priors, value)
+                node.value_estimate = value
+                if node.is_leaf:
+                    node._create_edges_from_priors(priors, moves)
+
+        # Cache hits: expand from stored priors (misses were expanded above)
+        for i, node in enumerate(leaves):
+            if priors_list[i] is None:
+                continue
+            node.value_estimate = values[i]
+            if node.is_leaf:
+                node._create_edges_from_priors(priors_list[i])
+
+        return values
 
     def _backpropagate_batched(self, search_path: list[Edge], value: float):
         """Back up through a path that had virtual loss applied during selection.
@@ -194,18 +349,29 @@ class MCTS:
             value = -value
             edge.revert_virtual_loss_and_update(value)
 
+    # ------------------------------------------------------------------
+    # Root noise / move selection / tree reuse
+    # ------------------------------------------------------------------
+
     def _add_dirichlet_noise(self, root: Node):
-        """Add Dirichlet noise to root node priors for exploration.
+        """Mix Dirichlet noise into the root priors for exploration.
 
         This ensures the search doesn't collapse to always picking the
         network's top move, which is important early in training when
         the network is essentially random.
+
+        The mix is always computed from the *clean* network priors
+        (``edge.P_orig``), never from the current ``edge.P``. Self-play calls
+        the search on every move, and after ``reuse_subtree`` the new root is a
+        node whose priors may already contain noise from a previous call —
+        mixing on top of that compounded move after move. Recomputing from
+        P_orig makes noise application idempotent: fresh noise per search
+        (standard AlphaZero), zero accumulation.
         """
         noise = np.random.dirichlet([self.dirichlet_alpha] * len(root.edges))
+        eps = self.dirichlet_epsilon
         for i, edge in enumerate(root.edges):
-            edge.P = (
-                1 - self.dirichlet_epsilon
-            ) * edge.P + self.dirichlet_epsilon * noise[i]
+            edge.P = (1 - eps) * edge.P_orig + eps * noise[i]
 
     def get_best_move(self, root: Node, temperature: float = 1.0) -> chess.Move:
         """Select a move from the root based on visit counts.
@@ -230,6 +396,30 @@ class MCTS:
         probs = visits / visits.sum()
         idx = np.random.choice(len(root.edges), p=probs)
         return root.edges[idx].move
+
+    def advance_root(self, prev_root: Node | None, board: chess.Board) -> Node:
+        """Return a search root for ``board``, reusing the previous search tree
+        when ``board`` is a continuation of it (subtree reuse for the
+        inference path — self-play already reuses via SelfPlayGame).
+
+        If ``prev_root`` is None, belongs to a different game, or is more than
+        a few plies behind, a fresh root is built instead. A final FEN equality
+        check guards correctness, so callers can pass anything.
+        """
+        if prev_root is not None:
+            prev_stack = prev_root.board.move_stack
+            new_stack = board.move_stack
+            gap = len(new_stack) - len(prev_stack)
+            if 0 <= gap <= 4 and new_stack[: len(prev_stack)] == prev_stack:
+                node = prev_root
+                try:
+                    for move in new_stack[len(prev_stack):]:
+                        node = self.reuse_subtree(node, move)
+                except (ValueError, AssertionError):
+                    node = None
+                if node is not None and node.board.fen() == board.fen():
+                    return node
+        return Node(board.copy())
 
     def reuse_subtree(self, root: Node, move: chess.Move) -> Node:
         """Reuse the subtree rooted at the child corresponding to the given move.
@@ -265,6 +455,11 @@ class SelfPlayGame:
         resign_threshold: Resign if the best edge's Q stays below this for
             ``resign_moves`` consecutive moves. None disables resignation.
         resign_moves: Consecutive below-threshold moves required to resign.
+        resign_playout: If True, never actually resign but still track when the
+            resignation condition WOULD have fired (see record fields). Used for
+            the AlphaZero-style ~10% playout games that (a) measure the
+            false-positive rate of the threshold and (b) keep won endgames in
+            the training data so the net still learns to deliver mate.
         search_batch_size: Leaves per batched network call during search. 1 is
             effectively sequential (fine on CPU); higher helps on GPU.
     """
@@ -276,6 +471,7 @@ class SelfPlayGame:
         max_moves: int = 150,
         resign_threshold: float | None = None,
         resign_moves: int = 4,
+        resign_playout: bool = False,
         search_batch_size: int = 8,
     ):
         self.mcts = mcts
@@ -283,6 +479,7 @@ class SelfPlayGame:
         self.max_moves = max_moves
         self.resign_threshold = resign_threshold
         self.resign_moves = resign_moves
+        self.resign_playout = resign_playout
         self.search_batch_size = search_batch_size
         self.record = None  # populated by play(): result, move count, PGN, etc.
 
@@ -301,15 +498,23 @@ class SelfPlayGame:
         move_count = 0
         resign_count = 0
         resigned_side = None
+        would_resign_side = None  # first side that met the resign condition
+        total_search_seconds = 0.0
 
-        while not board.is_game_over() and move_count < self.max_moves:
+        while (
+            not board.is_game_over()
+            and not self._claimable_draw(board)
+            and move_count < self.max_moves
+        ):
             # Pick temperature based on move number
             temperature = 1.0 if move_count < self.temperature_threshold else 0.0
 
-            # Run MCTS (batched leaf evaluation)
+            # Run MCTS (batched leaf evaluation), timing the search per move
+            t_move = time.perf_counter()
             root = self.mcts.search_batched(
                 root, add_noise=True, batch_size=self.search_batch_size
             )
+            total_search_seconds += time.perf_counter() - t_move
 
             # --- Adjudication: resign if the side to move is hopelessly lost ---
             if self.resign_threshold is not None and root.edges:
@@ -318,9 +523,12 @@ class SelfPlayGame:
                     resign_count += 1
                 else:
                     resign_count = 0
-                if resign_count >= self.resign_moves:
-                    resigned_side = board.turn  # this side gives up; opponent wins
-                    break
+                if resign_count >= self.resign_moves and would_resign_side is None:
+                    would_resign_side = board.turn  # condition fired for this side
+                    if not self.resign_playout:
+                        resigned_side = board.turn  # give up; opponent wins
+                        break
+                    # playout game: keep playing, we only wanted the measurement
             # ------------------------------------------------------------------
 
             # Store training sample (before making the move)
@@ -358,11 +566,37 @@ class SelfPlayGame:
             "num_moves": move_count,
             "num_positions": len(training_data),
             "resigned": resigned_side is not None,
+            "resign_playout": self.resign_playout,
+            # Which side met the resign condition (also tracked in playout games,
+            # where it did NOT end the game). A playout game where this is set
+            # but that side did not lose = a false positive of the threshold.
+            "would_resign_side": (
+                None if would_resign_side is None
+                else ("white" if would_resign_side == chess.WHITE else "black")
+            ),
+            # Average wall time one MCTS move decision took in this game
+            "avg_move_seconds": (
+                round(total_search_seconds / move_count, 3) if move_count else None
+            ),
             "pgn": str(game_node),
         }
 
         # Assign value targets based on game outcome
         return self._assign_values(training_data, result)
+
+    @staticmethod
+    def _claimable_draw(board: chess.Board) -> bool:
+        """Claimable (not auto-applied) draw: 50-move rule or threefold repetition.
+
+        Must mirror Node.is_terminal's draw conditions: the search scores these
+        positions as terminal draws, so if one is actually reached in the game,
+        the game has to end here — otherwise the next root is a terminal node
+        with no edges and there is no policy target to extract. The engine
+        *will* steer into repetitions when it is losing (a draw beats a loss),
+        so this path is exercised in practice.
+        """
+        clock = board.halfmove_clock
+        return clock >= 100 or (clock >= 8 and board.is_repetition(3))
 
     def _get_game_result(
         self, board: chess.Board, move_count: int, resigned_side=None
@@ -370,14 +604,22 @@ class SelfPlayGame:
         """Get the game result string."""
         if resigned_side is not None:
             return "0-1" if resigned_side == chess.WHITE else "1-0"
-        if move_count >= self.max_moves:
-            return "1/2-1/2"
-        return board.result()
+        if board.is_game_over():
+            return board.result()
+        # Claimable draw (threefold / 50-move) or the max_moves cap
+        return "1/2-1/2"
 
     def _assign_values(self, training_data: list[dict], result: str) -> list[dict]:
         """Assign value targets to each position based on the game outcome.
 
         The value is from the perspective of the side to move at each position.
+
+        Each sample also gets a ``moves_left_target``: plies remaining until the
+        end of the game as played (position i of an N-move game has N - i plies
+        left; the final stored position has 1). Stored NOW, before the moves-left
+        head exists, so the replay buffer is already fully labeled the day the
+        head is added. For resigned / move-capped games this is the truncated
+        game length — the same adjudication noise lc0 trains through.
         """
         if result == "1-0":
             white_value = 1.0
@@ -386,11 +628,13 @@ class SelfPlayGame:
         else:
             white_value = 0.0
 
-        for sample in training_data:
+        n = len(training_data)
+        for i, sample in enumerate(training_data):
             if sample["side_to_move"] == chess.WHITE:
                 sample["value_target"] = white_value
             else:
                 sample["value_target"] = -white_value
+            sample["moves_left_target"] = float(n - i)
             del sample["side_to_move"]  # No longer needed
 
         return training_data
@@ -411,7 +655,7 @@ def _selfplay_worker(args):
 
     (weight_path, lookup_path, num_simulations, num_res_blocks, num_filters,
      n_games, max_moves, temperature_threshold, resign_threshold,
-     search_batch_size, seed) = args
+     resign_playout_fraction, search_batch_size, seed) = args
 
     np.random.seed(seed) # distinct seed per worker, else identical games
 
@@ -426,15 +670,24 @@ def _selfplay_worker(args):
         network.load(weight_path)
 
     converter = Converter(lookup_path=lookup_path)
+    # One MCTS per worker: its evaluation cache stays valid for the whole batch
+    # of games because the weights are fixed within this worker's lifetime.
     mcts = MCTS(network=network, converter=converter, num_simulations=num_simulations)
 
     games, records = [], []
     for _ in range(n_games):
+        # AlphaZero-style: a fraction of games keeps the threshold for
+        # measurement but plays to the end (false-positive rate + mating practice)
+        playout = (
+            resign_threshold is not None
+            and np.random.rand() < resign_playout_fraction
+        )
         game = SelfPlayGame(
             mcts,
             temperature_threshold=temperature_threshold,
             max_moves=max_moves,
             resign_threshold=resign_threshold,
+            resign_playout=playout,
             search_batch_size=search_batch_size,
         )
         games.append(game.play())
@@ -453,6 +706,7 @@ def play_games_parallel(
     max_moves: int = 150,
     temperature_threshold: int = 30,
     resign_threshold: float | None = None,
+    resign_playout_fraction: float = 0.1,
     search_batch_size: int = 8,
 ):
     """Generate n_games of self-play across processes.
@@ -476,7 +730,7 @@ def play_games_parallel(
     args = [
         (weight_path, lookup_path, num_simulations, num_res_blocks, num_filters,
          g, max_moves, temperature_threshold, resign_threshold,
-         search_batch_size, int(seeds[i]))
+         resign_playout_fraction, search_batch_size, int(seeds[i]))
         for i, g in enumerate(per_worker)
     ]
 

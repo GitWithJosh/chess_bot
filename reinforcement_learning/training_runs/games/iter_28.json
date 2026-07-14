@@ -1,0 +1,138 @@
+{
+  "iteration": 28,
+  "timestamp": "2026-07-14T20:20:24",
+  "generated_with_weights": "iter_27.weights.h5",
+  "config": {
+    "games_per_iter": 10,
+    "num_simulations": 100,
+    "search_batch_size": 4,
+    "max_moves": 300,
+    "temperature_threshold": 30,
+    "num_res_blocks": 20,
+    "num_filters": 256,
+    "resign_threshold": -0.85,
+    "resign_playout_fraction": 0.1,
+    "buffer_iters": 20,
+    "buffer_sample": 8000
+  },
+  "num_games": 10,
+  "num_positions": 1755,
+  "selfplay_seconds": 2021.5,
+  "avg_move_seconds": 4.485,
+  "resigned_games": 0,
+  "playout_games": 0,
+  "resign_fp_candidates": 0,
+  "resign_false_positives": 0,
+  "games": [
+    {
+      "game": 0,
+      "result": "1/2-1/2",
+      "num_moves": 300,
+      "num_positions": 300,
+      "resigned": false,
+      "resign_playout": false,
+      "would_resign_side": null,
+      "avg_move_seconds": 4.493,
+      "pgn": "[Event \"self-play\"]\n[Site \"?\"]\n[Date \"????.??.??\"]\n[Round \"?\"]\n[White \"?\"]\n[Black \"?\"]\n[Result \"1/2-1/2\"]\n\n1. a3 c6 2. f3 e6 3. Ra2 Qh4+ 4. g3 Qf4 5. gxf4 f6 6. f5 h5 7. Ra1 exf5 8. Ra2 Bd6 9. a4 Be7 10. Ra1 a5 11. Nh3 d6 12. Ra3 Kd7 13. Rd3 Kd8 14. f4 Kd7 15. c4 c5 16. Ng5 Kd8 17. Nf7+ Ke8 18. Nxh8 Kf8 19. Rf3 Nc6 20. Rd3 Nb4 21. Rf3 Nc2+ 22. Qxc2 Ke8 23. Rd3 Kf8 24. Qd1 Rb8 25. Rd5 Be6 26. Rd3 Bf7 27. Rf3 Be8 28. Rd3 Bxa4 29. e4 fxe4 30. Be2 Bxd1 31. Bxd1 a4 32. f5 Bd8 33. Nc3 a3 34. Na4 Bc7 35. bxa3 Ba5 36. Nb2 Ra8 37. Bxh5 Rb8 38. Rf3 Bd8 39. Rf4 Ra8 40. Nd1 Ke7 41. Bg6 Kf8 42. Nb2 Bc7 43. Nd1 Bb8 44. a4 Ke7 45. Ba3 Kf8 46. Bh7 Bc7 47. Bg6 Ke7 48. Bb4 Kd8 49. Bh7 Ke7 50. Bxg8 cxb4 51. Bh7 Kf8 52. Nb2 Ke8 53. Rhf1 d5 54. Kd1 Kf8 55. R1f2 dxc4 56. Kc2 Bxf4 57. Rxf4 Ra5 58. Kb1 Rc5 59. Bg6 Ra5 60. Nd1 c3 61. Ka1 cxd2 62. Rxe4 Re5 63. Rc4 Rxf5 64. Bxf5 Ke7 65. Rxb4 Kf8 66. Rb1 b5 67. a5 b4 68. Nb2 Kg8 69. Ng6 Kf7 70. Bd3 Ke8 71. a6 Kd8 72. Rd1 Kc7 73. Rxd2 Kb8 74. Ka2 Ka7 75. Kb1 Kb8 76. Kc1 Ka8 77. Bc4 Kb8 78. Kd1 Kc8 79. Bd3 Kc7 80. Bb1 Kc8 81. Ke1 Kc7 82. Nh4 Kc8 83. Na4 Kc7 84. Nb6 Kxb6 85. Ng6 Kxa6 86. Kf2 Ka7 87. Kg1 Kb8 88. Kh1 Ka7 89. Nh4 Kb8 90. Ng6 Kb7 91. Bd3 Kc8 92. Bb1 Kc7 93. Kg2 Kc8 94. Kg1 Kb8 95. Kg2 Ka7 96. Kf1 Kb8 97. Kg1 Kc8 98. Kh1 Kc7 99. Nh8 Kb8 100. Nf7 Kc8 101. Kg2 Kc7 102. Kf1 Kb8 103. Kg1 g5 104. Kh1 Ka7 105. Kg2 Kb8 106. Kf1 Kc8 107. Kg1 Kc7 108. Kh1 Kb8 109. Kg2 Kc8 110. Kf1 Kc7 111. Kg1 Kb8 112. Kg2 Ka7 113. Kf1 Kb8 114. Kg1 Ka7 115. Kg2 Kb8 116. Kg1 Ka7 117. Nd6 Kb8 118. Kh1 Kc7 119. Ne8+ Kc8 120. Nxf6 Kc7 121. Nd5+ Kc6 122. Nxb4+ Kc7 123. Na6+ Kc8 124. Nc5 Kb8 125. Nd7+ Ka7 126. Nf8 Kb8 127. Ng6 Kc8 128. Nh8 Kb8 129. Nf7 Kc7 130. Nxg5 Kb8 131. Ne4 Kb7 132. Nf6 Kc8 133. Nd5 Kd8 134. Nb4+ Kc7 135. Na6+ Kc8 136. Nb4 Kc7 137. Na6+ Kc8 138. Nb8 Kxb8 139. Kg2 Kc8 140. Kh3 Kc7 141. Kg4 Kb8 142. Kf5 Ka7 143. Kg6 Kb8 144. Kf7 Kb7 145. Kg7 Kc8 146. Kh7 Kc7 147. Kh8 Kc8 148. Kg8 Kc7 149. Kh8 Kc8 150. h3 Kc7 1/2-1/2"
+    },
+    {
+      "game": 1,
+      "result": "1-0",
+      "num_moves": 81,
+      "num_positions": 81,
+      "resigned": false,
+      "resign_playout": false,
+      "would_resign_side": null,
+      "avg_move_seconds": 3.888,
+      "pgn": "[Event \"self-play\"]\n[Site \"?\"]\n[Date \"????.??.??\"]\n[Round \"?\"]\n[White \"?\"]\n[Black \"?\"]\n[Result \"1-0\"]\n\n1. Nh3 g5 2. a4 d5 3. Na3 b5 4. Nxb5 Bf5 5. e4 Nh6 6. Qe2 Bg7 7. Nxa7 Bf8 8. Nc8 Ra7 9. Qh5 Bg4 10. Rb1 dxe4 11. b3 Nf5 12. Ba6 Kd7 13. Bb5+ Kxc8 14. Bc6 Ng3 15. Qxg5 Ra6 16. fxg3 Rxc6 17. Qxg4+ Kb7 18. Qe2 h6 19. Qd1 e5 20. Nf2 f5 21. Qh5 Rxc2 22. Ba3 Ka6 23. Rg1 f4 24. Kf1 Be7 25. Bxe7 Qxe7 26. gxf4 exf4 27. Nxe4 Ra2 28. Nc5+ Qxc5 29. Qg6+ Qb6 30. Qh5 Qd6 31. Qf7 Rxd2 32. h4 Ka5 33. Ke1 Kb4 34. Qh5 Ka3 35. Qf7 f3 36. Kf1 Qg3 37. Qe7+ Ka2 38. Qc5 Kxb1 39. Qe3 Qe5 40. Qxd2 Qf5 41. Kf2# 1-0"
+    },
+    {
+      "game": 2,
+      "result": "1/2-1/2",
+      "num_moves": 183,
+      "num_positions": 183,
+      "resigned": false,
+      "resign_playout": false,
+      "would_resign_side": null,
+      "avg_move_seconds": 4.723,
+      "pgn": "[Event \"self-play\"]\n[Site \"?\"]\n[Date \"????.??.??\"]\n[Round \"?\"]\n[White \"?\"]\n[Black \"?\"]\n[Result \"1/2-1/2\"]\n\n1. d4 d5 2. b4 c6 3. a4 h5 4. Bg5 Bf5 5. Nf3 e5 6. Bxd8 Kxd8 7. h4 Bxb4+ 8. Nbd2 f6 9. dxe5 a6 10. c3 fxe5 11. Qc2 Nf6 12. Qb3 Kc7 13. Ra2 Bc5 14. Qc4 Be7 15. Nb3 Rg8 16. Nc5 Bd8 17. Qb3 Nbd7 18. Nxb7 Rb8 19. Rb2 Rxb7 20. Qxb7+ Kd6 21. e4 dxe4 22. Rb1 Rf8 23. Nxe5 Kxe5 24. c4 e3 25. Bd3 exf2+ 26. Kf1 Nc5 27. Qxa6 Nxa6 28. Bxf5 Kxf5 29. Ra1 Nc5 30. a5 Bxa5 31. Rh2 Bc7 32. Rh1 Rh8 33. Kxf2 Rg8 34. Ke3 Nb3 35. Ra3 c5 36. Ra6 Ne4 37. Re1 Na5 38. Rb6 Nxc4+ 39. Kf3 Bxb6 40. Rxe4 Bc7 41. Rxc4 Kg6 42. Rxc5 Bd6 43. g3 Bxc5 44. Ke2 Bd6 45. Kd1 Bc7 46. Ke1 Kf5 47. Kd2 Kg6 48. Ke1 Kf5 49. Kf2 Kf6 50. Ke1 Kg6 51. Kf2 Kf6 52. Ke1 Kg6 53. Kf2 Kf5 54. Ke1 Ke4 55. Kd2 Kd4 56. g4 hxg4 57. Ke1 g3 58. Kd1 Ke4 59. Kc2 Rf8 60. Kd2 Rd8+ 61. Ke2 Rf8 62. Kd1 Kf5 63. Kd2 Kf4 64. Ke1 Rh8 65. Kd2 Rh7 66. Kc1 Rh8 67. Kd2 Rh7 68. Ke1 Ke5 69. Kf1 Rh8 70. Kg2 Kf4 71. Kh3 Ke5 72. Kxg3 Kd4+ 73. Kg2 Kc3 74. Kf3 Kb2 75. Ke4 Ka3 76. Kf5 Rxh4 77. Kg6 Kb2 78. Kg5 Rh7 79. Kf5 Kc2 80. Kg6 Rh6+ 81. Kxg7 Rh5 82. Kf6 Rh2 83. Ke6 Rh4 84. Kf5 Rh5+ 85. Kg6 Rh4 86. Kf5 Kc1 87. Ke6 Rh3 88. Kf5 Rh4 89. Ke6 Rh5 90. Kf6 Kc2 91. Kg6 Kc1 92. Kxh5 1/2-1/2"
+    },
+    {
+      "game": 3,
+      "result": "1/2-1/2",
+      "num_moves": 168,
+      "num_positions": 168,
+      "resigned": false,
+      "resign_playout": false,
+      "would_resign_side": null,
+      "avg_move_seconds": 4.326,
+      "pgn": "[Event \"self-play\"]\n[Site \"?\"]\n[Date \"????.??.??\"]\n[Round \"?\"]\n[White \"?\"]\n[Black \"?\"]\n[Result \"1/2-1/2\"]\n\n1. a4 d5 2. d4 f6 3. a5 Bg4 4. f4 a6 5. Bd2 Kd7 6. Bb4 Kc6 7. Nf3 Bf5 8. Ne5+ fxe5 9. e4 Bd7 10. g4 h5 11. Bd2 b5 12. Bb4 Bf5 13. Bxe7 Bxe7 14. exf5 Qf8 15. Ra2 Bb4+ 16. Qd2 Bxd2+ 17. Nxd2 Qxf5 18. gxf5 exf4 19. Bd3 Kb7 20. Nb1 b4 21. Ra4 Nf6 22. Kd2 Kc6 23. Rf1 b3 24. Rxf4 Nbd7 25. Kc1 Rab8 26. Bxa6 Ng8 27. Ra3 Nc5 28. dxc5 Kxc5 29. cxb3 Ne7 30. b4+ Kc6 31. Re3 Nxf5 32. Rxf5 Kd7 33. Rxh5 Rxh5 34. b5 Rxb5 35. Nd2 Rxb2 36. Nc4 Rb4 37. Rf3 Kc6 38. h4 Rxh4 39. Rg3 dxc4 40. Rg6+ Kd7 41. Kc2 Kd8 42. Kc1 Rb5 43. Kc2 Rxa5 44. Rxg7 Ke8 45. Kb1 Ra1+ 46. Kb2 Re1 47. Rxc7 Kf8 48. Bxc4 Rh5 49. Bd3 Rh6 50. Ra7 Ke8 51. Bc2 Kd8 52. Ka3 Ke8 53. Kb2 Kd8 54. Rc7 Kxc7 55. Kb3 Kd8 56. Kc4 Ra1 57. Bb1 Ra4+ 58. Kd5 Rhh4 59. Ke5 Rh3 60. Kf5 Kc7 61. Kg5 Kc8 62. Kf5 Kb7 63. Kg5 Kc8 64. Kf6 Kb7 65. Kg5 Rc4 66. Kf5 Rc1 67. Kg5 Ka6 68. Kf6 Kb7 69. Kg6 Rxb1 70. Kf7 Rh4 71. Kf8 Ka6 72. Kg8 Rf4 73. Kh8 Rh4+ 74. Kg8 Rf4 75. Kh8 Kb7 76. Kg8 Kc8 77. Kh8 Kb7 78. Kg8 Ka7 79. Kh8 Kb8 80. Kg8 Kb7 81. Kh8 Ka6 82. Kg8 Kb7 83. Kh8 Kc8 84. Kg8 Kb7 1/2-1/2"
+    },
+    {
+      "game": 4,
+      "result": "1/2-1/2",
+      "num_moves": 71,
+      "num_positions": 71,
+      "resigned": false,
+      "resign_playout": false,
+      "would_resign_side": null,
+      "avg_move_seconds": 5.099,
+      "pgn": "[Event \"self-play\"]\n[Site \"?\"]\n[Date \"????.??.??\"]\n[Round \"?\"]\n[White \"?\"]\n[Black \"?\"]\n[Result \"1/2-1/2\"]\n\n1. e3 e5 2. Bd3 Be7 3. Bf1 Kf8 4. e4 Ba3 5. Nxa3 g5 6. Qh5 a5 7. d3 d6 8. Nb1 h6 9. Nf3 Ne7 10. Qxg5 Bg4 11. Qg7+ Kxg7 12. Bxh6+ Rxh6 13. Nh4 Nf5 14. Nxf5+ Kg8 15. f4 Ra6 16. c4 exf4 17. Nxh6+ Kh8 18. a3 Kh7 19. Nxg4 a4 20. Nh6 Qh8 21. Nxf7 Qc3+ 22. Nxc3 Nc6 23. Nb5 Na7 24. Nxc7 Ra5 25. Rb1 f3 26. Kf2 Rf5 27. Ke1 Rxf7 28. Kd1 Nc6 29. Kc2 Nd4+ 30. Kd1 Nb3 31. gxf3 Kg8 32. Na6 Kh7 33. Nb4 Kg8 34. Na6 Kh7 35. Nb4 Kg8 36. Na6 1/2-1/2"
+    },
+    {
+      "game": 5,
+      "result": "1-0",
+      "num_moves": 233,
+      "num_positions": 233,
+      "resigned": false,
+      "resign_playout": false,
+      "would_resign_side": null,
+      "avg_move_seconds": 4.458,
+      "pgn": "[Event \"self-play\"]\n[Site \"?\"]\n[Date \"????.??.??\"]\n[Round \"?\"]\n[White \"?\"]\n[Black \"?\"]\n[Result \"1-0\"]\n\n1. f3 f6 2. Na3 a6 3. Nc4 e5 4. Nxe5 g5 5. Ng4 h6 6. Nxf6+ Nxf6 7. e4 d6 8. d3 Ra7 9. b3 Be7 10. Ne2 Nc6 11. h3 Bxh3 12. Bf4 a5 13. Rc1 Ra8 14. a3 Bg4 15. fxg4 Na7 16. Rb1 Nxe4 17. dxe4 gxf4 18. Nxf4 Nb5 19. Qd5 Nxa3 20. Qb5+ Nxb5 21. Ne6 Na3 22. Rb2 Qd7 23. Nf4 Qc8 24. Ne6 c6 25. g5 hxg5 26. Nc7+ Kd7 27. Bc4 Kxc7 28. Bb5 Nxb5 29. Ra2 Kb8 30. Kf2 Na3 31. Ke1 Nb5 32. Kd2 Na3 33. Kc1 Nb5 34. Rh2 Na3 35. Rxa3 Rg8 36. Kb2 Bd8 37. Ka1 Qh3 38. Rxh3 c5 39. Kb1 Rf8 40. Ra2 Rf7 41. Ra4 Rc7 42. Rh6 Be7 43. Kb2 b6 44. Ka1 b5 45. Kb1 bxa4 46. Re6 axb3 47. cxb3 g4 48. Ka2 g3 49. Kb1 Kc8 50. Kb2 a4 51. bxa4 Rxa4 52. Rxe7 Kb7 53. Rxc7+ Ka8 54. Rh7 Kb8 55. Rh3 Rxe4 56. Rxg3 Kb7 57. Ra3 Rb4+ 58. Ka1 Rh4 59. Kb1 Rh5 60. Kb2 Rf5 61. Ka1 d5 62. Kb1 d4 63. g4 Rg5 64. Kb2 Rxg4 65. Ka1 Rh4 66. Kb1 Rh3 67. Rxh3 Ka8 68. Ka2 Kb8 69. Ka1 Ka7 70. Kb1 Kb8 71. Kc1 Kb7 72. Kb2 Ka8 73. Rh6 Kb8 74. Ka1 Kb7 75. Kb1 Kc8 76. Kb2 Kb7 77. Kc1 Kc7 78. Kd2 Kd8 79. Kc1 Kc7 80. Kb2 Kb8 81. Ka1 Ka8 82. Kb1 Kb8 83. Kb2 Ka7 84. Ka1 Kb7 85. Kb1 Kc8 86. Kb2 Kd8 87. Kc1 Kc8 88. Kd1 Kd7 89. Rh5 c4 90. Rh4 Kc8 91. Rh5 Kb7 92. Rh2 Kc7 93. Kc2 Kd8 94. Kd1 Ke8 95. Rh5 Kf7 96. Rh4 Kf8 97. Kc2 c3 98. Rf4+ Ke7 99. Kb1 Ke8 100. Ka2 c2 101. Rxd4 Kf8 102. Rg4 Kf7 103. Kb3 Kf8 104. Rg5 Ke7 105. Rg8 Kd6 106. Rb8 Ke7 107. Ka4 Kd7 108. Rb5 Kc8 109. Ka5 Kd8 110. Rb4 Kd7 111. Kb6 Kc8 112. Kc6 c1=Q+ 113. Kd6 Kd8 114. Ke6 Ke8 115. Kf6 Kf8 116. Rb8+ Qc8 117. Rxc8# 1-0"
+    },
+    {
+      "game": 6,
+      "result": "1/2-1/2",
+      "num_moves": 250,
+      "num_positions": 250,
+      "resigned": false,
+      "resign_playout": false,
+      "would_resign_side": null,
+      "avg_move_seconds": 4.52,
+      "pgn": "[Event \"self-play\"]\n[Site \"?\"]\n[Date \"????.??.??\"]\n[Round \"?\"]\n[White \"?\"]\n[Black \"?\"]\n[Result \"1/2-1/2\"]\n\n1. h4 e5 2. e4 c6 3. Ba6 bxa6 4. f3 Qxh4+ 5. Rxh4 Bd6 6. Nh3 Bc7 7. d4 Nf6 8. dxe5 Bxe5 9. f4 Nxe4 10. Nd2 Nxd2 11. b4 Rf8 12. Rh5 Bxf4 13. Rh6 f5 14. Nf2 Bxh6 15. Qh5+ g6 16. Qxh6 Nc4 17. Bf4 Rf7 18. Kf1 Bb7 19. a4 c5 20. Qf8+ Kxf8 21. Bxb8 Rxb8 22. a5 cxb4 23. Ra4 Re7 24. Rxb4 Ba8 25. Rxc4 Ke8 26. Nd1 g5 27. Rh4 f4 28. Rh5 Kd8 29. Nf2 Ke8 30. Rh3 Kd8 31. Rh6 g4 32. Nxg4 d5 33. Nf6 Kc7 34. Nxd5+ Kd8 35. Nxe7 Kxe7 36. Rxh7+ Kf8 37. Rh5 Bb7 38. Rd5 Bxd5 39. Ke2 Bb3 40. Kf1 Bxc2 41. Ke1 Kg8 42. Kd2 Kf7 43. Kc1 Bb3 44. Kd2 Ke7 45. Kc1 Kd8 46. Kd2 Kd7 47. Kc1 Kd6 48. Kd2 Kd7 49. Kc1 Kd8 50. Kd2 f3 51. Kc1 fxg2 52. Kd2 Kc7 53. Kc1 Kd8 54. Kb1 Ke8 55. Kc1 Rb7 56. Kb2 Rd7 57. Kxb3 Rd5 58. Kc2 Rg5 59. Kb1 Kd7 60. Ka2 Ke8 61. Kb1 Kd7 62. Ka2 Kd6 63. Kb1 Ke5 64. Ka2 Kf6 65. Ka1 Rf5 66. Kb1 Ke7 67. Kb2 Ke8 68. Kc1 Re5 69. Kc2 Rxa5 70. Kd3 Rd5+ 71. Ke4 Rh5 72. Kf3 Kd7 73. Kxg2 a5 74. Kf1 Kc8 75. Ke2 Kd8 76. Kd1 Kc8 77. Kd2 Rh6 78. Kc1 Rh5 79. Kc2 Rh8 80. Kc1 Rh7 81. Kd2 Rh6 82. Ke1 Kd8 83. Kf1 Rh5 84. Ke2 Ke8 85. Kf3 Kd7 86. Ke2 Rh4 87. Kd3 Ke8 88. Ke2 Rh3 89. Kd1 Rh7 90. Kc2 Rh6 91. Kc1 Kd7 92. Kd1 Ke8 93. Kc2 Kd7 94. Kd1 Ke8 95. Ke2 Kd7 96. Kf2 Ke8 97. Kf3 Kd7 98. Ke3 Ke8 99. Ke2 Kd7 100. Kf2 Ke8 101. Kg1 Rh5 102. Kf2 Rh4 103. Kg1 Rh5 104. Kf1 a6 105. Ke2 Kd7 106. Kd2 Ke8 107. Ke1 Kd7 108. Kd2 Ke8 109. Kc1 Kd8 110. Kc2 Ke8 111. Kb1 Kf8 112. Ka2 Ke7 113. Ka3 Rh6 114. Ka2 Rh5 115. Kb1 Rd5 116. Kc1 Kf8 117. Kc2 Ke7 118. Kb1 Kf8 119. Kb2 Ke7 120. Kc1 Kd8 121. Kc2 Ke8 122. Kc3 Kd7 123. Kc2 Ke8 124. Kc1 Kd7 125. Kc2 Ke8 1/2-1/2"
+    },
+    {
+      "game": 7,
+      "result": "1/2-1/2",
+      "num_moves": 255,
+      "num_positions": 255,
+      "resigned": false,
+      "resign_playout": false,
+      "would_resign_side": null,
+      "avg_move_seconds": 3.461,
+      "pgn": "[Event \"self-play\"]\n[Site \"?\"]\n[Date \"????.??.??\"]\n[Round \"?\"]\n[White \"?\"]\n[Black \"?\"]\n[Result \"1/2-1/2\"]\n\n1. c4 h5 2. c5 e5 3. f3 Be7 4. a3 a5 5. b4 Nf6 6. b5 Ra7 7. Bb2 Ra6 8. bxa6 Nxa6 9. Qc2 Nb4 10. axb4 d6 11. Kf2 Be6 12. cxd6 Bxd6 13. Qc4 Nd7 14. Na3 axb4 15. Qb5 Qe7 16. Qa4 Qh4+ 17. Ke3 Bf5 18. Qxd7+ Kxd7 19. Nc4 Qf6 20. Nxd6 cxd6 21. Kf2 Kc8 22. e4 Bxe4 23. Ra8+ Kd7 24. Ba1 Bxf3 25. Nxf3 Rxa8 26. d3 Rh8 27. Bxe5 dxe5 28. Ke1 Kd6 29. Kd2 Qd8 30. Nh4 Kc5 31. g4 Qxh4 32. g5 Qf2+ 33. Kd1 h4 34. Be2 Kd6 35. Rf1 Qxh2 36. Bf3 Qh3 37. Kc1 Qf5 38. Be2 Qxf1+ 39. Bxf1 Ke7 40. Kb2 Kd8 41. Kb1 h3 42. Kb2 Rh7 43. d4 Rh8 44. dxe5 Rh7 45. Ka1 Rh8 46. Kb1 Rh7 47. Kb2 Rh6 48. Ka1 Rh5 49. Kb1 Rh4 50. Ka2 Rh5 51. Kb1 Rh4 52. Kb2 Rh5 53. Bc4 Rxg5 54. Bb3 Rxe5 55. Ka1 Rd5 56. Bxd5 f5 57. Be4 Kc7 58. Bxf5 Kb8 59. Kb1 Ka7 60. Be4 Ka6 61. Ka2 Ka5 62. Kb1 h2 63. Ka2 h1=Q 64. Bxh1 Ka6 65. Kb1 Ka5 66. Kc1 b3 67. Kb2 Kb4 68. Ka1 Ka5 69. Kb1 Kb5 70. Kc1 Kc4 71. Kb2 Kd4 72. Kxb3 Ke3 73. Ka4 Kd2 74. Kb4 Ke3 75. Ka5 Kd2 76. Ka4 Kc1 77. Kb5 Kd2 78. Ka4 Kd3 79. Ka3 Kc2 80. Ka4 Kc3 81. Ka5 Kd4 82. Ka4 Ke5 83. Kb5 Kd4 84. Ka5 Ke5 85. Kb4 Kf4 86. Kb5 Ke3 87. Ka4 Kd2 88. Ka3 Ke3 89. Kb4 b6 90. Kb5 Kd3 91. Kxb6 Ke3 92. Ka7 Kd2 93. Kb8 Ke3 94. Kc8 Kd2 95. Kd8 Ke3 96. Ke8 Kd2 97. Kf8 Ke3 98. Kf7 Ke2 99. Ke6 Ke1 100. Kd5 Kd1 101. Ke5 Ke1 102. Kf5 Kf1 103. Kg5 Ke1 104. Kh5 Kf1 105. Kh4 Ke2 106. Kg5 Kf1 107. Kh5 Ke2 108. Kh4 Kf1 109. Kh5 Ke2 110. Kh4 Kd2 111. Kh5 Ke3 112. Kh4 Kd4 113. Kh5 Ke5 114. Kg6 Kd6 115. Kf7 Kc5 116. Ke8 Kb4 117. Kf8 Kc5 118. Kg8 Kd6 119. Kh8 Kc5 120. Bb7 Kd6 121. Ba8 Ke7 122. Bb7 Kd8 123. Ba8 Kc7 124. Bd5 Kb8 125. Bf7 Ka8 126. Bc4 Kb8 127. Ba6 Ka8 128. Kxg7 1/2-1/2"
+    },
+    {
+      "game": 8,
+      "result": "1/2-1/2",
+      "num_moves": 77,
+      "num_positions": 77,
+      "resigned": false,
+      "resign_playout": false,
+      "would_resign_side": null,
+      "avg_move_seconds": 5.122,
+      "pgn": "[Event \"self-play\"]\n[Site \"?\"]\n[Date \"????.??.??\"]\n[Round \"?\"]\n[White \"?\"]\n[Black \"?\"]\n[Result \"1/2-1/2\"]\n\n1. Na3 f5 2. c4 d6 3. f3 Nf6 4. Nb1 Nbd7 5. b4 c5 6. Qc2 f4 7. h4 cxb4 8. a4 Nc5 9. Qe4 Be6 10. e3 Qc8 11. exf4 Nfd7 12. Qc6 b3 13. g3 h6 14. Kf2 bxc6 15. Bg2 Rb8 16. Ke1 d5 17. Kd1 dxc4 18. Rh2 Qc7 19. Ke1 Bf5 20. Bh1 e5 21. d3 h5 22. dxc4 Nb7 23. Bb2 exf4 24. Bxg7 Bc2 25. Bxf8 fxg3 26. Ke2 Bf5 27. Bh6 Rg8 28. Rh3 Rh8 29. Bf4 Qd8 30. Bg5 g2 31. Bxg2 Qc7 32. Bf1 Qd6 33. f4 Rg8 34. Rh1 Rh8 35. a5 Rg8 36. Rh2 Rh8 37. Rh1 Rg8 38. Rh2 Rh8 39. Rh1 1/2-1/2"
+    },
+    {
+      "game": 9,
+      "result": "1-0",
+      "num_moves": 137,
+      "num_positions": 137,
+      "resigned": false,
+      "resign_playout": false,
+      "would_resign_side": null,
+      "avg_move_seconds": 4.76,
+      "pgn": "[Event \"self-play\"]\n[Site \"?\"]\n[Date \"????.??.??\"]\n[Round \"?\"]\n[White \"?\"]\n[Black \"?\"]\n[Result \"1-0\"]\n\n1. a3 Nh6 2. h4 f6 3. e4 e6 4. Ra2 Ng8 5. Qg4 d6 6. Qxg7 Qe7 7. f4 Qxg7 8. Be2 Qh6 9. Ra1 Kd7 10. Ba6 Ke7 11. Ra2 Kf7 12. Bb5 c6 13. Bf1 Kg7 14. g4 Qxh4+ 15. Kd1 e5 16. Rxh4 Ne7 17. Ra1 Rg8 18. Rxh7+ Kxh7 19. Ne2 Bxg4 20. Ke1 Rh8 21. f5 Nd7 22. d4 a6 23. dxe5 dxe5 24. Nf4 exf4 25. b4 c5 26. Bxf4 Rc8 27. b5 axb5 28. Bd2 Ra8 29. Kf2 c4 30. Nc3 Bh3 31. Nxb5 Bg7 32. Ke1 Nc5 33. Kd1 Rhg8 34. Bxh3 Rac8 35. Bc3 Bf8 36. Bf1 Nb3 37. cxb3 cxb3 38. Bxf6 Nxf5 39. exf5 Ra8 40. a4 Rxa4 41. Rxa4 Rg7 42. Bd4 Rg8 43. Bb2 Rg7 44. Be5 Rg8 45. Rh4+ Bh6 46. Bc7 Rd8+ 47. Bd3 Rxd3+ 48. Ke1 Rd7 49. Rh5 Kg8 50. Rxh6 Rxc7 51. Rh5 Rf7 52. Kd2 b2 53. Nc3 Rd7+ 54. Kc2 Kg7 55. Na4 Rf7 56. Nxb2 Kf8 57. Kd3 Kg7 58. Ke3 Kf8 59. Kd4 Rh7 60. Rxh7 Kg8 61. Rxb7 Kh8 62. Ra7 Kg8 63. Ke5 Kh8 64. Kd4 Kg8 65. Kd5 Kh8 66. Ke5 Kg8 67. Kf6 Kh8 68. Kg6 Kg8 69. Ra8# 1-0"
+    }
+  ]
+}
