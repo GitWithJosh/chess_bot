@@ -173,7 +173,7 @@ def _load_chunk(path: str):
 
 
 def _targets_and_weights(policies: np.ndarray, values: np.ndarray):
-    """(y, sample_weight) for fit/evaluate, in MODEL-OUTPUT ORDER (lists).
+    """(y, sample_weight) for fit, in MODEL-OUTPUT ORDER (lists).
 
     Keras 3 constraints (verified locally): sample_weight must mirror y's
     structure AND resolve against the model's OUTPUT structure. BigNetwork
@@ -195,6 +195,65 @@ def _targets_and_weights(policies: np.ndarray, values: np.ndarray):
     y = [policies, values]
     sw = [psw, np.ones(len(psw), dtype=np.float32)]
     return y, sw
+
+
+def _val_metrics(net, vx, vpol, vval, batch_size):
+    """One batched forward pass over the val set -> per-sample metric arrays.
+
+    Replaces model.evaluate for validation: evaluate only returns whole-set
+    aggregates, so per-source tracking would cost one extra evaluate per
+    source — re-running the very same forward passes on each slice. A single
+    predict pass + numpy metrics gives the aggregate AND any slicing for one
+    pass total. Formulas replicate Keras: policy CE from logits via a stable
+    log-softmax, value CE with 1e-7 clipping.
+    """
+    n = len(vx)
+    ptgt = vpol.argmax(axis=1)      # zero-policy rows -> index 0; masked by weight
+    vtgt = vval.argmax(axis=1)
+    ploss  = np.zeros(n, np.float32)
+    pmatch = np.zeros(n, np.float32)
+    vloss  = np.zeros(n, np.float32)
+    vmatch = np.zeros(n, np.float32)
+    for i in range(0, n, batch_size):
+        logits, probs = net.predict_batch(vx[i:i + batch_size])
+        k = len(logits)
+        rows = np.arange(k)
+        mx = logits.max(axis=1)
+        lse = mx + np.log(np.exp(logits - mx[:, None]).sum(axis=1))
+        t = ptgt[i:i + k]
+        ploss[i:i + k]  = lse - logits[rows, t]
+        pmatch[i:i + k] = logits.argmax(axis=1) == t
+        pv = np.clip(probs[rows, vtgt[i:i + k]], 1e-7, 1.0)
+        vloss[i:i + k]  = -np.log(pv)
+        vmatch[i:i + k] = probs.argmax(axis=1) == vtgt[i:i + k]
+    return ploss, pmatch, vloss, vmatch
+
+
+def _agg_metrics(per_sample, pweight, mask=None) -> dict:
+    """Aggregate _val_metrics arrays over an optional boolean mask.
+
+    Semantics (verified against model.evaluate on a real chunk): "loss" and
+    the accuracies match Keras to float noise. The per-output LOSSES here are
+    the exact sample-weighted means (weighted sum / row count, so value-only
+    rows dilute the policy loss like they do in fit); Keras's reported
+    per-output loss trackers instead average per-batch means, which makes them
+    depend on batch packing — they differ from these exact values by <0.5%.
+    The policy accuracy divides by sum(weights) (like weighted_metrics), so
+    value-only rows are excluded from it.
+    """
+    ploss, pmatch, vloss, vmatch = per_sample
+    pw = pweight
+    if mask is not None:
+        ploss, pmatch, vloss, vmatch, pw = (
+            a[mask] for a in (ploss, pmatch, vloss, vmatch, pw))
+    out = {
+        "policy_loss": float((ploss * pw).sum() / max(len(vloss), 1)),
+        "policy_acc":  float((pmatch * pw).sum() / max(pw.sum(), 1e-9)),
+        "value_loss":  float(vloss.mean()) if len(vloss) else 0.0,
+        "value_acc":   float(vmatch.mean()) if len(vmatch) else 0.0,
+    }
+    out["loss"] = out["policy_loss"] + out["value_loss"]
+    return out
 
 
 def _scheduled_lr(chunks_done: int, total_planned: int) -> float:
@@ -340,16 +399,16 @@ def main() -> None:
                   f"{_scheduled_lr(global_chunk_count, total_planned):.2e})\n")
 
     # --- Preload validation set once (small) ---
-    # If every val chunk carries a "sources" array, also build per-source
-    # subsets so value/policy quality can be tracked per data source (games /
-    # puzzles / tablebase ...). Costs one extra evaluate-pass worth of compute
-    # per chunk and duplicates the val arrays once in RAM — fine on Kaggle.
-    # Per-sample POLICY weights are derived from the targets themselves:
-    # value-only rows (drawn tablebase positions) carry an all-zero policy
-    # vector -> weight 0, one-hot rows -> weight 1. Their policy CE is already
-    # exactly 0; the weight additionally keeps them out of policy accuracy.
-    val_data = None
-    val_subsets: list[tuple[str, np.ndarray, list, list]] = []  # (source_name, X, y, sw)
+    # Validation runs ONE batched forward pass per chunk (_val_metrics); the
+    # aggregate and the per-source slices are all computed from the same
+    # per-sample arrays, so per-source tracking costs no extra network time.
+    # If every val chunk carries a "sources" array we keep a boolean mask per
+    # source (no array copies); otherwise per-source metrics are skipped.
+    # Per-sample POLICY weights come from the targets themselves: value-only
+    # rows (drawn tablebase positions) carry an all-zero policy vector ->
+    # weight 0, one-hot rows -> weight 1.
+    val_data = None                # (vx, vpol, vval, pweight)
+    val_masks: list[tuple[str, np.ndarray]] = []   # (source_name, bool mask)
     if val_chunks:
         vb, vp, vv, vs = [], [], [], []
         for vc in val_chunks:
@@ -357,17 +416,14 @@ def main() -> None:
             vb.append(b); vp.append(p); vv.append(v); vs.append(s)
         vx = np.concatenate(vb)
         vpol, vval = np.concatenate(vp), np.concatenate(vv)
-        val_y, val_sw = _targets_and_weights(vpol, vval)
-        val_data = (vx, val_y, val_sw)
+        val_data = (vx, vpol, vval, vpol.sum(axis=1).astype(np.float32))
         if all(s is not None for s in vs):
             src = np.concatenate(vs)
             for sid in np.unique(src):
                 name = SOURCE_NAMES.get(int(sid), f"src{int(sid)}")
-                m = src == sid
-                sub_y, sub_sw = _targets_and_weights(vpol[m], vval[m])
-                val_subsets.append((name, vx[m], sub_y, sub_sw))
+                val_masks.append((name, src == sid))
             print("Per-source val subsets: "
-                  + ", ".join(f"{n} ({len(sx):,})" for n, sx, _, _ in val_subsets) + "\n")
+                  + ", ".join(f"{n} ({int(m.sum()):,})" for n, m in val_masks) + "\n")
         else:
             print("Val chunks carry no 'sources' array — per-source val metrics off.\n")
         del vb, vp, vv, vs
@@ -379,7 +435,7 @@ def main() -> None:
         "val_policy_acc", "val_value_acc",
         "learning_rate", "seconds",
     ]
-    for name, _, _, _ in val_subsets:
+    for name, _ in val_masks:
         metrics_header += [f"val_ploss_{name}", f"val_pacc_{name}",
                            f"val_vloss_{name}", f"val_vacc_{name}"]
 
@@ -447,37 +503,31 @@ def main() -> None:
             is_last_in_epoch = pos_in_epoch == len(order) - 1
             do_ckpt = _should_checkpoint(global_chunk_count) or is_last_in_epoch
 
-            # Validate every chunk — cheap on P100, gives a clean curve and
-            # lets us track the best model precisely.
+            # Validate every chunk — ONE forward pass over the val set; the
+            # aggregate and every per-source slice come from the same
+            # per-sample arrays (see _val_metrics / _agg_metrics).
             src_msg = ""
             if val_data is not None:
-                # return_dict=True is required: in Keras 3, evaluate's metrics_names
-                # lumps per-output accuracy under a "compile_metrics" placeholder,
-                # so positional unpacking would drop the per-head metrics.
-                vmap = net.model.evaluate(
-                    val_data[0], val_data[1], batch_size=BATCH_SIZE,
-                    sample_weight=val_data[2],
-                    verbose=0, return_dict=True,  # type: ignore[arg-type]
-                )
-                row["val_loss"]        = round(vmap.get("loss", 0.0), 5)
-                row["val_policy_loss"] = round(vmap.get("policy_output_loss", 0.0), 5)
-                row["val_value_loss"]  = round(vmap.get("value_output_loss", 0.0), 5)
-                row["val_policy_acc"]  = round(vmap.get("policy_output_accuracy", 0.0), 5)
-                row["val_value_acc"]   = round(vmap.get("value_output_accuracy", 0.0), 5)
+                vx, vpol, vval, pweight = val_data
+                per_sample = _val_metrics(net, vx, vpol, vval, BATCH_SIZE)
+                agg = _agg_metrics(per_sample, pweight)
+                row["val_loss"]        = round(agg["loss"], 5)
+                row["val_policy_loss"] = round(agg["policy_loss"], 5)
+                row["val_value_loss"]  = round(agg["value_loss"], 5)
+                row["val_policy_acc"]  = round(agg["policy_acc"], 5)
+                row["val_value_acc"]   = round(agg["value_acc"], 5)
 
                 # Per-source val metrics (only when the chunks carry sources).
                 src_parts = []
-                for name, sx, sy, ssw in val_subsets:
-                    sm = net.model.evaluate(sx, sy, batch_size=BATCH_SIZE,
-                                            sample_weight=ssw,
-                                            verbose=0, return_dict=True)  # type: ignore[arg-type]
-                    row[f"val_ploss_{name}"] = round(sm["policy_output_loss"], 5)
-                    row[f"val_pacc_{name}"]  = round(sm["policy_output_accuracy"], 5)
-                    row[f"val_vloss_{name}"] = round(sm["value_output_loss"], 5)
-                    row[f"val_vacc_{name}"]  = round(sm["value_output_accuracy"], 5)
+                for name, mask in val_masks:
+                    sm = _agg_metrics(per_sample, pweight, mask)
+                    row[f"val_ploss_{name}"] = round(sm["policy_loss"], 5)
+                    row[f"val_pacc_{name}"]  = round(sm["policy_acc"], 5)
+                    row[f"val_vloss_{name}"] = round(sm["value_loss"], 5)
+                    row[f"val_vacc_{name}"]  = round(sm["value_acc"], 5)
                     src_parts.append(
-                        f"{name} v{sm['value_output_loss']:.3f}/a{sm['value_output_accuracy']:.2f}"
-                        f" p{sm['policy_output_loss']:.3f}/a{sm['policy_output_accuracy']:.2f}"
+                        f"{name} v{sm['value_loss']:.3f}/a{sm['value_acc']:.2f}"
+                        f" p{sm['policy_loss']:.3f}/a{sm['policy_acc']:.2f}"
                     )
                 if src_parts:
                     src_msg = "    per-source val:  " + "  |  ".join(src_parts)
