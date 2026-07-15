@@ -376,6 +376,14 @@ def main() -> None:
         # is correct on logits; value accuracy = argmax WDL correct.
         weighted_metrics={"policy_output": "accuracy", "value_output": "accuracy"},
     )
+    # Build the optimizer variables UP FRONT so a resume restores the AdamW
+    # state (moment estimates + step counter). The checkpoints always
+    # contained it (it is most of their ~300 MB), but load_weights only
+    # restores state into variables that already exist: into an unbuilt
+    # optimizer (2 variables vs 512 saved) Keras warns "Skipping variable
+    # loading for optimizer" and silently drops it — so every resume
+    # restarted Adam's moments from zero and needed a fresh warm-up.
+    optimizer.build(net.model.trainable_variables)
 
     # --- Resume (restarts from the last CHECKPOINT, not the last fitted chunk,
     #     so no training is silently lost between checkpoint boundaries) ---
