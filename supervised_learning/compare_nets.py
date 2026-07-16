@@ -29,8 +29,8 @@ import random
 import sys
 
 # ============================ CONFIG — edit, then run ============================
-NET_A = "supervised_learning/checkpoints/sl_best.weights.h5"   # usually the newer net
-NET_B = "supervised_learning/checkpoints/old_sl_best.weights.h5"  # the baseline
+NET_A = "supervised_learning/checkpoints/16_sl_best.weights.h5"   # usually the newer net
+NET_B = "supervised_learning/checkpoints/legacy_sl_best.weights.h5"  # the baseline
 MODE = "raw"        # "raw" | "mcts" | "both"
 SIMS = 150           # MCTS simulations per move
 BATCH_SIZE = 16      # MCTS leaf batch size
