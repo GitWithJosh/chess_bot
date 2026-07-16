@@ -110,6 +110,8 @@ class BigNetwork:
 
         self._infer_fn = None          # cached tf.function (see _get_infer_fn)
         self._search_converter = None  # reused across search_for_best_move calls
+        self._search_mcts = None       # persistent MCTS: keeps the eval cache warm
+        self._search_root = None       # last search tree, for subtree reuse
 
     # ------------------------------------------------------------------
     # Block builders
@@ -355,14 +357,24 @@ class BigNetwork:
         """
         if self._search_converter is None:
             self._search_converter = Converter()
-        converter = self._search_converter
-        mcts = MCTS(
-            network=self,
-            converter=converter,
-            num_simulations=num_simulations,
-        )
-        root = Node(board)
+        # Persistent MCTS across calls: the evaluation cache stays warm for the
+        # whole game (weights are fixed between load() calls), and the previous
+        # search tree is reused when the new position continues the same game
+        # (typically the last chosen move + the opponent's reply), so those
+        # subtrees' visits and evaluations carry over instead of restarting
+        # from scratch every move.
+        if self._search_mcts is None:
+            self._search_mcts = MCTS(
+                network=self,
+                converter=self._search_converter,
+                num_simulations=num_simulations,
+            )
+        mcts = self._search_mcts
+        mcts.num_simulations = num_simulations
+
+        root = mcts.advance_root(self._search_root, board)
         root = mcts.search_batched(root, add_noise=False, batch_size=batch_size)
+        self._search_root = root  # keep the tree for the next call
         return mcts.get_best_move(root, temperature=0)
     def outcome_to_wdl(self, outcomes: np.ndarray) -> np.ndarray:
         """
@@ -412,6 +424,11 @@ class BigNetwork:
     def load(self, path: str):
         """Load model weights from disk."""
         self.model.load_weights(path)
+        # Cached evaluations and the retained search tree were produced by the
+        # OLD weights — both are stale now.
+        if self._search_mcts is not None:
+            self._search_mcts.clear_cache()
+        self._search_root = None
 
     def summary(self):
         """Print model architecture summary."""
