@@ -42,14 +42,15 @@ os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 # Preset positions: the board opens on the first, and the ◀/▶ buttons cycle
 # through them. You can also just paste any FEN into the box at the bottom.
 FENS = [
-    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "rnbqkb1r/pp3ppp/4pn2/2ppP3/3P4/2N5/PPP2PPP/R1BQKBNR w KQkq - 0 5",
     "2b5/8/3kr3/2pp4/P7/1PP1PQ2/2NBBK2/6RR w - - 0 1",
     "2b5/6p1/p1qkrp1p/1ppp4/P7/1PP1PQ2/2NBBK2/6RR w - - 0 1",
 ]
 
 # Weights. None -> sl_best.weights.h5 in supervised_learning/checkpoints,
 # else the newest sl_*.weights.h5 there. Or set an explicit path.
-WEIGHTS_PATH: str | None = "supervised_learning/checkpoints/sl_best.weights.h5"
+#WEIGHTS_PATH: str | None = "supervised_learning/checkpoints/sl_best.weights.h5"
+WEIGHTS_PATH: str | None = "16_sl_best.weights.h5"
 
 # Stockfish. None -> auto-detect (PATH, then known local installs below).
 # Set an explicit path to the executable to override.
