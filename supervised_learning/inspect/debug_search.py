@@ -21,9 +21,26 @@ def _search(net, conv, board, sims, c_puct, bs=16):
     mcts.search_batched(r, add_noise=False, batch_size=bs)
     return r
 
-def _parse(board, mv):
-    try: return board.parse_san(mv)
-    except ValueError: return chess.Move.from_uci(mv)
+def _depth(root):
+    """(mean, sel, pv) plies. mean = avg depth a sim reached — every sim walks
+    root->leaf bumping one edge per ply, so sum(edge.N)/sims IS the mean path
+    length (exact, not sampled). sel = deepest node built. pv = most-visited
+    chain, the closest thing to an alpha-beta 'depth N'."""
+    tot = sel = 0
+    st = [(root, 0)]
+    while st:
+        n, d = st.pop()
+        if d > sel: sel = d
+        for e in n.edges:
+            tot += e.N
+            if e.child_node is not None: st.append((e.child_node, d+1))
+    mean = tot / root.total_visits if root.total_visits else 0.0
+    pv, n = 0, root
+    while n.edges:
+        e = max(n.edges, key=lambda x: x.N)
+        if e.N == 0 or e.child_node is None: break
+        n = e.child_node; pv += 1
+    return mean, sel, pv
 
 def _pv(net, conv, board, node, depth):
     """Most-visited path: per-ply move, visits, backed-up Q, raw value head."""
@@ -31,6 +48,7 @@ def _pv(net, conv, board, node, depth):
     for _ in range(depth):
         if not node.edges: break
         e = max(node.edges, key=lambda x: x.N)
+        if e.N == 0: break   # unsearched top prior at a leaf — not part of the PV
         raw, _ = _val(net, conv, b)
         line.append(dict(san=b.san(e.move), N=e.N, Q=e.Q, raw=raw))
         b.push(e.move); node = e.child_node
@@ -45,11 +63,10 @@ def _print_pv(title, line):
         note = "<-- value head & search DISAGREE" if disagree else ""
         print(f"    {p['san']:<7}{p['N']:>6}{p['Q']:>+11.3f}{p['raw']:>+12.3f}   {note}")
 
-def analyze(fen, blunder=None, c_pucts=(0.5,1.5,3.0,6.0), sims=(100,400,1000),
-            deep_c_puct=1.5, deep_sims=1000, top=10, pv_depth=10, bs=16):
+def analyze(fen, c_pucts=(0.5,1.5,3.0,6.0), sims=(100,400,800,1000,2000),
+            deep_c_puct=1.5, deep_sims=2000, top=10, pv_depth=10, bs=16):
     net, conv = _ctx()
     base = chess.Board(fen)
-    bmove = _parse(base, blunder) if blunder else None
     turn = "White" if base.turn else "Black"
 
     # ---- static root read ----
@@ -62,33 +79,38 @@ def analyze(fen, blunder=None, c_pucts=(0.5,1.5,3.0,6.0), sims=(100,400,1000),
     pol = sorted(r0.edges, key=lambda e: e.P, reverse=True)
     print("\npolicy head — top priors:")
     for e in pol[:top]:
-        tag = "  <-- BLUNDER" if bmove and e.move==bmove else ""
-        print(f"    {base.san(e.move):<7}{e.P*100:5.1f}%{tag}")
-    if bmove and bmove not in [e.move for e in pol[:top]]:
-        be = next(e for e in pol if e.move==bmove)
-        print(f"    ... blunder {base.san(bmove)} ranks {pol.index(be)+1}/{len(pol)}"
-              f" at {be.P*100:.2f}%")
+        print(f"    {base.san(e.move):<7}{e.P*100:5.1f}%")
 
     # ---- sweep grid ----
-    if bmove:
-        print("\n" + "="*74)
-        print("SWEEP  c_puct (rows) x sims (cols)")
-        print("cell = chosenMove | blunderN%/blunderQ   ('*' = blunder was chosen)\n")
-        corner = "cpuct|sims"
-        head = f"{corner:>10}" + "".join(f"{s:>23d}" for s in sims)
-        print(head); print("-"*len(head))
-        for c in c_pucts:
-            row = f"{c:>10.2f}"
-            for s in sims:
-                r = _search(net, conv, base, s, c, bs)
-                tot = sum(e.N for e in r.edges) or 1
-                best = max(r.edges, key=lambda e: e.N)
-                be = next((e for e in r.edges if e.move==bmove), None)
-                npct = 100*be.N/tot if be else 0.0
-                q = be.Q if be else float("nan")
-                star = "*" if (be and best.move==bmove) else ""
-                row += f"{base.san(best.move)+'|'+f'{npct:3.0f}%/{q:+.2f}'+star:>23}"
-            print(row)
+    print("\n" + "="*74)
+    print("SWEEP  c_puct (rows) x sims (cols)")
+    print("cell = chosenMove | itsN%/itsQ   (N% = visit share = how convinced)")
+    corner, w = "cpuct|sims", 22
+    head = f"{corner:>10}" + "".join(f"{s:>{w}d}" for s in sims)
+    print(head); print("-"*len(head))
+    dep = {}
+    for c in c_pucts:
+        row = f"{c:>10.2f}"
+        for s in sims:
+            r = _search(net, conv, base, s, c, bs)
+            dep[(c,s)] = _depth(r)
+            tot = sum(e.N for e in r.edges) or 1
+            best = max(r.edges, key=lambda e: e.N)
+            cell = f"{base.san(best.move)}|{100*best.N/tot:3.0f}%/{best.Q:+.2f}"
+            row += f"{cell:>{w}}"
+        print(row)
+
+    # ---- depth grid (same searches, no extra cost) ----
+    print("\nDEPTH  mean/sel/pv plies   mean = avg depth a sim reached,")
+    print("       sel = deepest node built, pv = most-visited chain length")
+    head = f"{corner:>10}" + "".join(f"{s:>14d}" for s in sims)
+    print(head); print("-"*len(head))
+    for c in c_pucts:
+        row = f"{c:>10.2f}"
+        for s in sims:
+            m, sd, pv = dep[(c,s)]
+            row += f"{f'{m:.1f}/{sd}/{pv}':>14}"
+        print(row)
 
     # ---- deep dive ----
     print("\n" + "="*74)
@@ -96,24 +118,18 @@ def analyze(fen, blunder=None, c_pucts=(0.5,1.5,3.0,6.0), sims=(100,400,1000),
     root = _search(net, conv, base, deep_sims, deep_c_puct, bs)
     edges = sorted(root.edges, key=lambda e: e.N, reverse=True)
     tot = sum(e.N for e in edges) or 1
+    dmean, dsel, dpv = _depth(root)
+    print(f"\ndepth: mean {dmean:.2f} plies   deepest node {dsel}   PV chain {dpv}")
     print(f"\nroot edges (top {top}):  move / N / N% / Q / P")
     for e in edges[:top]:
-        tag = "  <-- BLUNDER" if bmove and e.move==bmove else ""
         print(f"    {base.san(e.move):<7}{e.N:6d}{100*e.N/tot:6.1f}%"
-              f"{e.Q:+8.3f}{e.P*100:6.1f}%{tag}")
+              f"{e.Q:+8.3f}{e.P*100:6.1f}%")
 
     print()
+    # print the whole PV even when it runs past pv_depth — truncating it is what
+    # made the reachable depth invisible in the first place
     _print_pv("PRINCIPAL VARIATION (search's chosen line):",
-              _pv(net, conv, base, root, pv_depth))
-
-    if bmove:
-        be = next((e for e in root.edges if e.move==bmove), None)
-        if be and be.child_node is not None:
-            b2 = base.copy(); b2.push(bmove)
-            head = [dict(san=base.san(bmove), N=be.N, Q=be.Q, raw=v0)]
-            print()
-            _print_pv(f"LINE AFTER THE BLUNDER {base.san(bmove)} — what search expects:",
-                      head + _pv(net, conv, b2, be.child_node, pv_depth-1))
+              _pv(net, conv, base, root, max(pv_depth, dpv)))
 
 # usage, e.g. position right before ...Kf8:
-analyze("2kr4/1pp2p2/p6Q/2p1p2b/2P1P2q/8/PPP2PPN/4R1K1 b - - 0 22", "f6")
+analyze("2kr4/1pp2p2/p6Q/2p1p2b/2P1P2q/8/PPP2PPN/4R1K1 b - - 0 22")

@@ -28,7 +28,7 @@ Usage on Kaggle (set Accelerator = GPU first):
      __file__ — it walks the mounts to find the repo). Then in the next cell:
 
         !pip install chess -q     # ipywidgets is preinstalled on Kaggle
-        play(num_simulations=800, human_color="white")
+        play(num_simulations=800, human_color="black")   # or "white"/"random"
 
 Pass weights_path=... to pick a specific checkpoint; otherwise the newest
 sl_*.weights.h5 under /kaggle/working, /kaggle/input, or the repo is used.
@@ -39,6 +39,7 @@ fallback.
 
 import glob
 import os
+import random
 import sys
 
 
@@ -88,6 +89,22 @@ from networks.big_network import BigNetwork
 # ---------------------------------------------------------------------------
 
 _NET: BigNetwork | None = None
+
+
+def _resolve_color(human_color: str) -> bool:
+    """Turn a colour name into a chess.WHITE/BLACK bool. Rejects anything
+    unrecognised rather than guessing — a silent fallback would hand you the
+    wrong side for a whole game."""
+    name = human_color.strip().lower()
+    if name == "random":
+        name = random.choice(("white", "black"))
+        print(f"You play {name}.")
+    if name in ("white", "w"):
+        return chess.WHITE
+    if name in ("black", "b"):
+        return chess.BLACK
+    raise ValueError(
+        f"human_color must be 'white', 'black' or 'random' (got {human_color!r})")
 
 
 def _find_weights(explicit: str | None) -> str:
@@ -186,7 +203,7 @@ def play(
     callbacks as you click (so it keeps working after the cell finishes).
 
     num_simulations: MCTS rollouts per move. Higher = stronger but slower.
-    human_color: "white" or "black".
+    human_color: "white", "black" or "random" (the board flips to your side).
     batch_size: leaves evaluated per network call (virtual-loss batching);
         16-32 is a good range on GPU.
     square_px: edge length of each board square in pixels (pieces scale with it).
@@ -200,7 +217,7 @@ def play(
         ) from e
 
     net = _NET if _NET is not None else load_network(weights_path)
-    human = chess.WHITE if human_color.lower().startswith("w") else chess.BLACK
+    human = _resolve_color(human_color)
     orient_white = human == chess.WHITE
     board = chess.Board()
     state = {"sel": None, "targets": {}, "busy": False}  # targets: to_sq -> [moves]
@@ -407,7 +424,7 @@ def play_text(
 ) -> None:
     """UCI-input fallback game vs. the network's MCTS."""
     net = _NET if _NET is not None else load_network(weights_path)
-    human = chess.WHITE if human_color.lower().startswith("w") else chess.BLACK
+    human = _resolve_color(human_color)
     orientation = human
     board = chess.Board()
 
