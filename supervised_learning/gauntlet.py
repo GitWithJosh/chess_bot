@@ -43,8 +43,8 @@ for _p in (REPO_ROOT, _HERE):
         sys.path.insert(0, _p)
 
 # ============================ CONFIG — edit, then run ============================
-BEST = os.path.join(REPO_ROOT, "16_sl_best.weights.h5")   # the net we kept
-CKPT_DIR = REPO_ROOT                                       # where sl_XXX live
+BEST = os.path.join(REPO_ROOT, "gen_4.weights.h5")   # the net we kept
+CKPT_DIR = os.path.join(REPO_ROOT, "supervised_learning/16_checkpoint_export/")                                      # where sl_XXX live
 CKPT_GLOB = "sl_*.weights.h5"                              # training snapshots
 MODE = "raw"          # raw policy argmax (matches the reference graph)
 OPENINGS = 25         # 25 openings x 2 colours = 50 games per checkpoint

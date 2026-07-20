@@ -11,7 +11,14 @@ Data: supervised_learning/processed_data/chunk_*.npz, each containing
                                  (drawn tablebase positions) -> 0 policy loss,
                                  and policies.sum(1) doubles as the per-sample
                                  policy weight so metrics skip those rows
-    values   float32 (N, 3)      one-hot WDL
+    values   float32 (N, 3)      WDL target, [win, draw, loss], side-to-move.
+                                 SOFT for game/puzzle rows since 2026-07: the
+                                 game-outcome one-hot blended with Stockfish's
+                                 WDL (create_dataset/dataset_common.blend_value,
+                                 VALUE_LAMBDA). Tablebase rows stay one-hot —
+                                 Syzygy is exact. Soft targets carry an
+                                 irreducible entropy floor, so value_loss is NOT
+                                 comparable to pre-2026-07 runs.
     sources  uint8   (N,)        per-sample source id (newer chunks only; see
                                  SOURCE_NAMES) — enables per-source val metrics
 Trains by calling net.model.fit() directly (NOT net.train(), which would
@@ -206,10 +213,17 @@ def _val_metrics(net, vx, vpol, vval, batch_size):
     predict pass + numpy metrics gives the aggregate AND any slicing for one
     pass total. Formulas replicate Keras: policy CE from logits via a stable
     log-softmax, value CE with 1e-7 clipping.
+
+    The value CE is the FULL soft cross-entropy -sum_k t_k log p_k, not
+    -log p[argmax t]. Those coincide only for one-hot targets; since the value
+    targets are now blends of the game outcome and Stockfish's WDL
+    (dataset_common.blend_value), using the argmax form here would report a
+    different quantity than the one fit() is actually minimising — and
+    best_val_loss picks the saved checkpoint off this number.
     """
     n = len(vx)
     ptgt = vpol.argmax(axis=1)      # zero-policy rows -> index 0; masked by weight
-    vtgt = vval.argmax(axis=1)
+    vtgt = vval.argmax(axis=1)      # for value ACCURACY (top-1 vs the likeliest class)
     ploss  = np.zeros(n, np.float32)
     pmatch = np.zeros(n, np.float32)
     vloss  = np.zeros(n, np.float32)
@@ -223,8 +237,8 @@ def _val_metrics(net, vx, vpol, vval, batch_size):
         t = ptgt[i:i + k]
         ploss[i:i + k]  = lse - logits[rows, t]
         pmatch[i:i + k] = logits.argmax(axis=1) == t
-        pv = np.clip(probs[rows, vtgt[i:i + k]], 1e-7, 1.0)
-        vloss[i:i + k]  = -np.log(pv)
+        pv = np.clip(probs, 1e-7, 1.0)
+        vloss[i:i + k]  = -(vval[i:i + k] * np.log(pv)).sum(axis=1)
         vmatch[i:i + k] = probs.argmax(axis=1) == vtgt[i:i + k]
     return ploss, pmatch, vloss, vmatch
 

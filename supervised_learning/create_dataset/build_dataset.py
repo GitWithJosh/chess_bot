@@ -7,6 +7,19 @@ Run from the chess_bot root (after the three extractors have produced pools/):
     python supervised_learning/create_dataset/process_tablebase_data.py
     python supervised_learning/create_dataset/build_dataset.py
 
+To build with Stockfish-blended (soft) value targets, split the run so the
+annotator can sit between routing and encoding:
+
+    python supervised_learning/create_dataset/build_dataset.py --route-only
+    python supervised_learning/create_dataset/annotate_stockfish.py    # overnight
+    python supervised_learning/create_dataset/build_dataset.py --encode-only
+
+Balancing deliberately still runs on the GAME-OUTCOME label, so the selected
+rows — and therefore the chunk count — are identical either way; Stockfish only
+changes the value target inside each row (dataset_common.blend_value). Encoding
+manifests that were never annotated is still valid and reproduces the old
+one-hot targets exactly.
+
 Every output chunk (50k positions) is simultaneously:
     * source-mixed  85% games / 10% puzzles / 5% tablebase, and
     * WDL-balanced  ~1/3 win / 1/3 draw / 1/3 loss   (the value head was
@@ -30,6 +43,7 @@ array (uint8, see dataset_common.SOURCE_IDS) tags every position with its data
 source, enabling per-source val metrics and per-source loss weighting.
 """
 
+import argparse
 import glob
 import multiprocessing
 import os
@@ -200,14 +214,28 @@ def route(files: list[str], counts, N: int, q: dict) -> None:
 # Pass C — encode each per-chunk manifest into the npz format (parallel).
 # ---------------------------------------------------------------------------
 
-def _parse_routed_line(line: str) -> tuple[str, int, int, int]:
-    """fen,move_idx,wdl,source_id — the manifest row plus the id route() added."""
+def _parse_routed_line(line: str):
+    """fen,move_idx,wdl,source_id[,w,d,l] -> (fen, move_idx, wdl, source_id, sf_wdl).
+
+    The trailing w,d,l are added by annotate_stockfish.py --join; -1,-1,-1 marks
+    a row with no annotation (tablebase, or a position Stockfish never reached).
+    Manifests that were never joined parse fine and yield sf_wdl None, so the
+    outcome-only build still works unchanged.
+    """
+    parts = line.rstrip("\n").rsplit(",", 6)
+    if len(parts) == 7:
+        fen, mi, w, s, a, b, c = parts
+        sf = None if a == "-1" else (int(a), int(b), int(c))
+        return fen, int(mi), int(w), int(s), sf
     fen, mi, w, s = line.rstrip("\n").rsplit(",", 3)
-    return fen, int(mi), int(w), int(s)
+    return fen, int(mi), int(w), int(s), None
 
 
-def encode_chunk(args) -> tuple[str, int]:
-    chunk_path, seed = args
+def encode_chunk(args) -> tuple[str, int, int]:
+    # out_dir travels in the args rather than being read from the module global:
+    # on Windows (spawn) each worker re-imports this module fresh, so a global
+    # reassigned in the parent silently does NOT reach the children.
+    chunk_path, seed, out_dir = args
     with open(chunk_path, encoding="utf-8") as f:
         rows = [_parse_routed_line(l) for l in f]
     random.Random(seed).shuffle(rows)          # shuffle sources/classes within the chunk
@@ -217,26 +245,37 @@ def encode_chunk(args) -> tuple[str, int]:
     policies = np.zeros((n, dc.POLICY_SIZE), dtype=np.float32)
     values   = np.zeros((n, dc.N_WDL),       dtype=np.float32)
     sources  = np.zeros(n,                   dtype=np.uint8)
-    for i, (fen, idx, wdl, src) in enumerate(rows):
-        b, p, v = dc.encode_sample(fen, idx, wdl)
+    n_soft = 0
+    for i, (fen, idx, wdl, src, sf) in enumerate(rows):
+        b, p, v = dc.encode_sample(fen, idx, wdl, sf_wdl=sf, lam=dc.VALUE_LAMBDA)
         boards[i] = b
         policies[i] = p
         values[i] = v
         sources[i] = src
+        n_soft += sf is not None
 
     cid = os.path.splitext(os.path.basename(chunk_path))[0][1:]  # "c0007" -> "0007"
-    out = os.path.join(OUT_DIR, f"chunk_{cid}.npz")
+    out = os.path.join(out_dir, f"chunk_{cid}.npz")
     np.savez_compressed(out, boards=boards, policies=policies, values=values,
                         sources=sources)
-    return out, n
+    return out, n, n_soft
 
 
-def assemble() -> None:
-    chunk_files = sorted(glob.glob(os.path.join(BUILD_DIR, "c*.txt")))
-    work = [(p, SEED + i) for i, p in enumerate(chunk_files)]
+def assemble(build_dir: str | None = None, out_dir: str | None = None) -> None:
+    build_dir = build_dir or BUILD_DIR
+    out_dir = out_dir or OUT_DIR
+    chunk_files = sorted(glob.glob(os.path.join(build_dir, "c*.txt")))
+    work = [(p, SEED + i, out_dir) for i, p in enumerate(chunk_files)]
+    tot = soft = 0
     with multiprocessing.Pool(processes=min(ASSEMBLE_WORKERS, len(work))) as pool:
-        for out, n in pool.imap_unordered(encode_chunk, work):
-            print(f"  wrote {os.path.basename(out)}  ({n:,} positions)", flush=True)
+        for out, n, ns in pool.imap_unordered(encode_chunk, work):
+            tot += n
+            soft += ns
+            print(f"  wrote {os.path.basename(out)}  ({n:,} positions, "
+                  f"{100*ns/max(n,1):.1f}% Stockfish-blended)", flush=True)
+    print(f"\n  {soft:,}/{tot:,} rows ({100*soft/max(tot,1):.1f}%) carry a "
+          f"Stockfish-blended value target (lambda={dc.VALUE_LAMBDA}); "
+          f"the rest are one-hot (tablebase is exact by design).")
 
 
 # ---------------------------------------------------------------------------
@@ -244,41 +283,65 @@ def assemble() -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    ap = argparse.ArgumentParser(description="Assemble balanced training chunks.")
+    ap.add_argument("--route-only", action="store_true",
+                    help="run Pass A+B only, leaving _build/ manifests for "
+                         "annotate_stockfish.py")
+    ap.add_argument("--encode-only", action="store_true",
+                    help="run Pass C only, on the manifests already in _build/")
+    args = ap.parse_args()
+
     os.makedirs(OUT_DIR, exist_ok=True)
-    files = _pool_files()
+    t0 = time.time()
 
     print("=== Dataset Assembler ===")
     print(f"Pools : {POOL_DIR}")
-    print(f"Out   : {OUT_DIR}/chunk_*.npz\n")
+    print(f"Out   : {OUT_DIR}/chunk_*.npz")
+    print(f"Value : outcome one-hot blended with Stockfish WDL, "
+          f"lambda={dc.VALUE_LAMBDA}\n")
 
-    t0 = time.time()
-    print("Pass A: counting pools ...", flush=True)
-    counts = count_groups(files)
-    for s in SOURCES:
-        row = {w: counts.get((s, w), 0) for w in (0, 1, 2)}
-        tot = sum(row.values())
-        print(f"  {s:10s} win {row[0]:>10,}  draw {row[1]:>10,}  loss {row[2]:>10,}  | {tot:>11,}")
+    if not args.encode_only:
+        files = _pool_files()
+        print("Pass A: counting pools ...", flush=True)
+        counts = count_groups(files)
+        for s in SOURCES:
+            row = {w: counts.get((s, w), 0) for w in (0, 1, 2)}
+            tot = sum(row.values())
+            print(f"  {s:10s} win {row[0]:>10,}  draw {row[1]:>10,}  "
+                  f"loss {row[2]:>10,}  | {tot:>11,}")
 
-    N, q = plan(counts)
-    if N <= 0:
-        print("\nERROR: pools too small / imbalanced to build even one balanced chunk.")
+        N, q = plan(counts)
+        if N <= 0:
+            print("\nERROR: pools too small / imbalanced to build even one "
+                  "balanced chunk.")
+            sys.exit(1)
+        print(f"\nPlan: {N} chunks of {CHUNK_SIZE:,}")
+        print("  per-chunk quota:")
+        for (s, w), per in sorted(q.items()):
+            if per > 0:
+                print(f"    {s:10s} {['win','draw','loss'][w]:4s}: {per:,}")
+        print(f"  totals/chunk: game {SRC_GAME:,} | puzzle {SRC_PUZZLE:,} "
+              f"| tb {SRC_TB:,}"
+              f"   ||  win {COL_WIN:,} | draw {COL_DRAW:,} | loss {COL_LOSS:,}")
+
+        print(f"\nPass B: routing rows into {N} per-chunk manifests ...", flush=True)
+        route(files, counts, N, q)
+
+    if args.route_only:
+        print(f"\n=== Routed in {time.time() - t0:.0f}s -> {BUILD_DIR}/ ===")
+        print("Next: python supervised_learning/create_dataset/annotate_stockfish.py")
+        return
+
+    if not os.path.isdir(BUILD_DIR):
+        print(f"ERROR: {BUILD_DIR} not found — run --route-only first.")
         sys.exit(1)
-    print(f"\nPlan: {N} chunks of {CHUNK_SIZE:,}")
-    print("  per-chunk quota:")
-    for (s, w), per in sorted(q.items()):
-        if per > 0:
-            print(f"    {s:10s} {['win','draw','loss'][w]:4s}: {per:,}")
-    print(f"  totals/chunk: game {SRC_GAME:,} | puzzle {SRC_PUZZLE:,} | tb {SRC_TB:,}"
-          f"   ||  win {COL_WIN:,} | draw {COL_DRAW:,} | loss {COL_LOSS:,}")
-
-    print(f"\nPass B: routing rows into {N} per-chunk manifests ...", flush=True)
-    route(files, counts, N, q)
 
     print(f"Pass C: encoding chunks ({ASSEMBLE_WORKERS} workers) ...", flush=True)
     assemble()
 
+    n_out = len(glob.glob(os.path.join(OUT_DIR, "chunk_*.npz")))
     shutil.rmtree(BUILD_DIR, ignore_errors=True)
-    print(f"\n=== Done in {time.time() - t0:.0f}s — {N} chunks -> {OUT_DIR}/ ===")
+    print(f"\n=== Done in {time.time() - t0:.0f}s — {n_out} chunks -> {OUT_DIR}/ ===")
 
 
 if __name__ == "__main__":

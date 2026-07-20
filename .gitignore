@@ -225,4 +225,11 @@ __marimo__/
 *.weights.h5
 *.csv
 *.rtbw
-*.rtbz 
+*.rtbz
+*.json
+
+# Supervised dataset intermediates — regenerable, and ~2.2 GB of .txt that the
+# rules above do not catch (build_dataset --route-only writes the per-chunk
+# manifests; annotate_stockfish writes the work list).
+supervised_learning/processed_data/_build/
+supervised_learning/sf_cache/worklist.txt* 

@@ -22,6 +22,7 @@ inference-time Converter (verified by inspect/verify_pipeline.py), so the
 network sees a consistent encoding at train and play time.
 """
 
+import hashlib
 import os
 import sys
 
@@ -33,6 +34,23 @@ WDL_WIN, WDL_DRAW, WDL_LOSS = 0, 1, 2
 N_WDL = 3
 POLICY_SIZE = 1858
 
+# --- Stockfish soft value targets (2026-07) --------------------------------
+# The game-outcome label is noisy by construction: every position of a won game
+# is labeled "win" even when it was objectively balanced (measured on a 12k
+# sample, Stockfish d12 calls 48% of positions from won games drawn). So the
+# value target is BLENDED with Stockfish's WDL for that position:
+#
+#     target = (1 - VALUE_LAMBDA) * onehot(outcome)  +  VALUE_LAMBDA * sf_wdl
+#
+# Balancing still runs on the OUTCOME label (see build_dataset.plan), so chunk
+# composition — and the chunk count — is identical to the outcome-only build;
+# only the target inside each row gets richer. Tablebase rows are NOT annotated:
+# Syzygy is exact ground truth and d12 Stockfish would only degrade it.
+VALUE_LAMBDA = 0.5
+
+SF_SHARDS = 64           # cache is sharded by fen hash so writes stay append-only
+SF_MATE_CP = 32000       # python-chess mate_score; cp is clipped to +-this
+
 # Per-sample source ids stored in each chunk's "sources" uint8 array (written
 # by build_dataset.py). Enables per-source val metrics in training. Defender-
 # side puzzle rows count as "puzzle" and drawn tablebase rows as "tablebase" —
@@ -42,6 +60,11 @@ POLICY_SIZE = 1858
 SOURCE_IDS = {"game": 0, "puzzle": 1, "tablebase": 2}
 
 _ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+
+# Stockfish annotation cache: sf_XX.csv shards of "fen,cp,w,d,l" (w/d/l permille,
+# side-to-move POV). Append-only, so an interrupted overnight run resumes by
+# simply skipping the FENs already present.
+SF_CACHE_DIR = os.path.join(_ROOT, "supervised_learning", "sf_cache")
 
 
 def repo_root() -> str:
@@ -123,6 +146,86 @@ def parse_manifest_line(line: str) -> tuple[str, int, int]:
     return fen, int(mi), int(w)
 
 
+# ---------------------------------------------------------------------------
+# Stockfish annotation cache
+# ---------------------------------------------------------------------------
+
+def fen_hash(fen: str) -> int:
+    """Stable 64-bit hash of a FEN. Used to dedupe the annotation work list and
+    to index the cache without keeping 15M FEN strings in memory (the uint64
+    keys are ~120 MB; the strings would be >1 GB). Collision probability over
+    15M positions is ~6e-6, i.e. irrelevant at this scale.
+
+    Must be STABLE across processes, so hashlib — not Python's hash(), which is
+    randomised per interpreter by PYTHONHASHSEED.
+    """
+    return int.from_bytes(hashlib.blake2b(fen.encode(), digest_size=8).digest(), "little")
+
+
+def sf_shard_path(shard: int) -> str:
+    return os.path.join(SF_CACHE_DIR, f"sf_{shard:02d}.csv")
+
+
+def load_sf_cache(verbose: bool = True):
+    """All cached annotations -> (sorted uint64 keys, uint16 wdl permille (n,3)).
+
+    Returned sorted so callers look up with np.searchsorted. Malformed trailing
+    lines (possible if the process was killed mid-write) are skipped rather than
+    raising — the append-only shards are meant to survive a hard stop.
+    """
+    keys: list[np.ndarray] = []
+    wdls: list[np.ndarray] = []
+    if not os.path.isdir(SF_CACHE_DIR):
+        return np.empty(0, np.uint64), np.empty((0, N_WDL), np.uint16)
+
+    for shard in range(SF_SHARDS):
+        path = sf_shard_path(shard)
+        if not os.path.exists(path):
+            continue
+        k_s, w_s = [], []
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    fen, _cp, w, d, l = line.rstrip("\n").rsplit(",", 4)
+                    row = (int(w), int(d), int(l))
+                except ValueError:
+                    continue                      # truncated final line
+                k_s.append(fen_hash(fen))
+                w_s.append(row)
+        if k_s:
+            keys.append(np.array(k_s, dtype=np.uint64))
+            wdls.append(np.array(w_s, dtype=np.uint16))
+
+    if not keys:
+        return np.empty(0, np.uint64), np.empty((0, N_WDL), np.uint16)
+
+    k = np.concatenate(keys)
+    w = np.concatenate(wdls)
+    order = np.argsort(k, kind="stable")
+    k, w = k[order], w[order]
+    uniq = np.concatenate(([True], k[1:] != k[:-1]))   # last writer wins is fine
+    k, w = k[uniq], w[uniq]
+    if verbose:
+        print(f"  SF cache: {len(k):,} annotated positions", flush=True)
+    return k, w
+
+
+def blend_value(wdl_class: int, sf_wdl, lam: float = VALUE_LAMBDA) -> np.ndarray:
+    """Value target: outcome one-hot blended with Stockfish's WDL distribution.
+
+    sf_wdl is a (3,) permille triple in the side-to-move frame, or None for rows
+    with no annotation (tablebase, or a game/puzzle row Stockfish never reached),
+    which fall back to the pure one-hot label.
+    """
+    value = np.zeros(N_WDL, dtype=np.float32)
+    value[wdl_class] = 1.0
+    if sf_wdl is None:
+        return value
+    sf = np.asarray(sf_wdl, dtype=np.float32)
+    sf = sf / max(float(sf.sum()), 1e-9)
+    return (1.0 - lam) * value + lam * sf
+
+
 def board_to_input_tensor(board: chess.Board) -> np.ndarray:
     """(8,8,20) position-only tensor — byte-identical to Converter.board_to_input_tensor.
 
@@ -154,7 +257,8 @@ def board_to_input_tensor(board: chess.Board) -> np.ndarray:
     return tensor
 
 
-def encode_sample(fen: str, move_idx: int, wdl: int):
+def encode_sample(fen: str, move_idx: int, wdl: int, sf_wdl=None,
+                  lam: float = VALUE_LAMBDA):
     """One manifest row -> (board (8,8,20) f16, policy (1858,) f32, value (3,) f32).
 
     move_idx -1 marks a VALUE-ONLY row (drawn tablebase positions, which have
@@ -162,11 +266,14 @@ def encode_sample(fen: str, move_idx: int, wdl: int):
     cross-entropy loss and gradient are exactly 0. train_supervised.py also
     derives per-sample policy weights from policies.sum(axis=1), so these rows
     are excluded from the policy accuracy metric as well.
+
+    sf_wdl (permille triple, side-to-move POV) turns the value target into a
+    SOFT one — see blend_value. Passing None reproduces the old one-hot target
+    exactly, so the outcome-only build is still reachable.
     """
     boards = board_to_input_tensor(chess.Board(fen))
     policy = np.zeros(POLICY_SIZE, dtype=np.float32)
     if move_idx >= 0:
         policy[move_idx] = 1.0
-    value = np.zeros(N_WDL, dtype=np.float32)
-    value[wdl] = 1.0
+    value = blend_value(wdl, sf_wdl, lam)
     return boards, policy, value

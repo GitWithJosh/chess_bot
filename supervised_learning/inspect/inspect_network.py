@@ -50,7 +50,7 @@ FENS = [
 # Weights. None -> sl_best.weights.h5 in supervised_learning/checkpoints,
 # else the newest sl_*.weights.h5 there. Or set an explicit path.
 #WEIGHTS_PATH: str | None = "supervised_learning/checkpoints/sl_best.weights.h5"
-WEIGHTS_PATH: str | None = "16_sl_best.weights.h5"
+WEIGHTS_PATH: str | None = "supervised_learning/checkpoints/16_sl_best.weights.h5"
 
 # Stockfish. None -> auto-detect (PATH, then known local installs below).
 # Set an explicit path to the executable to override.
@@ -68,7 +68,7 @@ _STOCKFISH_FALLBACKS = [
     r"C:\Users\dhoff\OneDrive\Dokumente\Studium\Grundlagen Programmierung"
     r"\Semester 4\Personal\Reinforcement Learning\Chess\stockfish"
     r"\stockfish-windows-x86-64-avx2.exe",
-    "stockfish",
+    "C:/stockfish/stockfish.exe",
     "stockfish-windows-x86-64-avx2.exe",
 ]
 
