@@ -57,7 +57,7 @@ PROGRESS_LOG = os.path.join(dc.SF_CACHE_DIR, "progress.log")
 
 STOCKFISH = os.environ.get("STOCKFISH_PATH", r"C:\stockfish\stockfish.exe")
 DEPTH = 12
-N_ENGINES = 16          # 16 cores; leave headroom for the writer thread + OS
+N_ENGINES = 8          # 16 cores; leave headroom for the writer thread + OS
 ENGINE_HASH_MB = 64
 ENGINE_THREADS = 1      # one core each; parallelism comes from running many
 BLOCK = 1000            # FENs per work unit. Also bounds how long a graceful
@@ -228,7 +228,12 @@ def load_worklist() -> list[str]:
 # ---------------------------------------------------------------------------
 
 def _open_engine():
-    eng = chess.engine.SimpleEngine.popen_uci(STOCKFISH)
+    # setpgrp: put each engine in its OWN process group so a console Ctrl+C is
+    # NOT delivered to them. Without it, Ctrl+C kills all 16 engines at once and
+    # every worker has to restart one just to finish its in-flight block — the
+    # "16 errors, 16 engine restarts" seen on a clean stop. It also means the
+    # graceful finish keeps its warm transposition tables.
+    eng = chess.engine.SimpleEngine.popen_uci(STOCKFISH, setpgrp=True)
     eng.configure({"Threads": ENGINE_THREADS, "Hash": ENGINE_HASH_MB,
                    "UCI_ShowWDL": True})
     return eng
@@ -240,7 +245,13 @@ def _analyse(eng, fen: str):
         board = chess.Board(fen)
     except ValueError:
         return None          # malformed row: skip it, don't take the worker down
-    info = eng.analyse(board, chess.engine.Limit(depth=DEPTH, time=SOFT_TIME_CAP))
+    # info=INFO_SCORE, not the INFO_ALL default: the driver is GIL-bound (one
+    # Python core pegged while 16 engines sit at ~70% each), and INFO_ALL parses
+    # every info line of every iterative-deepening iteration, converting whole
+    # PVs into Move objects we throw away. Score and WDL survive the narrower
+    # selector — measured present on 3520/3520 positions — for 1.16x throughput.
+    info = eng.analyse(board, chess.engine.Limit(depth=DEPTH, time=SOFT_TIME_CAP),
+                       info=chess.engine.INFO_SCORE)
     score = info["score"].pov(board.turn)          # Score, side-to-move relative
     wdl_info = info.get("wdl")
     # info["wdl"] is a PovWdl and needs .pov(); Score.wdl() returns a plain Wdl
@@ -470,8 +481,10 @@ def annotate(fens: list[str], n_engines: int, already: int) -> tuple[bool, int]:
 # Join — fold the cache back into the routed manifests for the encoder
 # ---------------------------------------------------------------------------
 
-def join_manifests(paths: list[str]) -> None:
+def join_manifests(paths: list[str]) -> bool:
     """Rewrite each routed manifest as fen,move_idx,wdl,src_id,w,d,l.
+
+    Returns True if every manifest was joined, False if interrupted.
 
     Doing the join once here means build_dataset's encode workers never load the
     cache: 8 processes x ~210 MB of lookup arrays is pure waste when a single
@@ -479,40 +492,83 @@ def join_manifests(paths: list[str]) -> None:
     annotation (tablebase, or a position Stockfish never reached) get -1,-1,-1
     and fall back to the one-hot target at encode time.
     """
+    # Sweep stale temp files from a previously killed join. Each would be
+    # overwritten anyway the next time its own manifest is processed, but a run
+    # that never reaches that file would leave it sitting there indefinitely.
+    # They cannot be mistaken for manifests (the c*.txt glob does not match
+    # c0010.txt.tmp), so this is tidiness, not correctness.
+    stale = sorted(glob.glob(os.path.join(os.path.dirname(paths[0]), "*.tmp")))
+    for s in stale:
+        try:
+            os.remove(s)
+        except OSError:
+            pass
+    if stale:
+        print(f"  removed {len(stale)} stale .tmp file(s) from an interrupted run",
+              flush=True)
+
     keys, wdls = dc.load_sf_cache()
     print(f"Joining {len(paths)} manifests against {len(keys):,} annotations ...",
           flush=True)
     hit = miss = 0
+    t0 = time.time()
     for n, path in enumerate(paths, 1):
+        if _stop.is_set() or _finish.is_set():
+            print(f"\n  Join interrupted after {n - 1}/{len(paths)} manifests. "
+                  f"Each file is replaced atomically, so the finished ones are "
+                  f"intact.\n  Re-run with --join-only to complete it.", flush=True)
+            return False
+
+        with open(path, encoding="utf-8") as fin:
+            rows = [_split_routed(l) for l in fin.read().splitlines() if l]
+
+        # Hash and look up the WHOLE manifest in one vectorised pass.
+        # Doing this per row costs ~5 ms/row, not the ~2 us you would expect:
+        # fen_hash returns a PYTHON int, and numpy types one below 2**63 as
+        # int64, which mismatches the uint64 keys array and makes it convert all
+        # 16.5M elements on every call. Building a uint64 array up front pins
+        # the dtype and does one binary search per batch instead of per row.
+        todo = [i for i, r in enumerate(rows) if int(r[3]) not in SKIP_SOURCE_IDS]
+        wdl_of: dict[int, tuple] = {}
+        if todo and len(keys):
+            h = np.fromiter((dc.fen_hash(rows[i][0]) for i in todo),
+                            dtype=np.uint64, count=len(todo))
+            pos = np.searchsorted(keys, h)
+            np.clip(pos, 0, len(keys) - 1, out=pos)
+            found = keys[pos] == h
+            for j, i in enumerate(todo):
+                if found[j]:
+                    a, b, c = wdls[pos[j]]
+                    wdl_of[i] = (int(a), int(b), int(c))
+
         tmp = path + ".tmp"
-        with open(path, encoding="utf-8") as fin, open(tmp, "w", encoding="utf-8") as fout:
-            for line in fin:
-                line = line.rstrip("\n")
-                if not line:
-                    continue
+        with open(tmp, "w", encoding="utf-8") as fout:
+            out = []
+            for i, (fen, mi, w, s) in enumerate(rows):
                 # Rebuilt from the canonical four fields rather than appended to,
                 # so re-joining an already-joined manifest refreshes it in place
                 # instead of stacking a second w,d,l triple onto every row.
-                fen, mi, w, s = _split_routed(line)
                 base = f"{fen},{mi},{w},{s}"
-                if int(s) in SKIP_SOURCE_IDS:
-                    fout.write(f"{base},-1,-1,-1\n")
-                    continue
-                k = dc.fen_hash(fen)
-                i = int(np.searchsorted(keys, k))
-                if i < len(keys) and keys[i] == k:
-                    a, b, c = wdls[i]
-                    fout.write(f"{base},{a},{b},{c}\n")
+                a = wdl_of.get(i)
+                if a is not None:
+                    out.append(f"{base},{a[0]},{a[1]},{a[2]}\n")
                     hit += 1
                 else:
-                    fout.write(f"{base},-1,-1,-1\n")
-                    miss += 1
+                    out.append(f"{base},-1,-1,-1\n")
+                    if int(s) not in SKIP_SOURCE_IDS:
+                        miss += 1
+            fout.writelines(out)
         os.replace(tmp, path)
-        if n % 50 == 0 or n == len(paths):
-            print(f"  {n}/{len(paths)} manifests", flush=True)
+
+        if n % 25 == 0 or n == len(paths):
+            el = time.time() - t0
+            eta = el / n * (len(paths) - n)
+            print(f"  {n}/{len(paths)} manifests  ({el:.0f}s elapsed, "
+                  f"ETA {eta:.0f}s)", flush=True)
     tot = hit + miss
     print(f"  annotated {hit:,}/{tot:,} annotatable rows "
           f"({100*hit/max(tot,1):.2f}%); {miss:,} fall back to one-hot", flush=True)
+    return True
 
 
 # ---------------------------------------------------------------------------

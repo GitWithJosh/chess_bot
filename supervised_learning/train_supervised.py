@@ -450,6 +450,20 @@ def main() -> None:
             print("Val chunks carry no 'sources' array — per-source val metrics off.\n")
         del vb, vp, vv, vs
 
+        # Entropy floor of the val targets. With SOFT targets (outcome blended
+        # with Stockfish, see dataset_common.blend_value) the cross-entropy
+        # cannot go below H(target), so val_value_loss is NOT comparable to a
+        # one-hot run — the comparable quantity is the excess KL = loss - floor.
+        # Printing it once here means every logged val_value_loss can be read
+        # against it instead of being recomputed by hand later.
+        _ent = -(vval * np.log(np.clip(vval, 1e-9, 1.0))).sum(axis=1)
+        print(f"Value-target entropy floor (val set): {_ent.mean():.4f}"
+              f"   -> read val_value_loss as floor + KL")
+        for _n, _m in val_masks:
+            print(f"    {_n:<10} floor {_ent[_m].mean():.4f}"
+                  f"   ({'one-hot, exact' if _ent[_m].mean() < 1e-6 else 'soft'})")
+        print()
+
     metrics_header = [
         "epoch", "global_chunk", "chunk_file", "n_pos",
         "loss", "policy_loss", "value_loss", "policy_acc", "value_acc",
