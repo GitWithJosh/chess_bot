@@ -1,0 +1,163 @@
+\documentclass[
+  a4paper, 12pt,
+  parskip=half,
+  headings=small,
+  bibliography=totoc
+]{scrartcl}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[ngerman]{babel}
+\usepackage[german=quotes]{csquotes}
+\usepackage{graphicx}
+\usepackage{microtype}
+\usepackage[style=authoryear]{biblatex}
+\usepackage{hyperref}
+
+\addbibresource{literatur.bib}
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+
+  {\Huge\bfseries Angelernt oder Autodidakt?\par}
+  \vspace{0.4cm}
+  {\large\itshape  Supervised Learning vs.
+  Self-Play Reinforcement Learning mit MCTS in Schachagenten\par}
+
+  \vspace{2cm}
+
+  {\large
+  Danny Hoffmann \quad Tim Lehmann \quad Joshua Meyer \quad Philipp Meyer
+  \par}
+
+  \vspace{1.5cm}
+
+  \begin{tabular}{rl}
+    \textbf{Modul:}   & Projekt Data Science und Künstliche Intelligenz \\
+    \textbf{Kurs:}    & WDSKI23B \\
+    \textbf{Dozent:}  & Prof.\ Dr.\ Maximilian Scherer \\
+    \textbf{Umfang:}  & 16--20 Seiten \\
+    \textbf{Abgabe:}  & 30./31.\ Juli 2026 \\
+  \end{tabular}
+
+\includegraphics[width=0.4\textwidth]{img/magcal.jpg}
+\vfill
+
+  {\large Mai -- Juli 2026}
+  
+
+\end{titlepage}
+
+\pagenumbering{arabic}
+
+\tableofcontents
+\clearpage
+
+\section{Einleitung}
+
+Projektanforderungen:
+\begin{itemize}
+    \item Use-Case mit Machine Learning Komponente herausarbeiten
+     \item Training eines eigenen Modells oder Fine-Tuning
+   \item Vergleich mit mindestens einem anderen ML Modell (diese können auch komplett vortrainiert sein oder hinter API liegen)
+   \item Prototyp / Proof-of-concept: dashboard / app / simulation / game ...
+   \item Projektbericht: Grundlagen / Umsetzung etwa 50:50
+    \item Präsentation: Konzept und Demo
+\end{itemize}
+    -
+
+Prüfungsleistung
+\begin{itemize}
+    \item  Projektbericht (4-5 Seiten pP, Gruppenabgabe)
+    \item Quellcode und Demo (ggf. als Video) als Anhang
+    \item 15 - 25 Minuten (nach Gruppengröße, für uns 25 I guess)
+    \item 5 Minuten Fragen und Diskussion
+    \item Inklusive Demo / Video
+\end{itemize}
+
+Bewertungsrubriken
+\begin{itemize}
+    \item Literaturrecherche: Relevante Grundlagen, verwandte Arbeiten
+    \item Funktionalität und Struktur des Projekts
+    \item Präsentation und Beantwortung der Fragen
+\end{itemize}
+
+
+Forschungsfrage: Was ist besser, was ist früher besser oder später besser, bis zu welchem stockfish level schaffen wir es, wie sind trainingszeiten vergleichbara
+
+\section{Theoretische Grundlagen}
+\subsection{Schach als formales Problem}
+
+\subsection{Supervised Learning im Schachkontext}
+
+
+\subsection{Reinforcement Learning im Schachkontext}
+
+
+\subsection{Monte Carlo Tree Search (MCTS)}
+
+
+\subsection{AlphaZero-Paradigma: MCTS + Self-Play}
+
+
+\subsection{Vergleichsdimensionen der Ansätze}
+
+\section{Implementierung}
+
+% -------------------------------------------------------
+\subsection{Systemarchitektur \& Projektstruktur}
+
+
+% -------------------------------------------------------
+\subsection{Brettrepräsentation \& Vorverarbeitung}
+
+% -------------------------------------------------------
+\subsection{Supervised Learning -- Implementierung}
+
+\subsubsection{Datenpipeline}
+
+
+\subsubsection{Modellarchitektur}
+
+\subsubsection{Training}
+
+% -------------------------------------------------------
+\subsection{Reinforcement Learning / MCTS -- Implementierung}
+
+\subsubsection{MCTS-Kern}
+
+
+\subsubsection{Neuronales Netz als Policy- und Value-Prior}
+
+
+
+\subsubsection{Self-Play-Pipeline}
+
+
+\subsubsection{Trainings-Loop}
+
+
+% -------------------------------------------------------
+\subsection{Evaluation \& Vergleichsaufbau}
+\clearpage
+\section{Ergebnisse}
+\subsection{Trainingsverhalten \& Konvergenzkurven}
+\subsection{Win-Rate gegen random play}
+\subsection{Win-Rate gegen Stockfish-Levels}
+\subsection{Spielstärke im direkten Vergleich (Win-Rate \& Elo)}
+\subsection{Move Accuracy}
+\subsection{Rechenaufwand \& Inference-Zeit}
+\section{Diskussion}
+\subsection{Interpretation der Ergebnisse}
+\subsection{Stärken und Schwächen des Supervised-Learning-Ansatzes}
+\subsection{Stärken und Schwächen des RL/MCTS-Ansatzes}
+\subsection{Einfluss von Hyperparametern \& Designentscheidungen}
+\subsection{Limitierungen der Arbeit}
+\subsection{Ausblick \& zukünftige Arbeiten}
+\section{Fazit}
+
+\printbibliography
+
+\end{document}
