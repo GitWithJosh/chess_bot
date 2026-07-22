@@ -14,7 +14,7 @@
 \usepackage[style=authoryear]{biblatex}
 \usepackage{hyperref}
 
-\addbibresource{literatur.bib}
+\addbibresource{bibliography.bib}
 \begin{document}
 
 \begin{titlepage}
@@ -55,108 +55,98 @@
 \tableofcontents
 \clearpage
 
+% =========================================================================
+% Zielumfang: ~18 Textseiten (4 Personen x 4-5 Seiten). Grundlagen und
+% Umsetzung je etwa 50:50 gewichtet.
+%
+% Leitgedanke: SL- und RL-Agent teilen sich dieselbe Netzarchitektur
+% (networks/big_network.py), dieselbe Zugkodierung (helpers/converter.py) und
+% dieselbe Suche. Nur das Trainingssignal unterscheidet sich -> Kapitel 4 misst
+% ausschliesslich das Trainingsparadigma (kontrolliertes Experiment).
+%
+% Projektanforderungen (Referenz, nicht drucken):
+%   - Use-Case mit ML-Komponente; eigenes Modell oder Fine-Tuning
+%   - Vergleich mit mind. einem weiteren ML-Modell (Stockfish/NNUE = trainiertes Netz)
+%   - Prototyp / Proof-of-Concept (GUI)
+%   - Bericht: Grundlagen / Umsetzung ~50:50; 4-5 Seiten pro Person
+% Forschungsfrage: Was ist besser, was frueher/spaeter besser, bis zu welchem
+%   Stockfish-Level reicht es, wie vergleichen sich die Trainingszeiten?
+% =========================================================================
+
 \section{Einleitung}
+% Use-Case, Forschungsfrage, Beitrag, Aufbau des Berichts  (~1.5 S.)
 
-Projektanforderungen:
-\begin{itemize}
-    \item Use-Case mit Machine Learning Komponente herausarbeiten
-     \item Training eines eigenen Modells oder Fine-Tuning
-   \item Vergleich mit mindestens einem anderen ML Modell (diese können auch komplett vortrainiert sein oder hinter API liegen)
-   \item Prototyp / Proof-of-concept: dashboard / app / simulation / game ...
-   \item Projektbericht: Grundlagen / Umsetzung etwa 50:50
-    \item Präsentation: Konzept und Demo
-\end{itemize}
-    -
-
-Prüfungsleistung
-\begin{itemize}
-    \item  Projektbericht (4-5 Seiten pP, Gruppenabgabe)
-    \item Quellcode und Demo (ggf. als Video) als Anhang
-    \item 15 - 25 Minuten (nach Gruppengröße, für uns 25 I guess)
-    \item 5 Minuten Fragen und Diskussion
-    \item Inklusive Demo / Video
-\end{itemize}
-
-Bewertungsrubriken
-\begin{itemize}
-    \item Literaturrecherche: Relevante Grundlagen, verwandte Arbeiten
-    \item Funktionalität und Struktur des Projekts
-    \item Präsentation und Beantwortung der Fragen
-\end{itemize}
-
-
-Forschungsfrage: Was ist besser, was ist früher besser oder später besser, bis zu welchem stockfish level schaffen wir es, wie sind trainingszeiten vergleichbara
 
 \section{Theoretische Grundlagen}
+% ~8.5 S. -- rund die Haelfte des Berichts (Rubrik Literaturrecherche)
+
 \subsection{Schach als formales Problem}
+% Spielregeln knapp; Spielbaum, Zustands-/Suchraumkomplexitaet, warum der
+% exakte beste Zug praktisch unberechenbar ist; was ein "guter" Zug ist.  (~1.5 S.)
+
+\subsection{Klassische Engines: Minimax, Alpha-Beta, Stockfish/NNUE}
+% Minimax, Alpha-Beta-Pruning; Stockfish als Referenz; NNUE als trainiertes
+% Netz -> das geforderte "weitere ML-Modell".  (~1.0 S.)
+
+\subsection{Brettrepräsentation \& Zugkodierung}
+% Plane-Encoding des Bretts, 1858-Zugkodierung; gemeinsam von SL und RL genutzt.  (~1.0 S.)
+
+\subsection{Neuronale Netze für Schach: CNN/ResNet, Policy- und Value-Head}
+% CNN/ResNet-Backbone, Policy- + Value-Head; Leela-inspirierte Architektur.  (~1.5 S.)
 
 \subsection{Supervised Learning im Schachkontext}
+% Lernen aus annotierten Stellungen; Zielsignale (WDL/Soft-Targets).  (~1.0 S.)
 
+\subsection{Monte Carlo Tree Search (UCT, PUCT)}
+% Selektion/Expansion/Simulation/Backprop; UCT, PUCT mit Netz-Prior.  (~1.5 S.)
 
-\subsection{Reinforcement Learning im Schachkontext}
+\subsection{AlphaZero-Paradigma: Self-Play Reinforcement Learning}
+% MCTS + Self-Play, Policy/Value-Ziele aus Suche und Spielausgang.  (~1.0 S.)
 
-
-\subsection{Monte Carlo Tree Search (MCTS)}
-
-
-\subsection{AlphaZero-Paradigma: MCTS + Self-Play}
-
-
-\subsection{Vergleichsdimensionen der Ansätze}
 
 \section{Implementierung}
+% ~5.0 S.
 
-% -------------------------------------------------------
-\subsection{Systemarchitektur \& Projektstruktur}
+\subsection{Systemarchitektur -- geteilte Komponenten}
+% Netz, Encoding und Suche sind fuer beide Agenten identisch; nur das
+% Trainingssignal unterscheidet sich. Diese Gemeinsamkeit hier explizit machen.  (~1.0 S.)
 
+\subsection{Supervised Learning: Datenpipeline, Modell, Training}
+% Datenquellen, Stockfish-Annotation (Soft-Targets, lambda-Blend), Chunking,
+% Modell, Trainingssetup.  (~2.0 S.)
 
-% -------------------------------------------------------
-\subsection{Brettrepräsentation \& Vorverarbeitung}
-
-% -------------------------------------------------------
-\subsection{Supervised Learning -- Implementierung}
-
-\subsubsection{Datenpipeline}
-
-
-\subsubsection{Modellarchitektur}
-
-\subsubsection{Training}
-
-% -------------------------------------------------------
-\subsection{Reinforcement Learning / MCTS -- Implementierung}
-
-\subsubsection{MCTS-Kern}
+\subsection{Reinforcement Learning: MCTS-Kern, Self-Play, Trainings-Loop}
+% MCTS-Implementierung, Self-Play-Erzeugung, Trainings-Loop.  (~2.0 S.)
 
 
-\subsubsection{Neuronales Netz als Policy- und Value-Prior}
+\section{Evaluation \& Ergebnisse}
+% ~3.5 S. -- gemeinsames Kapitel, EIN Protokoll
+
+\subsection{Versuchsaufbau}
+% Ein gemeinsames Protokoll: Gegnersatz, Stockfish-Level, Zeit-/Sim-Budget,
+% Eroeffnungen, Partienzahl, Farbausgleich, Elo-Anker.  (~0.75 S.)
+
+\subsection{Trainingsverhalten \& Konvergenz}
+% Lernkurven beider Ansaetze.  (~0.75 S.)
+
+\subsection{Spielstärke: Stockfish-Level, Elo, Direktvergleich}
+% Win-Rate gegen Stockfish-Levels, Elo, SL- vs. RL-Agent direkt.  (~1.5 S.)
+
+\subsection{Rechenaufwand \& Inferenzzeit}
+% Trainings-/Inferenzkosten; Trainingszeiten als Einschraenkung (untersch. Hardware).  (~0.5 S.)
 
 
-
-\subsubsection{Self-Play-Pipeline}
-
-
-\subsubsection{Trainings-Loop}
+\section{Prototyp / Demo (GUI)}
+% Proof-of-Concept: die GUI.  (~0.75 S.)
 
 
-% -------------------------------------------------------
-\subsection{Evaluation \& Vergleichsaufbau}
-\clearpage
-\section{Ergebnisse}
-\subsection{Trainingsverhalten \& Konvergenzkurven}
-\subsection{Win-Rate gegen random play}
-\subsection{Win-Rate gegen Stockfish-Levels}
-\subsection{Spielstärke im direkten Vergleich (Win-Rate \& Elo)}
-\subsection{Move Accuracy}
-\subsection{Rechenaufwand \& Inference-Zeit}
 \section{Diskussion}
-\subsection{Interpretation der Ergebnisse}
-\subsection{Stärken und Schwächen des Supervised-Learning-Ansatzes}
-\subsection{Stärken und Schwächen des RL/MCTS-Ansatzes}
-\subsection{Einfluss von Hyperparametern \& Designentscheidungen}
-\subsection{Limitierungen der Arbeit}
-\subsection{Ausblick \& zukünftige Arbeiten}
+% Interpretation, Limitierungen, Ausblick.  (~1.5 S.)
+
+
 \section{Fazit}
+% ~0.5 S.
+
 
 \printbibliography
 

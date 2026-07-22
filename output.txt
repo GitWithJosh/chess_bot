@@ -1,0 +1,174 @@
+2026-07-21 18:35:36.829477: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:467] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1784658937.302436      58 cuda_dnn.cc:8579] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1784658937.423244      58 cuda_blas.cc:1407] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+W0000 00:00:1784658938.430107      58 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1784658938.430153      58 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1784658938.430156      58 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1784658938.430158      58 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+  (0 undersized tail chunk(s) excluded from train and val)
+=== Supervised Training ===
+Repo root : /kaggle/input/datasets/dhoffmann000/chessbot-supervised
+Data dir  : /kaggle/input/datasets/
+Out dir   : /kaggle/working/checkpoints
+Chunks    : 469 train | 2 val
+Epochs    : 1 | batch 512
+Optimizer : AdamW (weight_decay 0.0001, kernels only)
+LR steps  : 0%->1e-04  70%->1e-05  90%->1e-06  (of 469 planned chunks)
+Per-chunk metrics are shown as train/val.
+
+I0000 00:00:1784658962.774122      58 gpu_device.cc:2019] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 15511 MB memory:  -> device: 0, name: Tesla P100-PCIE-16GB, pci bus id: 0000:00:04.0, compute capability: 6.0
+Per-source val subsets: game (85,000), puzzle (10,000), tablebase (5,000)
+
+Value-target entropy floor (val set): 0.2599   -> read val_value_loss as floor + KL
+    game       floor 0.3032   (soft)
+    puzzle     floor 0.0217   (soft)
+    tablebase  floor 0.0000   (one-hot, exact)
+
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1784659001.764694     132 service.cc:152] XLA service 0x792e98006990 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+I0000 00:00:1784659001.764753     132 service.cc:160]   StreamExecutor device (0): Tesla P100-PCIE-16GB, Compute Capability 6.0
+I0000 00:00:1784659008.596900     132 cuda_dnn.cc:529] Loaded cuDNN version 91002
+I0000 00:00:1784659023.119052     132 device_compiler.h:188] Compiled cluster using XLA!  This line is logged at most once for the lifetime of the process.
+    new best val loss 8.44236 → sl_best.weights.h5
+[e0 1/469] chunk_0041.npz  (132.7s)  lr 1.0e-04  | loss 6.01026/8.44236  pacc 0.10092/0.00417  ploss 5.05379/7.29967  vloss 0.95168/1.14269  vacc 0.4795/0.33322
+    per-source val:  game v1.159/a0.31 p7.442/a0.00  |  puzzle v1.026/a0.51 p7.339/a0.01  |  tablebase v1.106/a0.31 p4.799/a0.03
+    saved sl_001.weights.h5
+    new best val loss 8.42247 → sl_best.weights.h5
+[e0 2/469] chunk_0322.npz  (61.9s)  lr 1.0e-04  | loss 4.31659/8.42247  pacc 0.18738/0.00082  ploss 3.39756/7.1304  vloss 0.91797/1.29206  vacc 0.49772/0.33969
+    per-source val:  game v1.345/a0.32 p7.265/a0.00  |  puzzle v0.899/a0.48 p7.185/a0.00  |  tablebase v1.181/a0.32 p4.729/a0.00
+    saved sl_002.weights.h5
+    new best val loss 8.30909 → sl_best.weights.h5
+[e0 3/469] chunk_0398.npz  (61.8s)  lr 1.0e-04  | loss 3.83344/8.30909  pacc 0.24466/0.02899  ploss 2.96387/6.41427  vloss 0.86974/1.89483  vacc 0.53146/0.32847
+    per-source val:  game v1.823/a0.31 p6.523/a0.03  |  puzzle v2.348/a0.50 p6.524/a0.03  |  tablebase v2.206/a0.33 p4.338/a0.06
+    saved sl_003.weights.h5
+    new best val loss 5.77601 → sl_best.weights.h5
+[e0 4/469] chunk_0263.npz  (61.7s)  lr 1.0e-04  | loss 3.58959/5.77601  pacc 0.27765/0.09114  ploss 2.7674/4.57393  vloss 0.82165/1.20208  vacc 0.56944/0.3932
+    per-source val:  game v1.199/a0.39 p4.657/a0.09  |  puzzle v1.384/a0.38 p4.620/a0.10  |  tablebase v0.892/a0.55 p3.061/a0.21
+    saved sl_004.weights.h5
+    new best val loss 4.32465 → sl_best.weights.h5
+[e0 5/469] chunk_0093.npz  (61.7s)  lr 1.0e-04  | loss 3.58772/4.32465  pacc 0.27573/0.18992  ploss 2.71695/3.31518  vloss 0.87064/1.00947  vacc 0.52938/0.45512
+    per-source val:  game v1.004/a0.45 p3.411/a0.18  |  puzzle v1.197/a0.40 p3.179/a0.23  |  tablebase v0.733/a0.65 p1.952/a0.28
+    saved sl_005.weights.h5
+    new best val loss 3.82217 → sl_best.weights.h5
+[e0 6/469] chunk_0367.npz  (61.8s)  lr 1.0e-04  | loss 3.35453/3.82217  pacc 0.32085/0.24759  ploss 2.54024/2.84137  vloss 0.81359/0.9808  vacc 0.56582/0.47432
+    per-source val:  game v0.966/a0.47 p2.942/a0.24  |  puzzle v1.259/a0.42 p2.642/a0.31  |  tablebase v0.682/a0.66 p1.531/a0.33
+    saved sl_006.weights.h5
+    new best val loss 3.71524 → sl_best.weights.h5
+[e0 7/469] chunk_0190.npz  (61.9s)  lr 1.0e-04  | loss 3.42441/3.71524  pacc 0.29445/0.2714  ploss 2.60133/2.69561  vloss 0.82304/1.01964  vacc 0.56114/0.47139
+    per-source val:  game v1.049/a0.45 p2.796/a0.26  |  puzzle v0.955/a0.57 p2.459/a0.36  |  tablebase v0.657/a0.71 p1.464/a0.32
+    saved sl_007.weights.h5
+    new best val loss 3.57158 → sl_best.weights.h5
+[e0 8/469] chunk_0434.npz  (61.8s)  lr 1.0e-04  | loss 3.34103/3.57158  pacc 0.305/0.28426  ploss 2.52736/2.60289  vloss 0.81365/0.96868  vacc 0.5589/0.48079
+    per-source val:  game v1.001/a0.45 p2.703/a0.27  |  puzzle v0.884/a0.61 p2.339/a0.38  |  tablebase v0.587/a0.75 p1.427/a0.34
+    saved sl_008.weights.h5
+    new best val loss 3.56350 → sl_best.weights.h5
+[e0 9/469] chunk_0297.npz  (61.7s)  lr 1.0e-04  | loss 3.24384/3.5635  pacc 0.32156/0.29068  ploss 2.43595/2.5796  vloss 0.80768/0.98391  vacc 0.56244/0.46678
+    per-source val:  game v0.978/a0.46 p2.684/a0.28  |  puzzle v1.207/a0.42 p2.285/a0.38  |  tablebase v0.637/a0.70 p1.397/a0.36
+    saved sl_009.weights.h5
+[e0 10/469] chunk_0226.npz  (60.2s)  lr 1.0e-04  | loss 3.19641/3.57569  pacc 0.32902/0.28623  ploss 2.41086/2.58025  vloss 0.78504/0.99544  vacc 0.58044/0.48501
+    per-source val:  game v1.051/a0.44 p2.696/a0.27  |  puzzle v0.724/a0.70 p2.213/a0.40  |  tablebase v0.593/a0.74 p1.353/a0.36
+    saved sl_010.weights.h5
+    new best val loss 3.52630 → sl_best.weights.h5
+[e0 11/469] chunk_0278.npz  (61.8s)  lr 1.0e-04  | loss 3.1722/3.5263  pacc 0.33557/0.30039  ploss 2.38053/2.54116  vloss 0.79173/0.98514  vacc 0.57462/0.49658
+    per-source val:  game v1.049/a0.46 p2.662/a0.28  |  puzzle v0.715/a0.69 p2.117/a0.42  |  tablebase v0.433/a0.81 p1.342/a0.37
+    saved sl_011.weights.h5
+[e0 12/469] chunk_0179.npz  (60.3s)  lr 1.0e-04  | loss 3.07281/3.55774  pacc 0.35483/0.29628  ploss 2.30399/2.54543  vloss 0.76865/1.01231  vacc 0.58502/0.49989
+    per-source val:  game v1.080/a0.46 p2.668/a0.28  |  puzzle v0.669/a0.71 p2.101/a0.42  |  tablebase v0.542/a0.77 p1.357/a0.38
+    saved sl_012.weights.h5
+    new best val loss 3.40589 → sl_best.weights.h5
+[e0 13/469] chunk_0307.npz  (61.8s)  lr 1.0e-04  | loss 3.1782/3.40589  pacc 0.33051/0.30919  ploss 2.38299/2.46398  vloss 0.7947/0.94191  vacc 0.57052/0.50397
+    per-source val:  game v0.981/a0.47 p2.579/a0.29  |  puzzle v0.782/a0.66 p2.049/a0.43  |  tablebase v0.601/a0.75 p1.336/a0.37
+[e0 14/469] chunk_0059.npz  (60.1s)  lr 1.0e-04  | loss 2.29735/3.43616  pacc 0.52899/0.31554  ploss 1.67656/2.4405  vloss 0.62091/0.99566  vacc 0.68518/0.48103
+    per-source val:  game v1.044/a0.44 p2.553/a0.30  |  puzzle v0.788/a0.65 p2.050/a0.43  |  tablebase v0.581/a0.75 p1.308/a0.39
+    new best val loss 3.34069 → sl_best.weights.h5
+[e0 15/469] chunk_0448.npz  (61.7s)  lr 1.0e-04  | loss 2.99654/3.34069  pacc 0.36891/0.31128  ploss 2.23919/2.42656  vloss 0.75674/0.91413  vacc 0.59804/0.5048
+    per-source val:  game v0.940/a0.48 p2.540/a0.29  |  puzzle v0.888/a0.59 p2.024/a0.44  |  tablebase v0.533/a0.75 p1.296/a0.39
+[e0 16/469] chunk_0415.npz  (60.2s)  lr 1.0e-04  | loss 2.68117/3.42601  pacc 0.43393/0.32278  ploss 1.9952/2.40872  vloss 0.68609/1.01728  vacc 0.6361/0.48002
+    per-source val:  game v1.079/a0.44 p2.516/a0.31  |  puzzle v0.765/a0.65 p2.043/a0.43  |  tablebase v0.472/a0.80 p1.315/a0.39
+    saved sl_016.weights.h5
+[e0 17/469] chunk_0406.npz  (60.2s)  lr 1.0e-04  | loss 2.93143/3.34106  pacc 0.3815/0.32857  ploss 2.1703/2.38531  vloss 0.76054/0.95575  vacc 0.59034/0.49016
+    per-source val:  game v0.970/a0.47 p2.497/a0.31  |  puzzle v1.074/a0.50 p1.993/a0.44  |  tablebase v0.470/a0.79 p1.276/a0.40
+[e0 18/469] chunk_0245.npz  (60.2s)  lr 1.0e-04  | loss 2.96568/3.39226  pacc 0.36594/0.33377  ploss 2.22386/2.36623  vloss 0.74153/1.02603  vacc 0.60778/0.5087
+    per-source val:  game v1.102/a0.47 p2.483/a0.32  |  puzzle v0.707/a0.70 p1.928/a0.46  |  tablebase v0.377/a0.83 p1.257/a0.41
+    new best val loss 3.27939 → sl_best.weights.h5
+[e0 19/469] chunk_0389.npz  (61.7s)  lr 1.0e-04  | loss 2.95832/3.27939  pacc 0.37214/0.33248  ploss 2.18971/2.34674  vloss 0.76871/0.93264  vacc 0.58196/0.50449
+    per-source val:  game v0.966/a0.47 p2.463/a0.31  |  puzzle v0.895/a0.61 p1.901/a0.46  |  tablebase v0.447/a0.81 p1.259/a0.41
+[e0 20/469] chunk_0074.npz  (60.2s)  lr 1.0e-04  | loss 2.23184/3.398  pacc 0.52682/0.33317  ploss 1.66148/2.33654  vloss 0.56923/1.06146  vacc 0.73566/0.50894
+    per-source val:  game v1.134/a0.47 p2.457/a0.31  |  puzzle v0.787/a0.69 p1.876/a0.47  |  tablebase v0.386/a0.83 p1.207/a0.43
+    saved sl_020.weights.h5
+[e0 21/469] chunk_0021.npz  (60.3s)  lr 1.0e-04  | loss 2.90753/3.54733  pacc 0.38001/0.33567  ploss 2.16459/2.32823  vloss 0.74239/1.21909  vacc 0.60516/0.48194
+    per-source val:  game v1.325/a0.44 p2.449/a0.32  |  puzzle v0.679/a0.70 p1.859/a0.47  |  tablebase v0.490/a0.81 p1.215/a0.43
+    new best val loss 3.26871 → sl_best.weights.h5
+[e0 22/469] chunk_0313.npz  (61.9s)  lr 1.0e-04  | loss 2.92297/3.26871  pacc 0.3733/0.34006  ploss 2.17376/2.30092  vloss 0.74891/0.96779  vacc 0.59762/0.4967
+    per-source val:  game v0.988/a0.47 p2.413/a0.32  |  puzzle v0.960/a0.57 p1.891/a0.46  |  tablebase v0.646/a0.74 p1.218/a0.44
+[e0 23/469] chunk_0369.npz  (60.2s)  lr 1.0e-04  | loss 2.84655/3.32412  pacc 0.39803/0.34563  ploss 2.1033/2.29773  vloss 0.74285/1.02639  vacc 0.6102/0.49239
+    per-source val:  game v1.081/a0.46 p2.412/a0.33  |  puzzle v0.912/a0.62 p1.869/a0.47  |  tablebase v0.335/a0.86 p1.221/a0.42
+[e0 24/469] chunk_0382.npz  (60.2s)  lr 1.0e-04  | loss 2.81375/3.27223  pacc 0.38701/0.34436  ploss 2.12181/2.29365  vloss 0.69103/0.97859  vacc 0.63716/0.50738
+    per-source val:  game v1.020/a0.48 p2.413/a0.33  |  puzzle v0.921/a0.61 p1.830/a0.48  |  tablebase v0.382/a0.83 p1.191/a0.44
+    saved sl_024.weights.h5
+[e0 25/469] chunk_0094.npz  (60.2s)  lr 1.0e-04  | loss 2.82/3.38904  pacc 0.39128/0.33961  ploss 2.1014/2.32537  vloss 0.71828/1.06367  vacc 0.62218/0.48381
+    per-source val:  game v1.131/a0.44 p2.453/a0.32  |  puzzle v0.796/a0.66 p1.805/a0.49  |  tablebase v0.449/a0.81 p1.192/a0.43
+    new best val loss 3.11319 → sl_best.weights.h5
+[e0 26/469] chunk_0280.npz  (61.7s)  lr 1.0e-04  | loss 2.82007/3.11319  pacc 0.39384/0.35075  ploss 2.09637/2.24496  vloss 0.72319/0.86823  vacc 0.61054/0.53865
+    per-source val:  game v0.904/a0.51 p2.362/a0.33  |  puzzle v0.853/a0.62 p1.778/a0.49  |  tablebase v0.296/a0.88 p1.183/a0.43
+[e0 27/469] chunk_0163.npz  (60.3s)  lr 1.0e-04  | loss 2.90087/3.14367  pacc 0.37564/0.35572  ploss 2.14973/2.22204  vloss 0.75038/0.92163  vacc 0.59344/0.52779
+    per-source val:  game v0.982/a0.49 p2.341/a0.34  |  puzzle v0.722/a0.69 p1.742/a0.50  |  tablebase v0.303/a0.87 p1.167/a0.45
+    new best val loss 3.10287 → sl_best.weights.h5
+[e0 28/469] chunk_0153.npz  (61.8s)  lr 1.0e-04  | loss 2.87791/3.10287  pacc 0.38451/0.35931  ploss 2.11537/2.20763  vloss 0.76283/0.89523  vacc 0.58866/0.52119
+    per-source val:  game v0.915/a0.50 p2.315/a0.34  |  puzzle v1.046/a0.54 p1.816/a0.48  |  tablebase v0.264/a0.89 p1.157/a0.46
+    saved sl_028.weights.h5
+    new best val loss 3.06567 → sl_best.weights.h5
+[e0 29/469] chunk_0427.npz  (61.9s)  lr 1.0e-04  | loss 2.6063/3.06567  pacc 0.44095/0.36174  ploss 1.91014/2.19886  vloss 0.69563/0.86681  vacc 0.63586/0.5304
+    per-source val:  game v0.894/a0.50 p2.316/a0.34  |  puzzle v0.930/a0.58 p1.737/a0.50  |  tablebase v0.283/a0.89 p1.131/a0.48
+[e0 30/469] chunk_0215.npz  (60.2s)  lr 1.0e-04  | loss 2.11767/3.12971  pacc 0.5499/0.36149  ploss 1.54965/2.20996  vloss 0.56753/0.91975  vacc 0.729/0.52818
+    per-source val:  game v0.989/a0.48 p2.335/a0.34  |  puzzle v0.666/a0.72 p1.662/a0.52  |  tablebase v0.246/a0.89 p1.171/a0.43
+[e0 31/469] chunk_0109.npz  (60.1s)  lr 1.0e-04  | loss 2.83514/3.37613  pacc 0.37777/0.34631  ploss 2.12566/2.31908  vloss 0.70917/1.05704  vacc 0.62738/0.50149
+    per-source val:  game v1.151/a0.45 p2.464/a0.32  |  puzzle v0.604/a0.74 p1.670/a0.52  |  tablebase v0.373/a0.85 p1.156/a0.44
+    new best val loss 3.06536 → sl_best.weights.h5
+[e0 32/469] chunk_0437.npz  (61.7s)  lr 1.0e-04  | loss 2.91226/3.06536  pacc 0.37261/0.36767  ploss 2.13529/2.17232  vloss 0.7767/0.89305  vacc 0.57474/0.51017
+    per-source val:  game v0.933/a0.48 p2.295/a0.35  |  puzzle v0.831/a0.63 p1.651/a0.52  |  tablebase v0.333/a0.86 p1.124/a0.46
+    saved sl_032.weights.h5
+[e0 33/469] chunk_0294.npz  (60.3s)  lr 1.0e-04  | loss 2.65137/3.07354  pacc 0.43397/0.37151  ploss 1.93785/2.15607  vloss 0.71341/0.91747  vacc 0.60934/0.53083
+    per-source val:  game v0.978/a0.49 p2.278/a0.35  |  puzzle v0.714/a0.69 p1.630/a0.52  |  tablebase v0.297/a0.88 p1.142/a0.45
+[e0 34/469] chunk_0154.npz  (60.2s)  lr 1.0e-04  | loss 2.77417/3.16871  pacc 0.40094/0.36034  ploss 2.04088/2.19592  vloss 0.73256/0.97279  vacc 0.60784/0.49689
+    per-source val:  game v0.993/a0.48 p2.322/a0.34  |  puzzle v0.978/a0.55 p1.661/a0.51  |  tablebase v0.614/a0.74 p1.129/a0.46
+[e0 35/469] chunk_0411.npz  (60.2s)  lr 1.0e-04  | loss 2.03016/3.31697  pacc 0.56859/0.37016  ploss 1.46209/2.16898  vloss 0.56743/1.14799  vacc 0.7291/0.49811
+    per-source val:  game v1.254/a0.45 p2.295/a0.35  |  puzzle v0.606/a0.73 p1.623/a0.53  |  tablebase v0.436/a0.83 p1.119/a0.47
+[e0 36/469] chunk_0088.npz  (60.1s)  lr 1.0e-04  | loss 2.82764/3.09111  pacc 0.39008/0.36323  ploss 2.08207/2.16242  vloss 0.74507/0.92869  vacc 0.59022/0.51947
+    per-source val:  game v0.964/a0.49 p2.280/a0.34  |  puzzle v0.921/a0.63 p1.695/a0.51  |  tablebase v0.339/a0.86 p1.092/a0.47
+    saved sl_036.weights.h5
+    new best val loss 3.03021 → sl_best.weights.h5
+[e0 37/469] chunk_0158.npz  (61.9s)  lr 1.0e-04  | loss 2.82129/3.03021  pacc 0.38642/0.36732  ploss 2.07844/2.13513  vloss 0.74225/0.89508  vacc 0.60242/0.52181
+    per-source val:  game v0.905/a0.50 p2.252/a0.35  |  puzzle v1.019/a0.55 p1.659/a0.51  |  tablebase v0.483/a0.83 p1.101/a0.48
+    new best val loss 3.00865 → sl_best.weights.h5
+[e0 38/469] chunk_0328.npz  (61.8s)  lr 1.0e-04  | loss 2.79144/3.00865  pacc 0.39173/0.37398  ploss 2.06104/2.14168  vloss 0.73039/0.86698  vacc 0.6079/0.53025
+    per-source val:  game v0.917/a0.49 p2.267/a0.35  |  puzzle v0.694/a0.70 p1.579/a0.53  |  tablebase v0.355/a0.86 p1.138/a0.45
+    new best val loss 2.99550 → sl_best.weights.h5
+[e0 39/469] chunk_0092.npz  (61.9s)  lr 1.0e-04  | loss 2.65738/2.9955  pacc 0.42547/0.37536  ploss 1.9573/2.10685  vloss 0.70048/0.88864  vacc 0.62334/0.55171
+    per-source val:  game v0.935/a0.52 p2.223/a0.35  |  puzzle v0.777/a0.67 p1.620/a0.53  |  tablebase v0.329/a0.86 p1.098/a0.48
+[e0 40/469] chunk_0127.npz  (60.2s)  lr 1.0e-04  | loss 2.87395/3.16554  pacc 0.37708/0.37319  ploss 2.09701/2.13789  vloss 0.77637/1.02765  vacc 0.5729/0.50242
+    per-source val:  game v1.087/a0.46 p2.270/a0.35  |  puzzle v0.808/a0.68 p1.522/a0.55  |  tablebase v0.460/a0.80 p1.117/a0.48
+    saved sl_040.weights.h5
+[e0 41/469] chunk_0053.npz  (60.2s)  lr 1.0e-04  | loss 2.80358/3.00992  pacc 0.3868/0.37961  ploss 2.08014/2.10827  vloss 0.72334/0.90165  vacc 0.61088/0.51481
+    per-source val:  game v0.933/a0.49 p2.229/a0.36  |  puzzle v0.948/a0.56 p1.589/a0.53  |  tablebase v0.282/a0.89 p1.088/a0.49
+    new best val loss 2.95295 → sl_best.weights.h5
+[e0 42/469] chunk_0404.npz  (61.8s)  lr 1.0e-04  | loss 2.59513/2.95295  pacc 0.44453/0.38131  ploss 1.86867/2.10066  vloss 0.72573/0.85229  vacc 0.60544/0.54316
+    per-source val:  game v0.895/a0.51 p2.223/a0.36  |  puzzle v0.764/a0.67 p1.544/a0.54  |  tablebase v0.295/a0.88 p1.126/a0.45
+[e0 43/469] chunk_0129.npz  (60.2s)  lr 1.0e-04  | loss 2.818/2.95582  pacc 0.38365/0.37967  ploss 2.0529/2.09524  vloss 0.76486/0.86058  vacc 0.57726/0.5439
+    per-source val:  game v0.902/a0.51 p2.212/a0.36  |  puzzle v0.827/a0.64 p1.595/a0.53  |  tablebase v0.226/a0.91 p1.112/a0.47
+[e0 44/469] chunk_0037.npz  (60.2s)  lr 1.0e-04  | loss 2.70278/3.03687  pacc 0.40842/0.38415  ploss 1.98618/2.09314  vloss 0.7168/0.94373  vacc 0.61192/0.53009
+    per-source val:  game v0.991/a0.50 p2.219/a0.36  |  puzzle v0.841/a0.65 p1.525/a0.55  |  tablebase v0.348/a0.86 p1.084/a0.48
+[e0 45/469] chunk_0178.npz  (60.3s)  lr 1.0e-04  | loss 2.66313/2.95518  pacc 0.42305/0.38171  ploss 1.95757/2.08169  vloss 0.70561/0.87348  vacc 0.62348/0.53655
+    per-source val:  game v0.918/a0.50 p2.208/a0.36  |  puzzle v0.778/a0.67 p1.511/a0.55  |  tablebase v0.302/a0.89 p1.071/a0.49
+[e0 46/469] chunk_0002.npz  (60.2s)  lr 1.0e-04  | loss 2.72078/2.96544  pacc 0.4055/0.3838  ploss 1.98634/2.09702  vloss 0.73399/0.86842  vacc 0.60656/0.53636
+    per-source val:  game v0.923/a0.50 p2.227/a0.36  |  puzzle v0.718/a0.70 p1.502/a0.56  |  tablebase v0.248/a0.90 p1.068/a0.49
+[e0 47/469] chunk_0227.npz  (60.2s)  lr 1.0e-04  | loss 2.70705/3.05841  pacc 0.40582/0.38281  ploss 1.99797/2.08329  vloss 0.70862/0.97512  vacc 0.62054/0.5239
+    per-source val:  game v1.053/a0.48 p2.217/a0.36  |  puzzle v0.651/a0.74 p1.451/a0.56  |  tablebase v0.304/a0.88 p1.072/a0.49
+[e0 48/469] chunk_0213.npz  (60.2s)  lr 1.0e-04  | loss 1.99428/3.1098  pacc 0.57248/0.38881  ploss 1.44224/2.06697  vloss 0.55197/1.04283  vacc 0.73456/0.50977
+    per-source val:  game v1.134/a0.46 p2.199/a0.36  |  puzzle v0.676/a0.72 p1.450/a0.57  |  tablebase v0.232/a0.91 p1.054/a0.49
+    new best val loss 2.94784 → sl_best.weights.h5
+[e0 49/469] chunk_0175.npz  (61.8s)  lr 1.0e-04  | loss 2.69957/2.94784  pacc 0.41943/0.38504  ploss 1.96799/2.06967  vloss 0.73154/0.87816  vacc 0.60964/0.54256
+    per-source val:  game v0.930/a0.51 p2.189/a0.36  |  puzzle v0.768/a0.67 p1.558/a0.54  |  tablebase v0.214/a0.91 p1.058/a0.52
+[e0 50/469] chunk_0004.npz  (60.2s)  lr 1.0e-04  | loss 2.63033/3.02846  pacc 0.42551/0.39224  ploss 1.9363/2.04705  vloss 0.69395/0.98142  vacc 0.63212/0.51589
+    per-source val:  game v1.036/a0.48 p2.173/a0.37  |  puzzle v0.892/a0.62 p1.475/a0.56  |  tablebase v0.231/a0.91 p1.046/a0.51
