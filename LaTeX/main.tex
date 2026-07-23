@@ -15,6 +15,8 @@
 \usepackage{microtype}
 \usepackage[style=authoryear]{biblatex}
 \usepackage[hidelinks=true]{hyperref}
+\usepackage{amsmath}
+
 
 \addbibresource{bibliography.bib}
 \begin{document}
@@ -65,12 +67,65 @@
 \subsection{Schach als formales Problem}\label{sec:formal}                          % [Tim]
 % Spielregeln knapp; Spielbaum, Zustands-/Suchraumkomplexitaet, warum der
 % exakte beste Zug praktisch unberechenbar ist; was ein "guter" Zug ist.  (~1.5 S.)
+Bevor Verfahren zur Zugwahl verglichen werden können, muss präzisiert werden, welches Problem sie eigentlich lösen. 
+\paragraph{Spieltheoretische Einordnung}
+Schach ist ein endliches, deterministisches Zwei-Personen-Nullsummenspiel mit perfekter Information und alternierenden Zügen. Jede dieser Eigenschaften hat unmittelbare Konsequenzen für die in dieser Arbeit betrachteten Verfahren:
 
-\subsection{Spielstärke quantifizieren}             % [Tim]
-% Elo-Modell
-% Grundlage fuer die Staerkemessung in Kapitel 4.  (~0.75 S.)
+\begin{itemize}
+    \item \textbf{Perfekte Information und Determinismus} Beiden Spielern ist zu jedem Zeitpunkt der vollständige Spielzustand bekannt, und jeder Zug führt genau zu einer Folgestellung. Der Spielbaum ist damit von jeder Stellung aus prinzipiell vollständig expandierbar. Anders als etwa beim Poker müssen keine Annahmen über verdeckte Information getroffen werden und anders als beim Backgammon verbreitern keine Zufallsknoten den Baum.
+    \item \textbf{Nullsumme} Der Gewinn der einen Seite ist exakt der Verlust der anderen. Eine einzige Bewertungsgröße aus Sicht der Seite am Zug genügt daher, um die Präferenzen beider Spieler zu beschreiben. Das rechtfertigt sowohl das Minimax-Prinzip (Abschnitt~\ref{sec:minimax}) als auch die, dass das Netz mit einem einzigen Value-Head auskommt (Abschnitt~\ref{sec:nn}).
+    \item \textbf{Endlichkeit} Die 50-Züge-Regel (eine Partie ist Remis wenn, 50 Züge lang kein Bauer bewegt und keine Figur geschlagen wurde) und die Stellungswiederholungsregel (eine Partie ist Remis wenn dreimal die gleiche Stellung auf dem Brett steht) stellen sicher, dass jede Partie nach endlich vielen Zügen terminiert. Der Ausgang ist eines von drei Ergebnissen, formal \(z \in \{1, \tfrac{1}{2}, 0\}\) für Sieg, Remis und Niederlage.
+    \item \textbf{Alternierende Züge} Es gibt keine simultanen Entscheidungen. Zusammen mit perfekter Information folgt daraus, dass für beide Seiten eine optimale Strategie existiert.
+\end{itemize}
+
+Von den Spielregeln selbst sind für das Weiterere vor allem jene Details relevant: die Sonderzüge Rochade, en-passant und Bauernumwandlung sowie die Remisregeln. Sie erscheinen in Abschnitt~\ref{sec:encoding} als eigene Ebenen des Eingabetensors bzw.\ als eigene Gruppe im Ausgaberaum wieder.
+
+\paragraph{Zustand, Zug und Spielbaum}
+Eine Stellung \(s\) umfasst mehr als die Belegung der 64 Felder. Zum Zustand gehören zusätzlich die Seite am Zug, die vier Rochenrechte, ein etwaiges en-passant-Zielfeld un der Halbzuzähler der 50-Züge-Regel. Genau dieses Tupel hält die Forsyth-Edwards-Notation (FEN) fest, und genau diese tauchen in Tabelle~\ref{tab:planes} als Ebenen des Brett-Tensors wieder auf.
+
+Diese Zustandsdefinition ist so gewählt, dass sie die Markov-Eigenschaft erfüllt. Sowohl die Menge der legalen Fortsetzungen als auch der spieltheoretische Wert einer Stellung hängen ausschließlich von \(s\) ab und nicht davon, über welche Zugfolge \(s\) erreicht wurde. Zwei durch unterschiedliche Zugreihenfolgen entstandene, ansonsten identische Stellungen (Transpositionen) sind spielrelevant dasselbe Objekt. Streng genommen bildet die Regel zur dreifachen Stellungswiederholung hiervon eine Ausnahme, da sie auf die Partiehistorie zurückgreift. Sie wird in der Suche gesondert behandelt und geht nicht in die Stellungsbewertung ein. Diese Eigenschaft ist die Grundlage für die Abschnitt~\ref{sec:encoding} gewählte historienfreie Kodierung.
+
+Bezeichnet \(A(s)\) die Menge der in \(s\) legalen Züge und \(s\cdot a\) die Stellung, die aus \(s\) durch Ausführung von \(a \in A(s)\) hervorgeht, so lässt sich das gesamte Spiel als Baum darstellen: Die Wurzel ist die Ausgangsstellung, jede Kante entspricht einem Halbzug, die Knoten einer Ebene gehören abwechselnd der einen und der anderen Seite, und die Blätter sind terminale Stellungen mit bekanntem Ergebnis \(z(s)\). Sowohl die klassische Alpha-Beta-Search (Abschnitt~\ref{sec:minimax}) als auch die Monte-Carlo-Tree-Search (Abschnitt~\ref{sec:mcts}) operieren auf genau diesem Baum. Sie unterscheiden sich lediglich darin, welchen Ausschnitt davon sie betrachten.
+
+\paragraph{Größe des Suchraums}
+Die Schwierigkeit des Problems liegt nicht in der Komplexität der Regeln, sondern in der Größe dieses Baumes. Üblicherweise werden zwei Maße unterschieden \autocite{allis1994}. Die \emph{Zustandsraumkomplexität} zählt die Menge der erreichbaren legalen Stellungen. \textcite{shannon1950} schätzte sie auf etwa \(10^{43}\), neuere Stichprobenverfahren kommen auf rund \(4{,}59 \pm 0.38\cdot10^{44}\) mit einer Konfidenz von 95\% \parencite{tromp2021}. Die \emph{Spielbaumkomplexität} zählt dagegen die Zahl der möglichen Partieverläufe und ergibt sich näherungsweise als
+\[
+  |T| \approx b^{\,d},
+\]
+wobei \(b\) den durchschnittlichen Verzweigungsgrad und \(d\) die mittlere Partielänge in Halbzügen bezeichnet. Mit den gängigen Werten \(b \approx 35\) und \(d \approx 80\) liegt \(|T|\) in der Größenordnung von \(10^{120}\), der sogenannten Shannon-Zahl \parencite{shannon1950}.
+
+\paragraph{Theoretisch lösbar, praktisch unlösbar}
+Schach ist ein endliches Nullsummenspiel mit perfekter Information und ohne Zufallselement. Fasst man den Zustand $s$ so weit, wie es \textcite{shannon1950} für sein Stellungsformat vorsieht (Figurenstellung, Zugrecht, Rochaderechte, letzter Zug sowie der Zähler seit dem letzten Bauernzug oder Schlagfall), so besitzt jede Stellung genau einen der drei Werte \emph{gewonnen für Weiß}, \emph{remis} oder\emph{gewonnen für Schwarz}. 
+
+Da jede Partie nach endlich vielen Zügen endet, lässt sich der Wert einer Stellung bestimmen, indem man vom Partieende rückwärts arbeitet \parencite{shannon1950}. 
+Die Kombinatorik macht diesen Weg unbegehbar. Shannon rechnet mit etwa $30$ legalen Zügen pro Stellung, also rund $10^{3}$ Fortsetzungen je Zugpaar, und bei einer typischen Partielänge von $40$ Zügen mit etwa $10^{120}$ zu prüfenden Varianten. Eine Maschine, die eine Variante pro Mikrosekunde abarbeitet, bräuchte nach Shannon also über $10^{90}$ Jahre für den ersten Zug.
+
+Zwei Beispiele verdeutlichen noch einmal die Komplexität. Erstens sind Endspieldatenbanken für Schach zwar exakt gelöst, aber nur bis sieben Steine auf dem Brett. Allein diese Tabellen belegen rund 18\,TB. Zweitens gelang mit Dame 2007 die vollständige Lösung eines vergleichbaren Spiels: Bei einem Suchraum von etwa \(5\cdot10^{20}\) Stellungen konnte gezeigt werden, dass beidseitig optimales Spiel zum Remis führt \autocite{schaeffer2007}. Der Schachsuchraum liegt mehr als zwanzig Größenordnungen darüber.
+
+\paragraph{Was ist ein guter Zug?}
+Aus dieser Lücke zwischen theoretischer Bestimmtheit und praktischer Unberechenbarkeit ergibt sich eine wichtige Fragestellung dieser Arbeit. Ein Zug ist \emph{objektiv} optimal, wenn er den spieltheoretischen Wert der Stellung nicht verschlechtert Da dieser theoretische Wert unzugänglich ist, lässt sich diese Eigenschaft für keinen konkreten Zug nachweisen. In der Praxis wird ein Zug daher \emph{operativ} bewertet: Er ist gut, wenn er unter gegebener Rechenzeit die Gewinnerwartung gegen einen realen Gegner maximiert.
+ 
+Für die Zugwahl durch Engines im Schach gibt es im Wesentlichen zwei Stellschrauben: \emph{wie viele} Stellungen ein Programm betrachtet (Suche) und \emph{wie gut} es eine einzelne Stellung einschätzt (Bewertung). Klassische Engines setzen primär auf die erste Stellschraube und kompensieren eine vergleichsweise grobe Bewertungsfunktion durch enorme Suchbreite (Abschnitt~\ref{sec:minimax}). Der in dieser Arbeit verfolgte AlphaZero-artige Ansatz verschiebt das Gewicht auf die zweite: Ein aufwändiges neuronales Netz liefert Bewertung und Zugvorauswahl, sodass mit deutlichweniger besuchten Stellungen ausgekommen wird (Abschnitte~\ref{sec:nn}--\ref{sec:mcts}).
+ 
+Eine unmittelbare Konsequenz dieser Sichtweise ist, dass Spielstärke nicht absolut, sondern nur \emph{relativ} messbar ist und zwar über Partieergebnisse gegen andere Spieler. Der nächste Abschnitt stellt mit dem Elo-Modell das Verfahren vor, mit dem diese relativen Ergebnisse in eine vergleichbare Skala überführt werden.
+ 
+\subsection{Spielstärke quantifizieren !!!VOERST NUR VON CLAUDE GEVIBED!!!}             % [Tim]
+Das gebräuchliche Verfahren hierfür ist das Elo-System \parencite{elo1978}. Es ordnet jedem Spieler eine Zahl \(R\) zu und modelliert den erwarteten Punktanteil \(E_A\) von Spieler \(A\) gegen Spieler \(B\) allein als Funktion der Differenz beider Zahlen:
+\[
+  E_A = \frac{1}{1 + 10^{\,(R_B - R_A)/400}}.
+\]
+Die Skalierung ist so gewählt, dass 400 Punkte Vorsprung einem erwarteten Punktanteil von etwa \(0{,}91\) entsprechen, also einem Verhältnis von rund \(10:1\). Ein Remis zählt dabei als halber Punkt.
+ 
+Für die Evaluation in Kapitel~\ref{sec:eval} wird die Beziehung invertiert: Aus dem in einem Match erzielten Punktanteil \(S \in (0,1)\) folgt die geschätzte Elo-Differenz zum Gegner als
+\[
+  \Delta R = 400 \cdot \log_{10}\!\left(\frac{S}{1-S}\right).
+\]
+Ist die Stärke des Gegners bekannt, ergibt sich daraus ein absoluter Wert; das Elo-System liefert also stets nur Differenzen und benötigt einen Anker. In dieser Arbeit dienen dafür Stockfish-Skill-Level mit bekannter Referenzstärke.
+ 
+Zwei Einschränkungen sind zu beachten. Erstens ist \(\Delta R\) eine Schätzung aus einer endlichen Stichprobe; die Unsicherheit fällt mit \(1/\sqrt{n}\), sodass für ein 95\,\%-Konfidenzintervall von etwa \(\pm 30\) Elo bereits einige hundert Partien nötig sind. Zweitens setzt das Modell näherungsweise transitive Spielstärken voraus. Gerade zwischen unterschiedlich trainierten Engines treten jedoch Stilunterschiede auf, die zu nicht-transitiven Ergebnissen führen können -- ein Grund, warum in Abschnitt~\ref{sec:headtohead} zusätzlich der direkte Vergleich beider Agenten ausgewertet wird.
 
 \subsection{Klassische Engines: Minimax, Alpha-Beta, Stockfish/NNUE} % [Danny]
+\label{sec:minimax}
 Klassische Schachprogramme behandeln die Zugwahl als Suche im Spielbaum
 (Abschnitt~\ref{sec:formal}). Da dieser Baum praktisch nicht vollständig durchsucht werden
 kann, begrenzt man die Suchtiefe und bewertet die so erreichten Blattstellungen
@@ -234,7 +289,7 @@ auf einer gemeinsamen Merkmalsbasis.
 Die konkrete Konfiguration dieses Netzes -- Anzahl der Blöcke, Filterzahl und der
 genaue Aufbau der Köpfe -- wird in Abschnitt~\ref{sec:arch} beschrieben.
 
-\subsection{Supervised Learning im Schachkontext}\label{sec:sl-context} % [Danny]
+\subsection{Supervised Learning im Schachkontext}\label{sec:sl-context}
 Beim überwachten Lernen (Supervised Learning) lernt das Netz die Abbildung einer
 Stellung auf ihre Zielwerte -- eine Zugverteilung (Policy) und eine Bewertung
 (Value) -- aus einem festen, bereits beschrifteten Datensatz. Anders als das

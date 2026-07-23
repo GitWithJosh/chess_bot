@@ -1,0 +1,134 @@
+=== Value-head probes ===
+weights: supervised_learning/22_checkpoint_export/sl_best.weights.h5
+tag    : ckpt22
+
+Generating position sets (TF-free) ...
+  probe A: 7,000 positions (17,810 samples, 3s)
+  probe B: 4,000 defender + 4,000 solver positions from 5,971 mate puzzles (1s)
+  calibration: 15,000 positions from 6,541 games (16s)
+  saved position sets -> C:\Users\dhoff\Documents\Uni\Semester 6\chess_bot\supervised_learning\results\probes\positions  (4,323 probe puzzle ids)
+
+Loading BigNetwork + sl_best.weights.h5 (TF import may take a while) ...
+  loaded in 15s
+
+--- Probe A: <=5-piece Syzygy positions (value head vs tablebase truth) ---
+    5,120/7,000  (200 pos/s)
+    7,000/7,000  (202 pos/s)
+  DRAWN, training materials (never trained on) n= 3,000
+    mean predicted  W 0.089  D 0.815  L 0.096
+    argmax share    W  4.9%  D 88.7%  L  6.4%
+    true class = draw: mean P = 0.815, argmax-correct = 88.7%
+  DRAWN, extra materials (never trained on)  n= 1,000
+    mean predicted  W 0.057  D 0.915  L 0.028
+    argmax share    W  1.5%  D 98.3%  L  0.2%
+    true class = draw: mean P = 0.915, argmax-correct = 98.3%
+  WON, training materials (control)          n= 1,500
+    mean predicted  W 0.934  D 0.059  L 0.007
+    argmax share    W 94.9%  D  4.9%  L  0.1%
+    true class = win: mean P = 0.934, argmax-correct = 94.9%
+  LOST, training materials (control)         n= 1,500
+    mean predicted  W 0.004  D 0.046  L 0.951
+    argmax share    W  0.1%  D  2.6%  L 97.3%
+    true class = loss: mean P = 0.951, argmax-correct = 97.3%
+
+  drawn positions by material (n>=25):
+    material         n  meanP(draw)  argmax=draw
+    KB v KR        612        0.909        97.1%
+    KN v KR        531        0.875        95.3%
+    KPQ v KQ       334        0.743        87.7%
+    KPR v KR       329        0.760        86.0%
+    K v KP         266        0.806        85.0%
+    KB v KN        205        0.938        98.5%
+    KN v KN        185        0.928        99.5%
+    KB v KB        177        0.973       100.0%
+    KNN v K        175        0.987       100.0%
+    KRR v KR       156        0.795        84.6%
+    KR v KR        138        0.810        96.4%
+    KQ v KQ        120        0.789        93.3%
+    KB v KQ        113        0.918        95.6%
+    KP v KR        104        0.574        66.3%
+    KQR v KQ        89        0.551        62.9%
+    KBB v K         87        0.988       100.0%
+    KN v KQ         75        0.901        93.3%
+    KBN v K         73        0.969        98.6%
+    KP v KQ         61        0.519        67.2%
+    K v KQ          40        0.976       100.0%
+    K v KR          38        0.986       100.0%
+    KPP v K         37        0.614        64.9%
+    KQ v KR         32        0.263        31.2%
+
+--- Probe B: forced-mate puzzle positions (solver vs defender) ---
+    5,120/8,000  (208 pos/s)
+    8,000/8,000  (205 pos/s)
+  SOLVER to move: provably WINNING (control) n= 4,000
+    mean predicted  W 0.858  D 0.065  L 0.077
+    argmax share    W 93.1%  D  2.8%  L  4.2%
+    true class = win: mean P = 0.858, argmax-correct = 93.1%
+  DEFENDER to move: provably LOST (never trained on) n= 4,000
+    mean predicted  W 0.040  D 0.042  L 0.918
+    argmax share    W  1.1%  D  0.9%  L 98.1%
+    true class = loss: mean P = 0.918, argmax-correct = 98.1%
+
+--- Calibration: predicted win% vs realised outcome (balanced game positions) ---
+    5,120/15,000  (196 pos/s)
+    10,240/15,000  (202 pos/s)
+    15,000/15,000  (203 pos/s)
+  value CE on this set: 0.8309   (argmax accuracy 59.1%)
+   pred win prob      n  mean pred  actual win%
+     0.0-0.1     4,348      0.044        0.058
+     0.1-0.2     3,647      0.150        0.236
+     0.2-0.3     2,604      0.246        0.364
+     0.3-0.4     1,180      0.343        0.458
+     0.4-0.5       599      0.447        0.486
+     0.5-0.6       441      0.546        0.549
+     0.6-0.7       340      0.648        0.629
+     0.7-0.8       324      0.749        0.784
+     0.8-0.9       380      0.854        0.834
+     0.9-1.0     1,137      0.965        0.946
+  expected calibration error (win prob): 0.0596
+
+--- Stockfish agreement (depth 12, 4 engines) ---
+    0 cached, 1,800 to analyse
+    SF 200/1,800 (97.6 pos/s)
+    SF 400/1,800 (97.5 pos/s)
+    SF 600/1,800 (96.7 pos/s)
+    SF 800/1,800 (98.6 pos/s)
+    SF 1,000/1,800 (96.5 pos/s)
+    SF 1,200/1,800 (97.5 pos/s)
+    SF 1,400/1,800 (99.0 pos/s)
+    SF 1,600/1,800 (97.4 pos/s)
+    SF 1,800/1,800 (94.1 pos/s)
+    SF done: 1,800 new evals in 19s
+  n=1,800  MAE(expected score) = 0.0965  corr = 0.819
+    opening-ish (25-32 pieces)   n=  800  MAE = 0.0767
+    middlegame (13-24 pieces)    n=  693  MAE = 0.1200
+    endgame (<=12 pieces)        n=  307  MAE = 0.0949
+
+  worst 12 disagreements (net vs SF):
+    dE=0.95  net W/D/L 0.92/0.05/0.03 E=0.95 | SF cp   -296 E=0.00 | pieces 10 ply  79
+      8/6k1/R5p1/P6p/5P1K/6P1/r6P/8 b - - 2 40
+    dE=0.95  net W/D/L 0.04/0.03/0.93 E=0.05 | SF cp    453 E=1.00 | pieces 19 ply  49
+      r1bqr1k1/6pQ/p5P1/1p2n1p1/2p2B2/N3PP2/P4K2/8 b - - 3 25
+    dE=0.91  net W/D/L 0.06/0.06/0.88 E=0.09 | SF cp    281 E=1.00 | pieces 13 ply  73
+      3r2k1/6p1/5p1p/4p3/q5P1/1Q6/P5P1/5RK1 b - - 2 37
+    dE=0.89  net W/D/L 0.06/0.10/0.84 E=0.11 | SF cp    238 E=1.00 | pieces 15 ply  77
+      7k/4BBpp/2r5/2N2p2/p2n4/P5P1/5PKP/8 b - - 0 39
+    dE=0.87  net W/D/L 0.10/0.04/0.85 E=0.13 | SF cp    288 E=1.00 | pieces 20 ply  37
+      3r1k1r/3P1pbp/p5p1/2Q2n2/P4B2/5N2/2P1KPPP/7q b - - 0 19
+    dE=0.82  net W/D/L 0.81/0.02/0.17 E=0.82 | SF cp   -233 E=0.00 | pieces 13 ply  70
+      r5k1/4P1pp/8/1p6/8/2P5/2K1R1PP/1B4q1 w - - 1 36
+    dE=0.82  net W/D/L 0.75/0.14/0.11 E=0.82 | SF cp   -381 E=0.00 | pieces  9 ply 114
+      8/6p1/1P5p/6kP/2K1P1P1/8/8/b7 w - - 0 58
+    dE=0.79  net W/D/L 0.13/0.15/0.72 E=0.21 | SF cp    259 E=1.00 | pieces 10 ply  93
+      2q3r1/8/kp6/8/8/Q2n4/P6P/1R5K b - - 4 47
+    dE=0.78  net W/D/L 0.75/0.06/0.19 E=0.78 | SF cp   -265 E=0.00 | pieces 21 ply  50
+      6r1/pnpq2Pk/1p1b4/5pB1/2Q1r3/2P5/P3PP1P/1R3R1K w - - 0 26
+    dE=0.77  net W/D/L 0.65/0.24/0.11 E=0.77 | SF cp   -318 E=0.00 | pieces 12 ply 122
+      8/3N4/Kp5k/p6p/P2b2p1/1P4P1/7P/8 w - - 0 62
+    dE=0.73  net W/D/L 0.11/0.31/0.58 E=0.26 | SF cp    160 E=0.99 | pieces 16 ply 125
+      8/6k1/2b1r2p/4N1pP/1pPp2P1/pP6/P1K5/4R3 b - - 1 63
+    dE=0.72  net W/D/L 0.08/0.19/0.73 E=0.18 | SF cp    127 E=0.89 | pieces 27 ply  36
+      5rk1/1b3ppp/p1pb4/1p1n1q2/3P3R/2P3P1/PPB2P1P/RNBQr1K1 w - - 3 19
+
+Done. Outputs tagged 'ckpt22' in C:\Users\dhoff\Documents\Uni\Semester 6\chess_bot\supervised_learning\results\probes
+Compare runs with: python supervised_learning/inspect/probe_value_head.py --compare ckpt22 <other-tag>
