@@ -450,8 +450,130 @@ vereinfacht:
 \end{itemize}
 
 \subsection{Supervised Learning: Datenpipeline, Modell, Training}\label{sec:sl-impl} % [Danny]
-% Datenquellen, Stockfish-Annotation (Soft-Targets, lambda-Blend), Chunking,
-% Modell, Trainingssetup.  (~2.0 S.)
+Der überwacht trainierte Agent verwendet dasselbe Netz (Abschnitt~\ref{sec:arch})
+und dieselbe Suche (Abschnitt~\ref{sec:mcts}) wie der bestärkend trainierte; er
+unterscheidet sich allein im Trainingssignal. Dieses Signal stammt aus einem
+festen, beschrifteten Korpus, dessen Aufbau dieser Abschnitt von den Rohquellen
+über die Balancierung und die Stockfish-Annotation bis zum Trainingslauf
+beschreibt. Der fertige Datensatz umfasst rund 23{,}5\,Mio.\ Positionen in 471
+Chunks zu je 50\,000 Beispielen.
+
+\paragraph{Datenquellen und Zielwerte.}
+Der Korpus speist sich aus drei Quellen mit unterschiedlichen Stärken
+(Abschnitt~\ref{sec:sl-context}), zusammengefasst in Tabelle~\ref{tab:sources}.
+
+\emph{Spiele.} Aus etwa 2\,TB Lichess-Rohdaten (rund 910\,Mio.\ Partien)
+verbleiben nach Filterung auf beidseitig mindestens 2700\,Elo und Ausschluss von
+Bullet-Partien 324\,000 Partien mit bekanntem Ausgang. Jede Stellung einer Partie
+liefert ein Trainingsbeispiel; Policy-Ziel ist der tatsächlich gespielte
+(menschliche) Zug als One-Hot-Vektor.
+
+\emph{Puzzles.} Aus der Lichess-Puzzle-Datenbank werden Matt- und Endspielthemen
+bevorzugt, da sie Matt- und Endspielsituationen gezielt abdecken, die im
+menschlichen Material -- durch Aufgabe vor dem Matt -- unterrepräsentiert sind.
+Die lösende Seite liefert Gewinn-Positionen mit dem Lösungszug als Ziel, die
+verteidigende Seite Verlust-Positionen mit dem jeweiligen Verteidigungszug.
+
+\emph{Tablebase.} Aus den Syzygy-Endspieldatenbanken (bis fünf Steine) wird von
+zufälligen Stellungen aus die tablebase-optimale Linie gespielt und aufgezeichnet:
+die gewinnende Seite mit dem schnellsten Fortschritt zum Matt, die verlierende mit
+dem längsten Widerstand. Ergänzt werden exakt remise Stellungen ohne Policy-Ziel.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{llll}
+    \toprule
+    Quelle & Policy-Ziel & Value-Label & Anteil \\
+    \midrule
+    Spiele    & gespielter Zug (Mensch)       & Stockfish-Blend & 85\,\% \\
+    Puzzles   & Lösungs- / Verteidigungszug   & Stockfish-Blend & 10\,\% \\
+    Tablebase & DTZ-optimal / -- (Remis)      & one-hot (exakt) & 5\,\% \\
+    \bottomrule
+  \end{tabular}
+  \caption{Die drei Datenquellen mit Policy-Ziel, Value-Label und Anteil je Chunk.
+    Spiel- und Puzzle-Positionen erhalten ein weiches, mit Stockfish gemischtes
+    Value-Ziel (siehe unten); Tablebase-Positionen bleiben exakt.}
+  \label{tab:sources}
+\end{table}
+
+\paragraph{Klassen- und Quellenbalancierung.}
+Die Rohquellen sind stark unausgewogen: Menschliche Partien sind remislastig und
+enden häufig vor dem Matt durch Aufgabe, während Puzzles und Tablebase-Läufe fast
+ausschließlich entscheidend sind. Ohne Ausgleich verleiten diese Schieflagen das
+Netz zu den in Abschnitt~\ref{sec:sl-context} genannten Abkürzungen. Der Datensatz
+wird daher chunkweise nach einer festen Quote zusammengesetzt: Die Quellen stehen
+im Verhältnis 85\,:\,10\,:\,5 (Spiele\,:\,Puzzles\,:\,Tablebase), das heißt je
+50\,000er-Chunk 42\,500 Spiel-, 5\,000 Puzzle- und 2\,500 Tablebase-Positionen; die
+drei Value-Klassen Sieg, Remis und Niederlage sind zu je einem Drittel vertreten.
+
+Zwei gezielte Konstruktionen verhindern zusätzlich, dass bereits die Datenquelle
+den Ausgang verrät:
+\begin{itemize}
+  \item Puzzles liefern nicht nur Gewinn-, sondern auch Verteidigungspositionen
+        (mit Verlust-Label), sodass \enquote{sieht aus wie ein Puzzle} nicht länger
+        \enquote{Seite am Zug gewinnt} bedeutet.
+  \item Die Tablebase steuert neben entscheidenden auch exakt remise Stellungen
+        bei, sodass wenige Steine auf dem Brett nicht pauschal als
+        \enquote{entscheidend} gelernt werden.
+\end{itemize}
+Ohne diese Ergänzungen lernte das Netz die Quelle als Abkürzung, statt die Stellung
+zu bewerten; die zugehörigen Belege aus den Value-Head-Probes folgen in
+Abschnitt~\ref{sec:sl-results}.
+
+\paragraph{Stockfish-Annotation (Soft-Targets).}
+Das Value-Ziel für Spiel- und Puzzle-Positionen ist nicht der reine Partieausgang.
+Dieser ist verrauscht, da jede Stellung einer gewonnenen Partie pauschal als Sieg
+gilt (Abschnitt~\ref{sec:sl-context}), auch wenn die Stellung selbst ausgeglichen
+oder unterlegen ist. Jede dieser Positionen wird daher zusätzlich von Stockfish
+bewertet. Aus einer Suche bis Tiefe~12 -- einem festen Kompromiss zwischen
+Bewertungsqualität und dem Aufwand, rund 22{,}4\,Mio.\ Positionen zu annotieren --
+liefert Stockfish eine WDL-Verteilung \(q\). Mit dem als One-Hot kodierten
+Partieausgang \(z\) ergibt sich das weiche Trainingsziel als konvexe Mischung
+\[
+  t = \lambda\, z + (1-\lambda)\, q, \qquad \lambda = 0{,}5 .
+\]
+Der Wert \(\lambda = 0{,}5\) gewichtet Partieausgang und Stellungsbewertung gleich
+und entspricht damit der gleichgewichtigen Mischung aus Ausgang und Suchbewertung,
+wie sie auch Leela verwendet. Tablebase-Positionen bleiben one-hot, da die
+Syzygy-Bewertung exakt ist und keiner Glättung bedarf.
+
+\paragraph{Chunking und Training.}
+Der balancierte Datensatz wird in 471 Chunks zu je 50\,000 Positionen geschrieben
+(Format \texttt{npz} mit Brett-Tensor, Policy- und Value-Ziel); zwei Chunks
+(100\,000 Positionen) werden als Validierungsmenge zurückgehalten. Trainiert wird
+dasselbe Netz wie auf der RL-Seite (Abschnitt~\ref{sec:arch}). Der Gesamtverlust
+summiert Policy- und Value-Verlust: Da der Policy-Head rohe Logits ausgibt
+(Abschnitt~\ref{sec:arch}), ist der Policy-Verlust eine Cross-Entropy über die
+Logits, der Value-Verlust eine Cross-Entropy über die drei WDL-Klassen. Remise
+Tablebase-Positionen besitzen kein Policy-Ziel und werden über ein Nullgewicht aus
+dem Policy-Verlust ausgeschlossen. Optimierer, Lernraten-Ablauf und
+Regularisierung folgen AlphaZero \parencite{silver2018} und sind in
+Tabelle~\ref{tab:sl-train} zusammengefasst.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{ll}
+    \toprule
+    Hyperparameter & Wert \\
+    \midrule
+    Optimierer     & AdamW (Weight Decay \(10^{-4}\), nur Kernel) \\
+    Lernrate       & \(10^{-4} \to 10^{-5}\) (70\,\%) \(\to 10^{-6}\) (90\,\%) \\
+    Batch-Größe    & 512 \\
+    Epochen        & 1 \\
+    Policy-Verlust & Cross-Entropy (aus Logits) \\
+    Value-Verlust  & Cross-Entropy (WDL) \\
+    \bottomrule
+  \end{tabular}
+  \caption{Trainingskonfiguration. Weight Decay und der stufenweise
+    Lernraten-Ablauf übernehmen die Vorgaben von AlphaZero \parencite{silver2018};
+    Rechenaufwand und die daraus folgende Beschränkung auf eine Epoche werden in
+    Abschnitt~\ref{sec:compute} behandelt.}
+  \label{tab:sl-train}
+\end{table}
+
+Während des Trainings werden regelmäßig Checkpoints gesichert; sie bilden die
+Grundlage für den Vergleich der Trainingsstände und der verschiedenen
+SL-Varianten in Abschnitt~\ref{sec:sl-results}.
 
 \subsection{Reinforcement Learning: MCTS-Kern, Self-Play, Trainings-Loop}\label{sec:rl-impl} % [Tim]
 % MCTS-Implementierung, Self-Play-Erzeugung, Trainings-Loop.  (~2.0 S.)
@@ -464,7 +586,7 @@ vereinfacht:
 %  Gegnersatz, Stockfish-Level, Zeit-/Sim-Budget,
 % Eroeffnungen, Partienzahl, Farbausgleich, Elo-Anker.  (~0.75 S.)
 
-\subsection{Ergebnisse Supervised Learning}                       % [Danny]
+\subsection{Ergebnisse Supervised Learning}\label{sec:sl-results}  % [Danny]
 % Konvergenz; Staerke gegen Stockfish-Level und Elo; Vergleich der SL-Ansaetze
 % untereinander (z.B. Outcome-only vs. Stockfish-annotiert).  (~1.0 S.)
 
@@ -474,7 +596,7 @@ vereinfacht:
 \subsection{Direktvergleich: SL vs. RL}\label{sec:headtohead}
 % Head-to-Head-Partien, Elo-Differenz; wer ist frueher/spaeter besser.  (~0.75 S.)
 
-\subsection{Rechenaufwand \& Inferenzzeit}
+\subsection{Rechenaufwand \& Inferenzzeit}\label{sec:compute}
 % Trainings-/Inferenzkosten; Trainingszeiten als Einschraenkung (untersch. Hardware).  (~0.5 S.)
 
 
