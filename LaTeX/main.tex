@@ -10,6 +10,8 @@
 \usepackage[ngerman]{babel}
 \usepackage[german=quotes]{csquotes}
 \usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta}
 \usepackage{microtype}
 \usepackage[style=authoryear]{biblatex}
 \usepackage[hidelinks=true]{hyperref}
@@ -60,7 +62,7 @@
 \section{Theoretische Grundlagen}
 % ~8.5 S.
 
-\subsection{Schach als formales Problem}                          % [Tim]
+\subsection{Schach als formales Problem}\label{sec:formal}                          % [Tim]
 % Spielregeln knapp; Spielbaum, Zustands-/Suchraumkomplexitaet, warum der
 % exakte beste Zug praktisch unberechenbar ist; was ein "guter" Zug ist.  (~1.5 S.)
 
@@ -69,18 +71,173 @@
 % Grundlage fuer die Staerkemessung in Kapitel 4.  (~0.75 S.)
 
 \subsection{Klassische Engines: Minimax, Alpha-Beta, Stockfish/NNUE} % [Danny]
-% Minimax, Alpha-Beta-Pruning; Stockfish/NNUE als Referenzgegner und  (~1.0 S.)
+Klassische Schachprogramme behandeln die Zugwahl als Suche im Spielbaum
+(Abschnitt~\ref{sec:formal}). Da dieser Baum praktisch nicht vollständig durchsucht werden
+kann, begrenzt man die Suchtiefe und bewertet die so erreichten Blattstellungen
+mit einer heuristischen Bewertungsfunktion \(\mathrm{eval}(s)\), die Merkmale
+wie Material, Königssicherheit und Bauernstruktur zu einer einzigen Zahl
+verrechnet \parencite{shannon1950}.
 
-\subsection{Brettrepräsentation \& Zugkodierung}                  % [Danny]
-% Plane-Encoding des Bretts, 1858-Zugkodierung genutzt.  (~1.0 S.)
+Der Wert einer Stellung ergibt sich rekursiv nach dem Minimax-Prinzip: Die Seite
+am Zug wählt den für sie besten Zug, der Gegner den für ihn besten. Bezeichnet
+\(s\cdot a\) die aus \(s\) durch Zug \(a\) entstehende Stellung, so gilt
+\[
+  V(s) =
+  \begin{cases}
+    \mathrm{eval}(s)          & \text{Tiefenlimit erreicht,}\\
+    \max_{a} V(s\cdot a)      & \text{Seite am Zug,}\\
+    \min_{a} V(s\cdot a)      & \text{Gegner am Zug.}
+  \end{cases}
+\]
+An der Wurzel wird der Zug mit dem höchsten Wert gespielt.
 
-\subsection{Neuronale Netze für Schach: CNN/ResNet, Policy- und Value-Head} % [Danny]
-% CNN/ResNet-Backbone, Policy- + Value-Head; Leela-inspirierte Architektur.  (~1.25 S.)
+Naiv bewertet Minimax exponentiell viele Stellungen. Alpha-Beta-Pruning liefert
+dasselbe Ergebnis, überspringt aber Teilbäume, die den Wurzelwert nicht mehr
+verändern können, weil eine Seite dort bereits einen ausreichend guten
+Alternativzug kennt. Bei guter Zugsortierung sinkt der effektive
+Verzweigungsgrad von \(b\) auf etwa \(\sqrt{b}\), was bei gleichem Aufwand annähernd
+die doppelte Suchtiefe erlaubt \parencite{knuth1975}. Auf dieser Grundlage
+gelang mit Deep Blue 1997 der erste Sieg eines Computers gegen einen
+amtierenden Schachweltmeister \parencite{campbell2002}.
+
+Moderne Spitzenprogramme wie Stockfish kombinieren eine stark optimierte
+Alpha-Beta-Suche mit einer neuronalen Bewertungsfunktion (NNUE), die die früher
+handgeschriebene Heuristik ersetzt \parencite{klein2022neural}. In dieser Arbeit
+dient Stockfish als Referenzgegner und Elo-Anker (Kapitel~\ref{sec:eval}).
+
+Allen klassischen Verfahren ist gemein, dass die Spielstärke primär aus breiter
+Suche entsteht, während die Bewertung einer einzelnen Stellung vergleichsweise
+günstig bleibt. Der hier verfolgte Ansatz verlagert diesen Schwerpunkt: Ein
+aufwändiges neuronales Netz übernimmt Bewertung und Zugvorauswahl, sodass
+deutlich weniger Stellungen durchsucht werden müssen
+(Abschnitte~\ref{sec:nn}--\ref{sec:mcts}).
+
+\subsection{Brettrepräsentation \& Zugkodierung}\label{sec:encoding} % [Danny]
+Beide Agenten nutzen dieselbe Kodierung, die eine Schachstellung in einen
+Eingabetensor fester Größe und jeden Zug in einen Ausgabeindex übersetzt. Das
+Brett wird dabei stets aus Sicht der Seite am Zug kodiert: Ist Schwarz am Zug,
+wird es gespiegelt, sodass das Netz nur eine Perspektive lernen muss. Repräsentation
+und Zugkodierung folgen dem AlphaZero-Schema \parencite{silver2018}.
+
+\paragraph{Brett-Tensor.}
+Eine Stellung wird als Tensor der Form \(8\times8\times20\) dargestellt: Die ersten
+zwölf Ebenen kodieren die Figuren beider Seiten (je eine Ebene pro Figurentyp),
+acht weitere die Zusatzinformationen einer Stellung, und eine konstante Ebene
+liefert eine positionsunabhängige Bias-Information. Tabelle~\ref{tab:planes}
+listet die Belegung vollständig auf.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{cl}
+    \hline
+    Ebene(n) & Inhalt \\
+    \hline
+    0--5   & eigene Figuren (Bauer, Springer, Läufer, Turm, Dame, König) \\
+    6--11  & gegnerische Figuren (gleiche Reihenfolge) \\
+    12--13 & eigene Rochaderechte (Damen-/Königsflügel) \\
+    14--15 & gegnerische Rochaderechte \\
+    16     & Farbe am Zug (1, falls im Original Schwarz am Zug) \\
+    17     & Halbzugzähler \(/100\) (50-Züge-Regel) \\
+    18     & En-passant-Zielfeld (1 auf dem Zielfeld, sonst 0) \\
+    19     & konstante Ebene (Wert 1) \\
+    \hline
+  \end{tabular}
+  \caption{Die 20 Ebenen des Brett-Tensors \(8\times8\times20\).}
+  \label{tab:planes}
+\end{table}
+
+Bewusst wird nur die aktuelle Stellung kodiert, ohne Zughistorie -- anders als
+AlphaZero und Leela, die mehrere vorangehende Halbzüge stapeln. Das hat zwei
+Gründe. Erstens verkleinert es den Eingaberaum und damit das Netz, was Training
+und Inferenz beschleunigt. Zweitens ist eine rein stellungsbasierte Kodierung
+eindeutig: Ein und dieselbe Stellung (FEN) wird stets auf denselben Tensor
+abgebildet. Bei einer historienbehafteten Kodierung entstünden für dieselbe
+Stellung je nach Zugreihenfolge unterschiedliche Tensoren (Transpositionen), was
+die gezielte Untersuchung einzelner Stellungen -- etwa bei der Fehlersuche am
+Value-Head -- mehrdeutig und damit wenig aussagekräftig macht.
+
+\paragraph{Zugkodierung.}
+Ein Zug wird als Paar \((\text{Startfeld}, \text{Ebene})\) kodiert, wobei jedem der
+64 Felder 73 Ebenen zugeordnet sind. Die 73 Ebenen gliedern sich in drei Gruppen:
+\begin{itemize}
+  \item \textbf{Ebenen 0--55 -- Damenzüge (Sliding):} acht Himmelsrichtungen
+        \(\times\) sieben Distanzen (1--7 Felder). Diese Gruppe deckt alle Zieh-
+        und Schlagzüge von Dame, Turm, Läufer, König und Bauer ab; auch die
+        Umwandlung in eine Dame wird als gewöhnlicher Zug in diese Ebenen
+        kodiert.
+  \item \textbf{Ebenen 56--63 -- Springerzüge:} die acht festen Sprungoffsets.
+  \item \textbf{Ebenen 64--72 -- Unterverwandlungen:} drei Figuren (Springer,
+        Läufer, Turm) \(\times\) drei Richtungen (geradeaus, Schlag links/rechts).
+\end{itemize}
+Das ergibt einen Ausgaberaum von \(8\times8\times73 = 4672\) Zellen. Von diesen
+können jedoch nur 1858 jemals einem legalen Zug entsprechen -- viele Paare
+liegen außerhalb des Bretts (etwa ein Springersprung vom Rand). Eine feste
+Lookup-Tabelle bildet daher jeden Zug auf genau einen von 1858
+Ausgabeindizes ab; vor der Softmax-Normierung werden die in der jeweiligen
+Stellung illegalen Indizes maskiert.
+
+\subsection{Neuronale Netze für Schach: CNN/ResNet, Policy- und Value-Head}\label{sec:nn} % [Danny]
+Eine Schachstellung liegt bereits als zweidimensionales \(8\times8\)-Raster vor
+und ähnelt damit einem Bild. Faltungsnetze (CNNs) sind für solche gitterförmigen
+Eingaben besonders geeignet: Ihre Filter erkennen lokale Muster -- etwa
+Bauernketten oder die Königsstellung -- unabhängig davon, wo auf dem Brett sie
+auftreten, und teilen ihre Gewichte über alle Felder. Der in
+Abschnitt~\ref{sec:encoding} beschriebene Eingabetensor \(8\times8\times20\) dient
+dabei als \enquote{Bild} mit 20 Kanälen.
+
+Um Stellungen ausreichend tief zu verarbeiten, werden viele Faltungsschichten
+gestapelt. Sehr tiefe Netze leiden jedoch unter verschwindenden Gradienten.
+Residual-Netze (ResNets) begegnen dem mit Sprungverbindungen (Skip Connections),
+die den Eingang eines Blocks direkt zu dessen Ausgang addieren; der Block muss
+dann nur noch die Abweichung (das Residuum) lernen \parencite{he2016}. Die für
+Schach etablierte und auch hier verwendete Architektur von Leela Chess Zero
+besteht aus einem solchen Residual-Turm \parencite{lczero_nn, klein2022neural}.
+
+Anders als klassische ResNet-Blöcke setzt Leela auf
+Squeeze-and-Excitation-Blöcke (SE), die einen Aufmerksamkeitsmechanismus über
+die Kanäle ergänzen: Aus dem globalen Mittel jeder Merkmalskarte wird ein Gewicht
+je Kanal bestimmt, mit dem die Kanäle anschließend neu skaliert werden. So kann
+das Netz kontextabhängig betonen, welche Merkmale in einer Stellung wichtig sind
+\parencite{hu2018}; Leela nutzt dabei eine erweiterte, multiplikativ-additive
+Variante.
+
+Auf den gemeinsamen Rumpf folgen zwei Köpfe (Abbildung~\ref{fig:architecture}).
+Der Policy-Head gibt für jeden der 1858 möglichen Züge (Abschnitt~\ref{sec:encoding})
+einen unnormierten Wert (Logit) aus und bildet damit die Zugpräferenz. Der
+Value-Head schätzt den Ausgang der Partie; statt eines einzelnen skalaren Wertes
+verwendet die betrachtete Architektur eine WDL-Ausgabe -- drei über Softmax
+normierte Wahrscheinlichkeiten für Sieg, Remis und Niederlage aus Sicht der Seite
+am Zug. Da beide Köpfe denselben Rumpf teilen, beruhen Bewertung und Zugauswahl
+auf einer gemeinsamen Merkmalsbasis.
+
+\begin{figure}[h]
+  \centering
+  \begin{tikzpicture}[
+      box/.style={draw, rounded corners, align=center, minimum height=10mm,
+                  inner sep=5pt, font=\small},
+      >=Stealth, node distance=7mm and 13mm]
+    \node[box] (in) {Eingabe\\\(8\times8\times20\)};
+    \node[box, right=of in] (conv) {Initial-\\Conv};
+    \node[box, right=of conv] (tower) {SE-Residual-\\Turm (\(N\) Blöcke)};
+    \node[box, above right=of tower] (policy) {Policy-Head\\\(\rightarrow\) 1858 Zug-Logits};
+    \node[box, below right=of tower] (value) {Value-Head\\\(\rightarrow\) WDL};
+    \draw[->] (in) -- (conv);
+    \draw[->] (conv) -- (tower);
+    \draw[->] (tower.east) -- (policy.west);
+    \draw[->] (tower.east) -- (value.west);
+  \end{tikzpicture}
+  \caption{Zweiköpfige Leela-Architektur: geteilter Rumpf aus Initial-Faltung und
+    SE-Residual-Turm, darauf Policy- und Value-Head.}
+  \label{fig:architecture}
+\end{figure}
+
+Die konkrete Konfiguration dieses Netzes -- Anzahl der Blöcke, Filterzahl und der
+genaue Aufbau der Köpfe -- wird in Abschnitt~\ref{sec:arch} beschrieben.
 
 \subsection{Supervised Learning im Schachkontext}                 % [Danny]
 % Lernen aus annotierten Stellungen; Zielsignale (WDL/Soft-Targets).  (~1.0 S.)
 
-\subsection{Monte Carlo Tree Search (UCT, PUCT)}                  % [Tim]
+\subsection{Monte Carlo Tree Search (UCT, PUCT)}\label{sec:mcts}                  % [Tim]
 % Selektion/Expansion/Simulation/Backprop; UCT, PUCT mit Netz-Prior.  (~1.25 S.)
 
 \subsection{AlphaZero-Paradigma: Self-Play Reinforcement Learning} % [Tim]
@@ -90,7 +247,7 @@
 \section{Implementierung}
 % ~5.0 S.
 
-\subsection{Systemarchitektur -- geteilte Komponenten}           % [gemeinsam]
+\subsection{Systemarchitektur -- geteilte Komponenten}\label{sec:arch} % [gemeinsam]
 % Netz, Encoding und Suche sind fuer beide Agenten identisch; nur das
 % Trainingssignal unterscheidet sich (~1.0 S.)
 
@@ -102,7 +259,7 @@
 % MCTS-Implementierung, Self-Play-Erzeugung, Trainings-Loop.  (~2.0 S.)
 
 
-\section{Evaluation \& Ergebnisse}
+\section{Evaluation \& Ergebnisse}\label{sec:eval}
 % ~4.0 S.
 
 \subsection{Versuchsaufbau}
