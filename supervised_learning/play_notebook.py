@@ -193,7 +193,7 @@ def play(
     num_simulations: int = 200,
     human_color: str = "white",
     weights_path: str | None = None,
-    batch_size: int = 16,
+    batch_size: int = 32,
     square_px: int = 72,
 ):
     """Click-to-move game vs. the network's MCTS.
@@ -420,7 +420,7 @@ def play_text(
     num_simulations: int = 200,
     human_color: str = "white",
     weights_path: str | None = None,
-    batch_size: int = 16,
+    batch_size: int = 32,
 ) -> None:
     """UCI-input fallback game vs. the network's MCTS."""
     net = _NET if _NET is not None else load_network(weights_path)
