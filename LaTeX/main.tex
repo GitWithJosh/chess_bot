@@ -13,6 +13,8 @@
 \usepackage{tikz}
 \usetikzlibrary{positioning, arrows.meta}
 \usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{float}
 \usepackage[style=authoryear]{biblatex}
 \usepackage[hidelinks=true]{hyperref}
 \usepackage{amsmath}
@@ -267,7 +269,7 @@ auf einer gemeinsamen Merkmalsbasis.
       >=Stealth, node distance=7mm and 13mm]
     \node[box] (in) {Eingabe\\\(8\times8\times20\)};
     \node[box, right=of in] (conv) {Initial-\\Conv};
-    \node[box, right=of conv] (tower) {SE-Residual-\\Turm (\(N\) Blöcke)};
+    \node[box, right=of conv] (tower) {SE-Residual-\\Turm (20 Blöcke)};
     \node[box, above right=of tower] (policy) {Policy-Head\\\(\rightarrow\) 1858 Zug-Logits};
     \node[box, below right=of tower] (value) {Value-Head\\\(\rightarrow\) WDL};
     \draw[->] (in) -- (conv);
@@ -352,12 +354,25 @@ Trainingsparadigmas und nicht den unterschiedlicher Architekturen.
 
 Das Netz folgt dem Residual-Turm-Entwurf von Leela Chess Zero
 \parencite{lczero_nn, klein2022neural} und ist in Abbildung~\ref{fig:architecture}
-skizziert. Auf den Eingabetensor \(8\times8\times20\) folgt eine Initial-Faltung,
-die ihn auf 256 Kanäle projiziert, danach ein Turm aus 20
-Squeeze-and-Excitation-Residualblöcken (Abschnitt~\ref{sec:nn}) und schließlich
-die beiden Köpfe. Jeder Block besteht aus zwei \(3\times3\)-Faltungen mit
-Batch-Normierung und einer SE-Rekalibrierung; die gewählte Konfiguration von 20
-Blöcken zu je 256 Filtern ist die für Schach übliche mittlere Größe.
+skizziert. Den Eingang bildet der Tensor \(8\times8\times20\)
+(Abschnitt~\ref{sec:encoding}) -- Leela verwendet hier 112 Ebenen, da es
+zusätzlich acht vorangehende Halbzüge stapelt. Eine Initial-Faltung
+(\(3\times3\), Schrittweite 1) projiziert den Eingang auf 256 Merkmalskarten,
+gefolgt von Batch-Normierung und ReLU. Darauf folgt der Turm aus 20
+Squeeze-and-Excitation-Residualblöcken und schließlich die beiden Köpfe. Als
+Standardkonfigurationen nennt Leela \(10\times128\), \(20\times256\) und
+\(24\times320\) (\texttt{BLOCKS}\,\(\times\)\,\texttt{FILTERS})
+\parencite{lczero_nn}; übernommen wurde die mittlere Variante \(20\times256\).
+
+Jeder Residualblock enthält zwei \(3\times3\)-Faltungen (Schrittweite 1) mit
+Batch-Normierung, gefolgt von einer SE-Rekalibrierung, und wird durch eine
+Sprungverbindung überbrückt. Die SE-Schicht übernimmt Leelas Aufbau
+(Abschnitt~\ref{sec:nn}): Global Average Pooling verdichtet die 256
+Merkmalskarten zu einem Vektor der Länge \texttt{FILTERS} (256), eine
+Dense-Schicht reduziert ihn auf \texttt{SE\_CHANNELS} (hier 32) mit ReLU, und eine
+weitere expandiert ihn auf \(2\times\)\texttt{FILTERS} -- je Kanal einen
+multiplikativen Faktor (Sigmoid) und einen additiven Bias, mit denen die
+Merkmalskarten skaliert und verschoben werden.
 
 Der Policy-Head reduziert die Merkmalskarten über eine \(3\times3\)- und eine
 \(1\times1\)-Faltung auf die 73 Zugebenen und liest daraus mit einer festen
@@ -373,33 +388,44 @@ Residual-Turm, während beide Köpfe zusammen unter 4\,\% ausmachen. Innerhalb e
 Blocks dominieren die beiden \(3\times3\)-Faltungen; die SE-Rekalibrierung trägt
 mit rund 25\,000 Parametern nur etwa 2\,\% je Block bei.
 
-\begin{table}[h]
+\begin{table}[H]
   \centering
   \begin{tabular}{lrr}
-    \hline
+    \toprule
     Komponente & Parameter & Anteil \\
-    \hline
-    Initial-Conv + BN                          & 46\,592      & 0{,}2\,\% \\
-    SE-Residual-Turm (20 Blöcke)               & 24\,115\,840 & 96{,}3\,\% \\
-    \quad je Block                             & 1\,205\,792  & \\
-    \quad\quad 2\,\(\times\) Conv \(3\times3\) & 1\,179\,648  & \\
-    \quad\quad SE-Excitation (3 Dense)         & 25\,120      & \\
-    \quad\quad 2\,\(\times\) BatchNorm         & 1\,024       & \\
-    Policy-Head                                & 609\,097     & 2{,}4\,\% \\
-    \quad Conv \(3\times3\) (256\(\to\)256)    & 589\,824     & \\
-    \quad Conv \(1\times1\) (256\(\to\)73)     & 18\,761      & \\
-    \quad Gather \(\to\) 1858                  & 0            & \\
-    Value-Head                                 & 270\,915     & 1{,}1\,\% \\
-    \quad Conv \(1\times1\) (256\(\to\)32)     & 8\,192       & \\
-    \quad Conv \(8\times8\) (32\(\to\)128)     & 262\,272     & \\
-    \quad Dense (128\(\to\)3)                  & 387          & \\
-    \hline
-    Gesamt (trainierbar)                       & 25\,042\,444 & 100\,\% \\
-    \hline
+    \midrule
+    \textbf{Eingangsblock}                          & 46\,592      & 0{,}2\,\% \\
+    \quad Conv \(3\times3\) (20\(\to\)256)          & 46\,080      & \\
+    \quad BatchNorm                                 & 512          & \\
+    \addlinespace
+    \textbf{SE-Residual-Turm (20 Blöcke)}           & 24\,115\,840 & 96{,}3\,\% \\
+    \quad je Block                                  & 1\,205\,792  & \\
+    \quad\quad 2\,\(\times\) Conv \(3\times3\) (256\(\to\)256)  & 1\,179\,648 & \\
+    \quad\quad SE: FC \(256\to32\) (ReLU)           & 8\,224       & \\
+    \quad\quad SE: FC \(32\to256\) (Skalierung, Sigmoid) & 8\,448  & \\
+    \quad\quad SE: FC \(32\to256\) (Bias)           & 8\,448       & \\
+    \quad\quad 2\,\(\times\) BatchNorm              & 1\,024       & \\
+    \addlinespace
+    \textbf{Policy-Head}                            & 609\,097     & 2{,}4\,\% \\
+    \quad Conv \(3\times3\) (256\(\to\)256)         & 589\,824     & \\
+    \quad BatchNorm                                 & 512          & \\
+    \quad Conv \(1\times1\) (256\(\to\)73)          & 18\,761      & \\
+    \quad Gather \(\to\) 1858                       & 0            & \\
+    \addlinespace
+    \textbf{Value-Head}                             & 270\,915     & 1{,}1\,\% \\
+    \quad Conv \(1\times1\) (256\(\to\)32)          & 8\,192       & \\
+    \quad BatchNorm                                 & 64           & \\
+    \quad Conv \(8\times8\) (32\(\to\)128)          & 262\,272     & \\
+    \quad Dense (128\(\to\)3)                       & 387          & \\
+    \midrule
+    \textbf{Gesamt (trainierbar)}                   & \textbf{25\,042\,444} & \textbf{100\,\%} \\
+    \bottomrule
   \end{tabular}
-  \caption{Verteilung der trainierbaren Parameter (Konfiguration: 20 Blöcke,
-    256 Filter). Die Batch-Norm-Laufstatistiken tragen zusätzlich 21\,568
-    nicht-trainierbare Parameter bei.}
+  \caption{Verteilung der trainierbaren Parameter (Konfiguration \(20\times256\),
+    32 SE-Kanäle). Die beiden \(32\to256\)-Dense-Schichten (Skalierung und Bias)
+    entsprechen zusammen Leelas einzelner SE-Ausgabeschicht; daher drei statt zwei
+    Dense-Schichten je Block. Batch-Norm-Laufstatistiken ergänzen 21\,568
+    nicht-trainierbare Parameter.}
   \label{tab:params}
 \end{table}
 
