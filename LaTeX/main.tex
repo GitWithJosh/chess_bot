@@ -12,7 +12,7 @@
 \usepackage{graphicx}
 \usepackage{microtype}
 \usepackage[style=authoryear]{biblatex}
-\usepackage{hyperref}
+\usepackage[hidelinks=true]{hyperref}
 
 \addbibresource{bibliography.bib}
 \begin{document}
@@ -55,93 +55,76 @@
 \tableofcontents
 \clearpage
 
-% =========================================================================
-% Zielumfang: ~18 Textseiten (4 Personen x 4-5 Seiten). Grundlagen und
-% Umsetzung je etwa 50:50 gewichtet.
-%
-% Leitgedanke: SL- und RL-Agent teilen sich dieselbe Netzarchitektur
-% (networks/big_network.py), dieselbe Zugkodierung (helpers/converter.py) und
-% dieselbe Suche. Nur das Trainingssignal unterscheidet sich -> Kapitel 4 misst
-% ausschliesslich das Trainingsparadigma (kontrolliertes Experiment).
-%
-% Projektanforderungen (Referenz, nicht drucken):
-%   - Use-Case mit ML-Komponente; eigenes Modell oder Fine-Tuning
-%   - Vergleich mit mind. einem weiteren ML-Modell (Stockfish/NNUE = trainiertes Netz)
-%   - Prototyp / Proof-of-Concept (GUI)
-%   - Bericht: Grundlagen / Umsetzung ~50:50; 4-5 Seiten pro Person
-% Forschungsfrage: Was ist besser, was frueher/spaeter besser, bis zu welchem
-%   Stockfish-Level reicht es, wie vergleichen sich die Trainingszeiten?
-% =========================================================================
-
 \section{Einleitung}
-% Use-Case, Forschungsfrage, Beitrag, Aufbau des Berichts  (~1.5 S.)
-
 
 \section{Theoretische Grundlagen}
-% ~8.5 S. -- rund die Haelfte des Berichts (Rubrik Literaturrecherche)
+% ~8.5 S.
 
-\subsection{Schach als formales Problem}
+\subsection{Schach als formales Problem}                          % [Tim]
 % Spielregeln knapp; Spielbaum, Zustands-/Suchraumkomplexitaet, warum der
 % exakte beste Zug praktisch unberechenbar ist; was ein "guter" Zug ist.  (~1.5 S.)
 
-\subsection{Klassische Engines: Minimax, Alpha-Beta, Stockfish/NNUE}
-% Minimax, Alpha-Beta-Pruning; Stockfish als Referenz; NNUE als trainiertes
-% Netz -> das geforderte "weitere ML-Modell".  (~1.0 S.)
+\subsection{Spielstärke quantifizieren}             % [Tim]
+% Elo-Modell
+% Grundlage fuer die Staerkemessung in Kapitel 4.  (~0.75 S.)
 
-\subsection{Brettrepräsentation \& Zugkodierung}
-% Plane-Encoding des Bretts, 1858-Zugkodierung; gemeinsam von SL und RL genutzt.  (~1.0 S.)
+\subsection{Klassische Engines: Minimax, Alpha-Beta, Stockfish/NNUE} % [Danny]
+% Minimax, Alpha-Beta-Pruning; Stockfish/NNUE als Referenzgegner und  (~1.0 S.)
 
-\subsection{Neuronale Netze für Schach: CNN/ResNet, Policy- und Value-Head}
-% CNN/ResNet-Backbone, Policy- + Value-Head; Leela-inspirierte Architektur.  (~1.5 S.)
+\subsection{Brettrepräsentation \& Zugkodierung}                  % [Danny]
+% Plane-Encoding des Bretts, 1858-Zugkodierung genutzt.  (~1.0 S.)
 
-\subsection{Supervised Learning im Schachkontext}
+\subsection{Neuronale Netze für Schach: CNN/ResNet, Policy- und Value-Head} % [Danny]
+% CNN/ResNet-Backbone, Policy- + Value-Head; Leela-inspirierte Architektur.  (~1.25 S.)
+
+\subsection{Supervised Learning im Schachkontext}                 % [Danny]
 % Lernen aus annotierten Stellungen; Zielsignale (WDL/Soft-Targets).  (~1.0 S.)
 
-\subsection{Monte Carlo Tree Search (UCT, PUCT)}
-% Selektion/Expansion/Simulation/Backprop; UCT, PUCT mit Netz-Prior.  (~1.5 S.)
+\subsection{Monte Carlo Tree Search (UCT, PUCT)}                  % [Tim]
+% Selektion/Expansion/Simulation/Backprop; UCT, PUCT mit Netz-Prior.  (~1.25 S.)
 
-\subsection{AlphaZero-Paradigma: Self-Play Reinforcement Learning}
-% MCTS + Self-Play, Policy/Value-Ziele aus Suche und Spielausgang.  (~1.0 S.)
+\subsection{AlphaZero-Paradigma: Self-Play Reinforcement Learning} % [Tim]
+% MCTS + Self-Play, Policy/Value-Ziele aus Suche und Spielausgang.  (~0.75 S.)
 
 
 \section{Implementierung}
 % ~5.0 S.
 
-\subsection{Systemarchitektur -- geteilte Komponenten}
+\subsection{Systemarchitektur -- geteilte Komponenten}           % [gemeinsam]
 % Netz, Encoding und Suche sind fuer beide Agenten identisch; nur das
-% Trainingssignal unterscheidet sich. Diese Gemeinsamkeit hier explizit machen.  (~1.0 S.)
+% Trainingssignal unterscheidet sich (~1.0 S.)
 
-\subsection{Supervised Learning: Datenpipeline, Modell, Training}
+\subsection{Supervised Learning: Datenpipeline, Modell, Training} % [Danny]
 % Datenquellen, Stockfish-Annotation (Soft-Targets, lambda-Blend), Chunking,
 % Modell, Trainingssetup.  (~2.0 S.)
 
-\subsection{Reinforcement Learning: MCTS-Kern, Self-Play, Trainings-Loop}
+\subsection{Reinforcement Learning: MCTS-Kern, Self-Play, Trainings-Loop} % [Tim]
 % MCTS-Implementierung, Self-Play-Erzeugung, Trainings-Loop.  (~2.0 S.)
 
 
 \section{Evaluation \& Ergebnisse}
-% ~3.5 S. -- gemeinsames Kapitel, EIN Protokoll
+% ~4.0 S.
 
 \subsection{Versuchsaufbau}
-% Ein gemeinsames Protokoll: Gegnersatz, Stockfish-Level, Zeit-/Sim-Budget,
+%  Gegnersatz, Stockfish-Level, Zeit-/Sim-Budget,
 % Eroeffnungen, Partienzahl, Farbausgleich, Elo-Anker.  (~0.75 S.)
 
-\subsection{Trainingsverhalten \& Konvergenz}
-% Lernkurven beider Ansaetze.  (~0.75 S.)
+\subsection{Ergebnisse Supervised Learning}                       % [Danny]
+% Konvergenz; Staerke gegen Stockfish-Level und Elo; Vergleich der SL-Ansaetze
+% untereinander (z.B. Outcome-only vs. Stockfish-annotiert).  (~1.0 S.)
 
-\subsection{Spielstärke: Stockfish-Level, Elo, Direktvergleich}
-% Win-Rate gegen Stockfish-Levels, Elo, SL- vs. RL-Agent direkt.  (~1.5 S.)
+\subsection{Ergebnisse Reinforcement Learning}                    % [Tim]
+% Konvergenz; Staerke gegen Random und Stockfish-Level; Elo.  (~1.0 S.)
+
+\subsection{Direktvergleich: SL vs. RL}
+% Head-to-Head-Partien, Elo-Differenz; wer ist frueher/spaeter besser.  (~0.75 S.)
 
 \subsection{Rechenaufwand \& Inferenzzeit}
 % Trainings-/Inferenzkosten; Trainingszeiten als Einschraenkung (untersch. Hardware).  (~0.5 S.)
 
 
-\section{Prototyp / Demo (GUI)}
-% Proof-of-Concept: die GUI.  (~0.75 S.)
-
-
 \section{Diskussion}
-% Interpretation, Limitierungen, Ausblick.  (~1.5 S.)
+% Interpretation, Limitierungen,  (~1.5 S.)
 
 
 \section{Fazit}
