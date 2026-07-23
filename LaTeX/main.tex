@@ -201,15 +201,9 @@ listet die Belegung vollständig auf.
   \label{tab:planes}
 \end{table}
 
-Bewusst wird nur die aktuelle Stellung kodiert, ohne Zughistorie -- anders als
-AlphaZero und Leela, die mehrere vorangehende Halbzüge stapeln. Das hat zwei
-Gründe. Erstens verkleinert es den Eingaberaum und damit das Netz, was Training
-und Inferenz beschleunigt. Zweitens ist eine rein stellungsbasierte Kodierung
-eindeutig: Ein und dieselbe Stellung (FEN) wird stets auf denselben Tensor
-abgebildet. Bei einer historienbehafteten Kodierung entstünden für dieselbe
-Stellung je nach Zugreihenfolge unterschiedliche Tensoren (Transpositionen), was
-die gezielte Untersuchung einzelner Stellungen -- etwa bei der Fehlersuche am
-Value-Head -- mehrdeutig und damit wenig aussagekräftig macht.
+Kodiert wird ausschließlich die aktuelle Stellung, ohne Zughistorie; die Gründe
+für diese Abweichung von AlphaZero und Leela werden in Abschnitt~\ref{sec:arch}
+erläutert.
 
 \paragraph{Zugkodierung.}
 Ein Zug wird als Paar \((\text{Startfeld}, \text{Ebene})\) kodiert, wobei jedem der
@@ -348,15 +342,96 @@ aus dem eigenen Spiel gewinnt und so die Lehrerquelle hinter sich lassen kann
 \section{Implementierung}
 % ~5.0 S.
 
-\subsection{Systemarchitektur -- geteilte Komponenten}\label{sec:arch} % [gemeinsam]
-% Netz, Encoding und Suche sind fuer beide Agenten identisch; nur das
-% Trainingssignal unterscheidet sich (~1.0 S.)
+\subsection{Modellarchitektur}\label{sec:arch} % [gemeinsam]
+Beide Agenten -- der überwacht und der bestärkend trainierte -- verwenden
+dasselbe neuronale Netz, dieselbe Kodierung (Abschnitt~\ref{sec:encoding}) und zur
+Zugwahl dieselbe Monte-Carlo-Baumsuche (Abschnitt~\ref{sec:mcts}, Umsetzung in
+Abschnitt~\ref{sec:rl-impl}). Sie unterscheiden sich einzig im Trainingssignal.
+Damit misst der Vergleich in Kapitel~\ref{sec:eval} allein den Effekt des
+Trainingsparadigmas und nicht den unterschiedlicher Architekturen.
+
+Das Netz folgt dem Residual-Turm-Entwurf von Leela Chess Zero
+\parencite{lczero_nn, klein2022neural} und ist in Abbildung~\ref{fig:architecture}
+skizziert. Auf den Eingabetensor \(8\times8\times20\) folgt eine Initial-Faltung,
+die ihn auf 256 Kanäle projiziert, danach ein Turm aus 20
+Squeeze-and-Excitation-Residualblöcken (Abschnitt~\ref{sec:nn}) und schließlich
+die beiden Köpfe. Jeder Block besteht aus zwei \(3\times3\)-Faltungen mit
+Batch-Normierung und einer SE-Rekalibrierung; die gewählte Konfiguration von 20
+Blöcken zu je 256 Filtern ist die für Schach übliche mittlere Größe.
+
+Der Policy-Head reduziert die Merkmalskarten über eine \(3\times3\)- und eine
+\(1\times1\)-Faltung auf die 73 Zugebenen und liest daraus mit einer festen
+Zuordnung (Gather) die 1858 Zug-Logits aus; eine Ausgabe-Softmax entfällt, da die
+Normierung erst nachgelagert bei Verlustberechnung, Legalitätsmaskierung und Suche
+erfolgt. Der Value-Head verdichtet das Brett über eine \(1\times1\)- und eine
+\(8\times8\)-Faltung zu einem Vektor der Länge 128 und gibt über eine
+Dense-Schicht mit Softmax die WDL-Wahrscheinlichkeiten aus.
+
+Insgesamt besitzt das Netz rund 25{,}0 Millionen trainierbare Parameter.
+Tabelle~\ref{tab:params} zeigt ihre Verteilung: Über 96\,\% entfallen auf den
+Residual-Turm, während beide Köpfe zusammen unter 4\,\% ausmachen. Innerhalb eines
+Blocks dominieren die beiden \(3\times3\)-Faltungen; die SE-Rekalibrierung trägt
+mit rund 25\,000 Parametern nur etwa 2\,\% je Block bei.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{lrr}
+    \hline
+    Komponente & Parameter & Anteil \\
+    \hline
+    Initial-Conv + BN                          & 46\,592      & 0{,}2\,\% \\
+    SE-Residual-Turm (20 Blöcke)               & 24\,115\,840 & 96{,}3\,\% \\
+    \quad je Block                             & 1\,205\,792  & \\
+    \quad\quad 2\,\(\times\) Conv \(3\times3\) & 1\,179\,648  & \\
+    \quad\quad SE-Excitation (3 Dense)         & 25\,120      & \\
+    \quad\quad 2\,\(\times\) BatchNorm         & 1\,024       & \\
+    Policy-Head                                & 609\,097     & 2{,}4\,\% \\
+    \quad Conv \(3\times3\) (256\(\to\)256)    & 589\,824     & \\
+    \quad Conv \(1\times1\) (256\(\to\)73)     & 18\,761      & \\
+    \quad Gather \(\to\) 1858                  & 0            & \\
+    Value-Head                                 & 270\,915     & 1{,}1\,\% \\
+    \quad Conv \(1\times1\) (256\(\to\)32)     & 8\,192       & \\
+    \quad Conv \(8\times8\) (32\(\to\)128)     & 262\,272     & \\
+    \quad Dense (128\(\to\)3)                  & 387          & \\
+    \hline
+    Gesamt (trainierbar)                       & 25\,042\,444 & 100\,\% \\
+    \hline
+  \end{tabular}
+  \caption{Verteilung der trainierbaren Parameter (Konfiguration: 20 Blöcke,
+    256 Filter). Die Batch-Norm-Laufstatistiken tragen zusätzlich 21\,568
+    nicht-trainierbare Parameter bei.}
+  \label{tab:params}
+\end{table}
+
+\paragraph{Abweichungen von Leela.}
+Gegenüber der ursprünglichen Leela-Architektur wurde das Netz an drei Stellen
+vereinfacht:
+\begin{itemize}
+  \item \textbf{Keine Zughistorie.} Der Eingabetensor umfasst nur die aktuelle
+        Stellung (20 statt 112 Ebenen). Das verkleinert Netz und Rechenaufwand und
+        macht die Kodierung eindeutig: Dieselbe Stellung (FEN) wird stets auf
+        denselben Tensor abgebildet. Eine historienbehaftete Kodierung erzeugte je
+        nach Zugreihenfolge unterschiedliche Tensoren (Transpositionen), was die
+        gezielte Untersuchung einzelner Stellungen -- etwa bei der Fehlersuche am
+        Value-Head -- mehrdeutig machte.
+  \item \textbf{Kein Moves-Left-Head.} Leela besitzt optional einen dritten Kopf,
+        der die verbleibende Partielänge schätzt. Er wurde weggelassen, um
+        Parameterzahl und Komplexität zu senken; als optionale Komponente ist er
+        für die Zugwahl verzichtbar.
+  \item \textbf{Gather statt Fully-Connected im Policy-Head.} Frühere Varianten --
+        sowohl bei Leela \parencite{lc0issue637} als auch in einer früheren Version
+        dieses Projekts -- bildeten das 73-Ebenen-Feld über eine voll verbundene
+        Schicht auf die 1858 Züge ab. Der hier verwendete parameterfreie Gather
+        ersetzt diese Schicht: Eine äquivalente Dense-Abbildung von den
+        \(73\times8\times8 = 4672\) Zellen auf 1858 Züge benötigte 8\,682\,434
+        Parameter -- etwa ein Drittel des gesamten Netzes.
+\end{itemize}
 
 \subsection{Supervised Learning: Datenpipeline, Modell, Training}\label{sec:sl-impl} % [Danny]
 % Datenquellen, Stockfish-Annotation (Soft-Targets, lambda-Blend), Chunking,
 % Modell, Trainingssetup.  (~2.0 S.)
 
-\subsection{Reinforcement Learning: MCTS-Kern, Self-Play, Trainings-Loop} % [Tim]
+\subsection{Reinforcement Learning: MCTS-Kern, Self-Play, Trainings-Loop}\label{sec:rl-impl} % [Tim]
 % MCTS-Implementierung, Self-Play-Erzeugung, Trainings-Loop.  (~2.0 S.)
 
 
@@ -374,7 +449,7 @@ aus dem eigenen Spiel gewinnt und so die Lehrerquelle hinter sich lassen kann
 \subsection{Ergebnisse Reinforcement Learning}                    % [Tim]
 % Konvergenz; Staerke gegen Random und Stockfish-Level; Elo.  (~1.0 S.)
 
-\subsection{Direktvergleich: SL vs. RL}
+\subsection{Direktvergleich: SL vs. RL}\label{sec:headtohead}
 % Head-to-Head-Partien, Elo-Differenz; wer ist frueher/spaeter besser.  (~0.75 S.)
 
 \subsection{Rechenaufwand \& Inferenzzeit}
