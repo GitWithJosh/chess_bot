@@ -234,13 +234,59 @@ auf einer gemeinsamen Merkmalsbasis.
 Die konkrete Konfiguration dieses Netzes -- Anzahl der Blöcke, Filterzahl und der
 genaue Aufbau der Köpfe -- wird in Abschnitt~\ref{sec:arch} beschrieben.
 
-\subsection{Supervised Learning im Schachkontext}                 % [Danny]
-% Lernen aus annotierten Stellungen; Zielsignale (WDL/Soft-Targets).  (~1.0 S.)
+\subsection{Supervised Learning im Schachkontext}\label{sec:sl-context} % [Danny]
+Beim überwachten Lernen (Supervised Learning) lernt das Netz die Abbildung einer
+Stellung auf ihre Zielwerte -- eine Zugverteilung (Policy) und eine Bewertung
+(Value) -- aus einem festen, bereits beschrifteten Datensatz. Anders als das
+bestärkende Lernen (Abschnitt~\ref{sec:alphazero}), das seine Trainingsdaten
+selbst erzeugt, ahmt ein überwacht trainiertes Netz die im Datensatz enthaltenen
+Entscheidungen nach. Seine Spielstärke ist dadurch grundsätzlich durch die
+Qualität der Beschriftung begrenzt: Das Netz kann seine Lehrerquelle nachbilden,
+sie aber kaum übertreffen. Prominent ist dieser Ansatz aus AlphaGo, dessen
+Policy-Netz zunächst überwacht aus menschlichen Meisterpartien lernte
+\parencite{silver2016}.
+
+Für beide Köpfe werden Zielwerte benötigt. Das Policy-Ziel kann der tatsächlich
+gespielte Zug sein (eine einzelne \enquote{richtige} Antwort) oder eine ganze
+Zugverteilung, etwa aus den Analysen einer Engine. Das Value-Ziel beschreibt den
+Ausgang der Stellung; dabei stehen sich zwei Signale gegenüber: der Ausgang der
+gesamten Partie -- billig zu erheben, aber verrauscht, da jede Stellung einer
+gewonnenen Partie pauschal als \enquote{Sieg} gilt -- und die genauere, aber
+rechenintensive Einzelbewertung durch eine starke Engine. Diese Unterscheidung
+wird in Abschnitt~\ref{sec:sl-impl} vertieft.
+
+Ebenso entscheidend ist, woher die Stellungen stammen. Menschliche
+Partiedatenbanken sind umfangreich und stilistisch vielfältig, enthalten aber
+Fehler und menschliche Eigenheiten; Engine-Partien sind stärker und konsistenter,
+dafür einseitiger und teurer zu erzeugen. Auch die Zusammensetzung des Datensatzes
+prägt, was das Netz lernt:
+\begin{itemize}
+  \item \textbf{Vollständige Partien} liefern die natürliche Verteilung der
+        Stellungen über alle Partiephasen, sind jedoch schief -- Remis und ruhige
+        Mittelspielstellungen dominieren, klare Taktik ist selten.
+  \item \textbf{Taktikaufgaben (Puzzles)} konzentrieren scharfe, forcierte
+        Stellungen, sind aber untypisch und meist auf eine einzige Lösung sowie
+        auf die Gewinnerseite ausgerichtet.
+  \item \textbf{Endspieldatenbanken (Tablebases)} liefern exakte, fehlerfreie
+        Bewertungen, allerdings nur für die wenigen Steine eines Endspiels
+        (bis zu sieben Figuren).
+\end{itemize}
+Da unausgewogene Daten das Netz zu Abkürzungen verleiten -- etwa stets
+\enquote{Remis} vorherzusagen, wenn dieses Ergebnis überwiegt --, sind Abdeckung
+und Ausbalancierung von Klassen und Partiephasen ein zentrales methodisches Thema.
+
+Zwei Grenzen bleiben dem überwachten Ansatz eigen. Erstens die genannte
+Obergrenze durch die Lehrerquelle. Zweitens die Verteilungsverschiebung
+(Distribution Shift): Im Spiel trifft das Netz auf Stellungen, die aus seinen
+eigenen Zügen entstehen und im Trainingsdatensatz unterrepräsentiert sein können.
+Beide Grenzen motivieren das bestärkende Lernen durch Self-Play, das seine Daten
+aus dem eigenen Spiel gewinnt und so die Lehrerquelle hinter sich lassen kann
+(Abschnitt~\ref{sec:alphazero}).
 
 \subsection{Monte Carlo Tree Search (UCT, PUCT)}\label{sec:mcts}                  % [Tim]
 % Selektion/Expansion/Simulation/Backprop; UCT, PUCT mit Netz-Prior.  (~1.25 S.)
 
-\subsection{AlphaZero-Paradigma: Self-Play Reinforcement Learning} % [Tim]
+\subsection{AlphaZero-Paradigma: Self-Play Reinforcement Learning}\label{sec:alphazero} % [Tim]
 % MCTS + Self-Play, Policy/Value-Ziele aus Suche und Spielausgang.  (~0.75 S.)
 
 
@@ -251,7 +297,7 @@ genaue Aufbau der Köpfe -- wird in Abschnitt~\ref{sec:arch} beschrieben.
 % Netz, Encoding und Suche sind fuer beide Agenten identisch; nur das
 % Trainingssignal unterscheidet sich (~1.0 S.)
 
-\subsection{Supervised Learning: Datenpipeline, Modell, Training} % [Danny]
+\subsection{Supervised Learning: Datenpipeline, Modell, Training}\label{sec:sl-impl} % [Danny]
 % Datenquellen, Stockfish-Annotation (Soft-Targets, lambda-Blend), Chunking,
 % Modell, Trainingssetup.  (~2.0 S.)
 
