@@ -418,14 +418,10 @@ mit rund 25\,000 Parametern nur etwa 2\,\% je Block bei.
     \quad Conv \(8\times8\) (32\(\to\)128)          & 262\,272     & \\
     \quad Dense (128\(\to\)3)                       & 387          & \\
     \midrule
-    \textbf{Gesamt (trainierbar)}                   & \textbf{25\,042\,444} & \textbf{100\,\%} \\
+    \textbf{Parameter Anzahl}                   & \textbf{25\,042\,444} & \textbf{100\,\%} \\
     \bottomrule
   \end{tabular}
-  \caption{Verteilung der trainierbaren Parameter (Konfiguration \(20\times256\),
-    32 SE-Kanäle). Die beiden \(32\to256\)-Dense-Schichten (Skalierung und Bias)
-    entsprechen zusammen Leelas einzelner SE-Ausgabeschicht; daher drei statt zwei
-    Dense-Schichten je Block. Batch-Norm-Laufstatistiken ergänzen 21\,568
-    nicht-trainierbare Parameter.}
+  \caption{Verteilung der trainierbaren Parameter.}
   \label{tab:params}
 \end{table}
 
