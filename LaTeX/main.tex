@@ -238,27 +238,27 @@ dabei als \enquote{Bild} mit 20 Kanälen.
 
 Um Stellungen ausreichend tief zu verarbeiten, werden viele Faltungsschichten
 gestapelt. Sehr tiefe Netze leiden jedoch unter verschwindenden Gradienten.
-Residual-Netze (ResNets) begegnen dem mit Sprungverbindungen (Skip Connections),
+Residual-Netze (ResNets) begegnen dem mit Skip Connections,
 die den Eingang eines Blocks direkt zu dessen Ausgang addieren; der Block muss
 dann nur noch die Abweichung (das Residuum) lernen \parencite{he2016}. Die für
 Schach etablierte und auch hier verwendete Architektur von Leela Chess Zero
-besteht aus einem solchen Residual-Turm \parencite{lczero_nn, klein2022neural}.
+besteht aus einem solchen Residual-Tower \parencite{lczero_nn, klein2022neural}.
 
 Anders als klassische ResNet-Blöcke setzt Leela auf
 Squeeze-and-Excitation-Blöcke (SE), die einen Aufmerksamkeitsmechanismus über
-die Kanäle ergänzen: Aus dem globalen Mittel jeder Merkmalskarte wird ein Gewicht
+die Kanäle ergänzen: Aus dem globalen Mittel jeder Feature Map wird ein Gewicht
 je Kanal bestimmt, mit dem die Kanäle anschließend neu skaliert werden. So kann
 das Netz kontextabhängig betonen, welche Merkmale in einer Stellung wichtig sind
 \parencite{hu2018}; Leela nutzt dabei eine erweiterte, multiplikativ-additive
 Variante.
 
-Auf den gemeinsamen Rumpf folgen zwei Köpfe (Abbildung~\ref{fig:architecture}).
+Auf den gemeinsamen Rumpf folgen zwei Heads (Abbildung~\ref{fig:architecture}).
 Der Policy-Head gibt für jeden der 1858 möglichen Züge (Abschnitt~\ref{sec:encoding})
 einen unnormierten Wert (Logit) aus und bildet damit die Zugpräferenz. Der
 Value-Head schätzt den Ausgang der Partie; statt eines einzelnen skalaren Wertes
 verwendet die betrachtete Architektur eine WDL-Ausgabe -- drei über Softmax
 normierte Wahrscheinlichkeiten für Sieg, Remis und Niederlage aus Sicht der Seite
-am Zug. Da beide Köpfe denselben Rumpf teilen, beruhen Bewertung und Zugauswahl
+am Zug. Da beide Heads denselben Rumpf teilen, beruhen Bewertung und Zugauswahl
 auf einer gemeinsamen Merkmalsbasis.
 
 \begin{figure}[h]
@@ -269,7 +269,7 @@ auf einer gemeinsamen Merkmalsbasis.
       >=Stealth, node distance=7mm and 13mm]
     \node[box] (in) {Eingabe\\\(8\times8\times20\)};
     \node[box, right=of in] (conv) {Initial-\\Conv};
-    \node[box, right=of conv] (tower) {SE-Residual-\\Turm (20 Blöcke)};
+    \node[box, right=of conv] (tower) {SE-Residual-\\Tower (20 Blöcke)};
     \node[box, above right=of tower] (policy) {Policy-Head\\\(\rightarrow\) 1858 Zug-Logits};
     \node[box, below right=of tower] (value) {Value-Head\\\(\rightarrow\) WDL};
     \draw[->] (in) -- (conv);
@@ -277,13 +277,13 @@ auf einer gemeinsamen Merkmalsbasis.
     \draw[->] (tower.east) -- (policy.west);
     \draw[->] (tower.east) -- (value.west);
   \end{tikzpicture}
-  \caption{Zweiköpfige Leela-Architektur: geteilter Rumpf aus Initial-Faltung und
-    SE-Residual-Turm, darauf Policy- und Value-Head.}
+  \caption{Leela-Architektur mit zwei Heads: geteilter Rumpf aus Initial-Faltung und
+    SE-Residual-Tower, darauf Policy- und Value-Head.}
   \label{fig:architecture}
 \end{figure}
 
 Die konkrete Konfiguration dieses Netzes -- Anzahl der Blöcke, Filterzahl und der
-genaue Aufbau der Köpfe -- wird in Abschnitt~\ref{sec:arch} beschrieben.
+genaue Aufbau der Heads -- wird in Abschnitt~\ref{sec:arch} beschrieben.
 
 \subsection{Supervised Learning im Schachkontext}\label{sec:sl-context}
 Beim überwachten Lernen (Supervised Learning) lernt das Netz die Abbildung einer
@@ -297,7 +297,7 @@ sie aber kaum übertreffen. Prominent ist dieser Ansatz aus AlphaGo, dessen
 Policy-Netz zunächst überwacht aus menschlichen Meisterpartien lernte
 \parencite{silver2016}.
 
-Für beide Köpfe werden Zielwerte benötigt. Das Policy-Ziel kann der tatsächlich
+Für beide Heads werden Zielwerte benötigt. Das Policy-Ziel kann der tatsächlich
 gespielte Zug sein (eine einzelne \enquote{richtige} Antwort) oder eine ganze
 Zugverteilung, etwa aus den Analysen einer Engine. Das Value-Ziel beschreibt den
 Ausgang der Stellung; dabei stehen sich zwei Signale gegenüber: der Ausgang der
@@ -352,39 +352,39 @@ Abschnitt~\ref{sec:rl-impl}). Sie unterscheiden sich einzig im Trainingssignal.
 Damit misst der Vergleich in Kapitel~\ref{sec:eval} allein den Effekt des
 Trainingsparadigmas und nicht den unterschiedlicher Architekturen.
 
-Das Netz folgt dem Residual-Turm-Entwurf von Leela Chess Zero
+Das Netz folgt dem Residual-Tower-Entwurf von Leela Chess Zero
 \parencite{lczero_nn, klein2022neural} und ist in Abbildung~\ref{fig:architecture}
 skizziert. Den Eingang bildet der Tensor \(8\times8\times20\)
 (Abschnitt~\ref{sec:encoding}) -- Leela verwendet hier 112 Ebenen, da es
 zusätzlich acht vorangehende Halbzüge stapelt. Eine Initial-Faltung
-(\(3\times3\), Schrittweite 1) projiziert den Eingang auf 256 Merkmalskarten,
-gefolgt von Batch-Normierung und ReLU. Darauf folgt der Turm aus 20
-Squeeze-and-Excitation-Residualblöcken und schließlich die beiden Köpfe. Als
+(\(3\times3\), Schrittweite 1) projiziert den Eingang auf 256 Feature Maps,
+gefolgt von Batch-Normierung und ReLU. Darauf folgt der Tower aus 20
+Squeeze-and-Excitation-Residualblöcken und schließlich die beiden Heads. Als
 Standardkonfigurationen nennt Leela \(10\times128\), \(20\times256\) und
 \(24\times320\) (\texttt{BLOCKS}\,\(\times\)\,\texttt{FILTERS})
 \parencite{lczero_nn}; übernommen wurde die mittlere Variante \(20\times256\).
 
 Jeder Residualblock enthält zwei \(3\times3\)-Faltungen (Schrittweite 1) mit
 Batch-Normierung, gefolgt von einer SE-Rekalibrierung, und wird durch eine
-Sprungverbindung überbrückt. Die SE-Schicht übernimmt Leelas Aufbau
+Skip Connection überbrückt. Die SE-Schicht übernimmt Leelas Aufbau
 (Abschnitt~\ref{sec:nn}): Global Average Pooling verdichtet die 256
-Merkmalskarten zu einem Vektor der Länge \texttt{FILTERS} (256), eine
+Feature Maps zu einem Vektor der Länge \texttt{FILTERS} (256), eine
 Dense-Schicht reduziert ihn auf \texttt{SE\_CHANNELS} (hier 32) mit ReLU, und eine
 weitere expandiert ihn auf \(2\times\)\texttt{FILTERS} -- je Kanal einen
 multiplikativen Faktor (Sigmoid) und einen additiven Bias, mit denen die
-Merkmalskarten skaliert und verschoben werden.
+Feature Maps skaliert und verschoben werden.
 
-Der Policy-Head reduziert die Merkmalskarten über eine \(3\times3\)- und eine
+Der Policy-Head reduziert die Feature Maps über eine \(3\times3\)- und eine
 \(1\times1\)-Faltung auf die 73 Zugebenen und liest daraus mit einer festen
 Zuordnung (Gather) die 1858 Zug-Logits aus; eine Ausgabe-Softmax entfällt, da die
-Normierung erst nachgelagert bei Verlustberechnung, Legalitätsmaskierung und Suche
+Normierung erst nachgelagert bei Loss-Berechnung, Legalitätsmaskierung und Suche
 erfolgt. Der Value-Head verdichtet das Brett über eine \(1\times1\)- und eine
 \(8\times8\)-Faltung zu einem Vektor der Länge 128 und gibt über eine
 Dense-Schicht mit Softmax die WDL-Wahrscheinlichkeiten aus.
 
 Insgesamt besitzt das Netz rund 25{,}0 Millionen trainierbare Parameter.
 Tabelle~\ref{tab:params} zeigt ihre Verteilung: Über 96\,\% entfallen auf den
-Residual-Turm, während beide Köpfe zusammen unter 4\,\% ausmachen. Innerhalb eines
+Residual-Tower, während beide Heads zusammen unter 4\,\% ausmachen. Innerhalb eines
 Blocks dominieren die beiden \(3\times3\)-Faltungen; die SE-Rekalibrierung trägt
 mit rund 25\,000 Parametern nur etwa 2\,\% je Block bei.
 
@@ -398,7 +398,7 @@ mit rund 25\,000 Parametern nur etwa 2\,\% je Block bei.
     \quad Conv \(3\times3\) (20\(\to\)256)          & 46\,080      & \\
     \quad BatchNorm                                 & 512          & \\
     \addlinespace
-    \textbf{SE-Residual-Turm (20 Blöcke)}           & 24\,115\,840 & 96{,}3\,\% \\
+    \textbf{SE-Residual-Tower (20 Blöcke)}           & 24\,115\,840 & 96{,}3\,\% \\
     \quad je Block                                  & 1\,205\,792  & \\
     \quad\quad 2\,\(\times\) Conv \(3\times3\) (256\(\to\)256)  & 1\,179\,648 & \\
     \quad\quad SE: FC \(256\to32\) (ReLU)           & 8\,224       & \\
@@ -436,7 +436,7 @@ vereinfacht:
         nach Zugreihenfolge unterschiedliche Tensoren (Transpositionen), was die
         gezielte Untersuchung einzelner Stellungen -- etwa bei der Fehlersuche am
         Value-Head -- mehrdeutig machte.
-  \item \textbf{Kein Moves-Left-Head.} Leela besitzt optional einen dritten Kopf,
+  \item \textbf{Kein Moves-Left-Head.} Leela besitzt optional einen dritten Head,
         der die verbleibende Partielänge schätzt. Er wurde weggelassen, um
         Parameterzahl und Komplexität zu senken; als optionale Komponente ist er
         für die Zugwahl verzichtbar.
@@ -454,7 +454,7 @@ Der überwacht trainierte Agent verwendet dasselbe Netz (Abschnitt~\ref{sec:arch
 und dieselbe Suche (Abschnitt~\ref{sec:mcts}) wie der bestärkend trainierte; er
 unterscheidet sich allein im Trainingssignal. Dieses Signal stammt aus einem
 festen, beschrifteten Korpus, dessen Aufbau dieser Abschnitt von den Rohquellen
-über die Balancierung und die Stockfish-Annotation bis zum Trainingslauf
+über die Ausbalancierung und die Stockfish-Annotation bis zum Trainingslauf
 beschreibt. Der fertige Datensatz umfasst rund 23{,}5\,Mio.\ Positionen in 471
 Chunks zu je 50\,000 Beispielen.
 
@@ -471,8 +471,8 @@ liefert ein Trainingsbeispiel; Policy-Ziel ist der tatsächlich gespielte
 \emph{Puzzles.} Aus der Lichess-Puzzle-Datenbank werden Matt- und Endspielthemen
 bevorzugt, da sie Matt- und Endspielsituationen gezielt abdecken, die im
 menschlichen Material -- durch Aufgabe vor dem Matt -- unterrepräsentiert sind.
-Die lösende Seite liefert Gewinn-Positionen mit dem Lösungszug als Ziel, die
-verteidigende Seite Verlust-Positionen mit dem jeweiligen Verteidigungszug.
+Die lösende Seite liefert Sieg-Positionen mit dem Lösungszug als Ziel, die
+verteidigende Seite Niederlage-Positionen mit dem jeweiligen Verteidigungszug.
 
 \emph{Tablebase.} Aus den Syzygy-Endspieldatenbanken (bis fünf Steine) wird von
 zufälligen Stellungen aus die tablebase-optimale Linie gespielt und aufgezeichnet:
@@ -485,18 +485,18 @@ dem längsten Widerstand. Ergänzt werden exakt remise Stellungen ohne Policy-Zi
     \toprule
     Quelle & Policy-Ziel & Value-Label & Anteil \\
     \midrule
-    Spiele    & gespielter Zug (Mensch)       & Stockfish-Blend & 85\,\% \\
-    Puzzles   & Lösungs- / Verteidigungszug   & Stockfish-Blend & 10\,\% \\
+    Spiele    & gespielter Zug (Mensch)       & Soft-Target (SF) & 85\,\% \\
+    Puzzles   & Lösungs- / Verteidigungszug   & Soft-Target (SF) & 10\,\% \\
     Tablebase & DTZ-optimal / -- (Remis)      & one-hot (exakt) & 5\,\% \\
     \bottomrule
   \end{tabular}
   \caption{Die drei Datenquellen mit Policy-Ziel, Value-Label und Anteil je Chunk.
-    Spiel- und Puzzle-Positionen erhalten ein weiches, mit Stockfish gemischtes
-    Value-Ziel (siehe unten); Tablebase-Positionen bleiben exakt.}
+    Spiel- und Puzzle-Positionen erhalten ein mit Stockfish gemischtes
+    Soft-Target (siehe unten); Tablebase-Positionen bleiben exakt.}
   \label{tab:sources}
 \end{table}
 
-\paragraph{Klassen- und Quellenbalancierung.}
+\paragraph{Ausbalancierung von Klassen und Quellen.}
 Die Rohquellen sind stark unausgewogen: Menschliche Partien sind remislastig und
 enden häufig vor dem Matt durch Aufgabe, während Puzzles und Tablebase-Läufe fast
 ausschließlich entscheidend sind. Ohne Ausgleich verleiten diese Schieflagen das
@@ -509,8 +509,8 @@ drei Value-Klassen Sieg, Remis und Niederlage sind zu je einem Drittel vertreten
 Zwei gezielte Konstruktionen verhindern zusätzlich, dass bereits die Datenquelle
 den Ausgang verrät:
 \begin{itemize}
-  \item Puzzles liefern nicht nur Gewinn-, sondern auch Verteidigungspositionen
-        (mit Verlust-Label), sodass \enquote{sieht aus wie ein Puzzle} nicht länger
+  \item Puzzles liefern nicht nur Sieg-, sondern auch Verteidigungspositionen
+        (mit Niederlage-Label), sodass \enquote{sieht aus wie ein Puzzle} nicht länger
         \enquote{Seite am Zug gewinnt} bedeutet.
   \item Die Tablebase steuert neben entscheidenden auch exakt remise Stellungen
         bei, sodass wenige Steine auf dem Brett nicht pauschal als
@@ -528,7 +528,7 @@ oder unterlegen ist. Jede dieser Positionen wird daher zusätzlich von Stockfish
 bewertet. Aus einer Suche bis Tiefe~12 -- einem festen Kompromiss zwischen
 Bewertungsqualität und dem Aufwand, rund 22{,}4\,Mio.\ Positionen zu annotieren --
 liefert Stockfish eine WDL-Verteilung \(q\). Mit dem als One-Hot kodierten
-Partieausgang \(z\) ergibt sich das weiche Trainingsziel als konvexe Mischung
+Partieausgang \(z\) ergibt sich das Soft-Target als konvexe Mischung
 \[
   t = \lambda\, z + (1-\lambda)\, q, \qquad \lambda = 0{,}5 .
 \]
@@ -538,17 +538,17 @@ wie sie auch Leela verwendet. Tablebase-Positionen bleiben one-hot, da die
 Syzygy-Bewertung exakt ist und keiner Glättung bedarf.
 
 \paragraph{Chunking und Training.}
-Der balancierte Datensatz wird in 471 Chunks zu je 50\,000 Positionen geschrieben
+Der ausbalancierte Datensatz wird in 471 Chunks zu je 50\,000 Positionen geschrieben
 (Format \texttt{npz} mit Brett-Tensor, Policy- und Value-Ziel); zwei Chunks
 (100\,000 Positionen) werden als Validierungsmenge zurückgehalten. Trainiert wird
-dasselbe Netz wie auf der RL-Seite (Abschnitt~\ref{sec:arch}). Der Gesamtverlust
-summiert Policy- und Value-Verlust: Da der Policy-Head rohe Logits ausgibt
-(Abschnitt~\ref{sec:arch}), ist der Policy-Verlust eine Cross-Entropy über die
-Logits, der Value-Verlust eine Cross-Entropy über die drei WDL-Klassen. Remise
+dasselbe Netz wie auf der RL-Seite (Abschnitt~\ref{sec:arch}). Der Gesamt-Loss
+summiert Policy- und Value-Loss: Da der Policy-Head rohe Logits ausgibt
+(Abschnitt~\ref{sec:arch}), ist der Policy-Loss eine Cross-Entropy über die Logits,
+der Value-Loss eine Cross-Entropy über die drei WDL-Klassen. Remise
 Tablebase-Positionen besitzen kein Policy-Ziel und werden über ein Nullgewicht aus
-dem Policy-Verlust ausgeschlossen. Optimierer, Lernraten-Ablauf und
-Regularisierung folgen AlphaZero \parencite{silver2018} und sind in
-Tabelle~\ref{tab:sl-train} zusammengefasst.
+dem Policy-Loss ausgeschlossen. Optimierer, die stufenweise gesenkte
+Lernrate und die Regularisierung folgen AlphaZero \parencite{silver2018} und sind
+in Tabelle~\ref{tab:sl-train} zusammengefasst.
 
 \begin{table}[H]
   \centering
@@ -560,12 +560,12 @@ Tabelle~\ref{tab:sl-train} zusammengefasst.
     Lernrate       & \(10^{-4} \to 10^{-5}\) (70\,\%) \(\to 10^{-6}\) (90\,\%) \\
     Batch-Größe    & 512 \\
     Epochen        & 1 \\
-    Policy-Verlust & Cross-Entropy (aus Logits) \\
-    Value-Verlust  & Cross-Entropy (WDL) \\
+    Policy-Loss & Cross-Entropy (aus Logits) \\
+    Value-Loss  & Cross-Entropy (WDL) \\
     \bottomrule
   \end{tabular}
-  \caption{Trainingskonfiguration. Weight Decay und der stufenweise
-    Lernraten-Ablauf übernehmen die Vorgaben von AlphaZero \parencite{silver2018};
+  \caption{Trainingskonfiguration. Weight Decay und die stufenweise gesenkte
+    Lernrate übernehmen die Vorgaben von AlphaZero \parencite{silver2018};
     Rechenaufwand und die daraus folgende Beschränkung auf eine Epoche werden in
     Abschnitt~\ref{sec:compute} behandelt.}
   \label{tab:sl-train}
