@@ -15,7 +15,7 @@
 \usepackage{microtype}
 \usepackage{booktabs}
 \usepackage{float}
-\usepackage[style=authoryear]{biblatex}
+\usepackage[style=numeric]{biblatex}
 \usepackage[hidelinks=true]{hyperref}
 \usepackage{amsmath}
 
@@ -49,6 +49,7 @@
   \end{tabular}
 
 \includegraphics[width=0.4\textwidth]{img/magcal.jpg}
+
 \vfill
 
   {\large Mai -- Juli 2026}
@@ -75,29 +76,29 @@ Schach ist ein endliches, deterministisches Zwei-Personen-Nullsummenspiel mit pe
 
 \begin{itemize}
     \item \textbf{Perfekte Information und Determinismus} Beiden Spielern ist zu jedem Zeitpunkt der vollständige Spielzustand bekannt, und jeder Zug führt genau zu einer Folgestellung. Der Spielbaum ist damit von jeder Stellung aus prinzipiell vollständig expandierbar. Anders als etwa beim Poker müssen keine Annahmen über verdeckte Information getroffen werden und anders als beim Backgammon verbreitern keine Zufallsknoten den Baum.
-    \item \textbf{Nullsumme} Der Gewinn der einen Seite ist exakt der Verlust der anderen. Eine einzige Bewertungsgröße aus Sicht der Seite am Zug genügt daher, um die Präferenzen beider Spieler zu beschreiben. Das rechtfertigt sowohl das Minimax-Prinzip (Abschnitt~\ref{sec:minimax}) als auch die, dass das Netz mit einem einzigen Value-Head auskommt (Abschnitt~\ref{sec:nn}).
-    \item \textbf{Endlichkeit} Die 50-Züge-Regel (eine Partie ist Remis wenn, 50 Züge lang kein Bauer bewegt und keine Figur geschlagen wurde) und die Stellungswiederholungsregel (eine Partie ist Remis wenn dreimal die gleiche Stellung auf dem Brett steht) stellen sicher, dass jede Partie nach endlich vielen Zügen terminiert. Der Ausgang ist eines von drei Ergebnissen, formal \(z \in \{1, \tfrac{1}{2}, 0\}\) für Sieg, Remis und Niederlage.
+    \item \textbf{Nullsumme} Der Gewinn der einen Seite ist exakt der Verlust der anderen. Eine einzige Bewertungsgröße aus Sicht der Seite am Zug genügt daher, um die Präferenzen beider Spieler zu beschreiben. Das rechtfertigt sowohl das Minimax-Prinzip (Abschnitt~\ref{sec:minimax}) als auch die Eigenschaft, dass das Netz mit einem einzigen Value-Head auskommt (Abschnitt~\ref{sec:nn}).
+    \item \textbf{Endlichkeit} Die 50-Züge-Regel (eine Partie ist Remis wenn 50 Züge lang kein Bauer bewegt und keine Figur geschlagen wurde) und die Stellungswiederholungsregel (eine Partie ist Remis wenn dreimal die gleiche Stellung auf dem Brett steht) stellen sicher, dass jede Partie nach endlich vielen Zügen terminiert. Der Ausgang ist eines von drei Ergebnissen, formal \(z \in \{1, \tfrac{1}{2}, 0\}\) für Sieg, Remis und Niederlage.
     \item \textbf{Alternierende Züge} Es gibt keine simultanen Entscheidungen. Zusammen mit perfekter Information folgt daraus, dass für beide Seiten eine optimale Strategie existiert.
 \end{itemize}
 
-Von den Spielregeln selbst sind für das Weiterere vor allem jene Details relevant: die Sonderzüge Rochade, en-passant und Bauernumwandlung sowie die Remisregeln. Sie erscheinen in Abschnitt~\ref{sec:encoding} als eigene Ebenen des Eingabetensors bzw.\ als eigene Gruppe im Ausgaberaum wieder.
+Von den Spielregeln selbst sind für das Weitere vor allem jene Details relevant: die Sonderzüge Rochade, en-passant und Bauernumwandlung sowie die Remisregeln. Sie erscheinen in Abschnitt~\ref{sec:encoding} als eigene Ebenen des Eingabetensors bzw.\ als eigene Gruppe im Ausgaberaum wieder.
 
 \paragraph{Zustand, Zug und Spielbaum}
-Eine Stellung \(s\) umfasst mehr als die Belegung der 64 Felder. Zum Zustand gehören zusätzlich die Seite am Zug, die vier Rochenrechte, ein etwaiges en-passant-Zielfeld un der Halbzuzähler der 50-Züge-Regel. Genau dieses Tupel hält die Forsyth-Edwards-Notation (FEN) fest, und genau diese tauchen in Tabelle~\ref{tab:planes} als Ebenen des Brett-Tensors wieder auf.
+Eine Stellung \(s\) umfasst mehr als die Belegung der 64 Felder. Zum Zustand gehören zusätzlich die Seite am Zug, die vier Rochadenrechte, ein etwaiges en-passant-Zielfeld und der Halbzuzähler der 50-Züge-Regel. Genau dieses Tupel hält die Forsyth-Edwards-Notation (FEN) fest, und genau diese tauchen in Tabelle~\ref{tab:planes} als Ebenen des Brett-Tensors wieder auf.
 
 Diese Zustandsdefinition ist so gewählt, dass sie die Markov-Eigenschaft erfüllt. Sowohl die Menge der legalen Fortsetzungen als auch der spieltheoretische Wert einer Stellung hängen ausschließlich von \(s\) ab und nicht davon, über welche Zugfolge \(s\) erreicht wurde. Zwei durch unterschiedliche Zugreihenfolgen entstandene, ansonsten identische Stellungen (Transpositionen) sind spielrelevant dasselbe Objekt. Streng genommen bildet die Regel zur dreifachen Stellungswiederholung hiervon eine Ausnahme, da sie auf die Partiehistorie zurückgreift. Sie wird in der Suche gesondert behandelt und geht nicht in die Stellungsbewertung ein. Diese Eigenschaft ist die Grundlage für die Abschnitt~\ref{sec:encoding} gewählte historienfreie Kodierung.
 
 Bezeichnet \(A(s)\) die Menge der in \(s\) legalen Züge und \(s\cdot a\) die Stellung, die aus \(s\) durch Ausführung von \(a \in A(s)\) hervorgeht, so lässt sich das gesamte Spiel als Baum darstellen: Die Wurzel ist die Ausgangsstellung, jede Kante entspricht einem Halbzug, die Knoten einer Ebene gehören abwechselnd der einen und der anderen Seite, und die Blätter sind terminale Stellungen mit bekanntem Ergebnis \(z(s)\). Sowohl die klassische Alpha-Beta-Search (Abschnitt~\ref{sec:minimax}) als auch die Monte-Carlo-Tree-Search (Abschnitt~\ref{sec:mcts}) operieren auf genau diesem Baum. Sie unterscheiden sich lediglich darin, welchen Ausschnitt davon sie betrachten.
 
 \paragraph{Größe des Suchraums}
-Die Schwierigkeit des Problems liegt nicht in der Komplexität der Regeln, sondern in der Größe dieses Baumes. Üblicherweise werden zwei Maße unterschieden \autocite{allis1994}. Die \emph{Zustandsraumkomplexität} zählt die Menge der erreichbaren legalen Stellungen. \textcite{shannon1950} schätzte sie auf etwa \(10^{43}\), neuere Stichprobenverfahren kommen auf rund \(4{,}59 \pm 0.38\cdot10^{44}\) mit einer Konfidenz von 95\% \parencite{tromp2021}. Die \emph{Spielbaumkomplexität} zählt dagegen die Zahl der möglichen Partieverläufe und ergibt sich näherungsweise als
+Die Schwierigkeit des Problems liegt nicht in der Komplexität der Regeln, sondern in der Größe dieses Baumes. Üblicherweise werden zwei Maße unterschieden \autocite{allis1994}. Die \emph{Zustandsraumkomplexität} zählt die Menge der erreichbaren legalen Stellungen. \textcite{shannon1950} schätzte sie auf etwa \(10^{43}\), neuere Stichprobenverfahren kommen auf rund \(4{,}59 \pm 0,38\cdot10^{44}\) mit einer Konfidenz von 95\% \parencite{tromp2021}. Die \emph{Spielbaumkomplexität} zählt dagegen die Zahl der möglichen Partieverläufe und ergibt sich näherungsweise als
 \[
   |T| \approx b^{\,d},
 \]
 wobei \(b\) den durchschnittlichen Verzweigungsgrad und \(d\) die mittlere Partielänge in Halbzügen bezeichnet. Mit den gängigen Werten \(b \approx 35\) und \(d \approx 80\) liegt \(|T|\) in der Größenordnung von \(10^{120}\), der sogenannten Shannon-Zahl \parencite{shannon1950}.
 
 \paragraph{Theoretisch lösbar, praktisch unlösbar}
-Schach ist ein endliches Nullsummenspiel mit perfekter Information und ohne Zufallselement. Fasst man den Zustand $s$ so weit, wie es \textcite{shannon1950} für sein Stellungsformat vorsieht (Figurenstellung, Zugrecht, Rochaderechte, letzter Zug sowie der Zähler seit dem letzten Bauernzug oder Schlagfall), so besitzt jede Stellung genau einen der drei Werte \emph{gewonnen für Weiß}, \emph{remis} oder\emph{gewonnen für Schwarz}. 
+Schach ist ein endliches Nullsummenspiel mit perfekter Information und ohne Zufallselement. Fasst man den Zustand $s$ so weit, wie es \textcite{shannon1950} für sein Stellungsformat vorsieht (Figurenstellung, Zugrecht, Rochaderechte, letzter Zug sowie der Zähler seit dem letzten Bauernzug oder Schlagfall), so besitzt jede Stellung genau einen der drei Werte \emph{gewonnen für Weiß}, \emph{remis} oder \emph{gewonnen für Schwarz}. 
 
 Da jede Partie nach endlich vielen Zügen endet, lässt sich der Wert einer Stellung bestimmen, indem man vom Partieende rückwärts arbeitet \parencite{shannon1950}. 
 Die Kombinatorik macht diesen Weg unbegehbar. Shannon rechnet mit etwa $30$ legalen Zügen pro Stellung, also rund $10^{3}$ Fortsetzungen je Zugpaar, und bei einer typischen Partielänge von $40$ Zügen mit etwa $10^{120}$ zu prüfenden Varianten. Eine Maschine, die eine Variante pro Mikrosekunde abarbeitet, bräuchte nach Shannon also über $10^{90}$ Jahre für den ersten Zug.
@@ -107,7 +108,7 @@ Zwei Beispiele verdeutlichen noch einmal die Komplexität. Erstens sind Endspiel
 \paragraph{Was ist ein guter Zug?}
 Aus dieser Lücke zwischen theoretischer Bestimmtheit und praktischer Unberechenbarkeit ergibt sich eine wichtige Fragestellung dieser Arbeit. Ein Zug ist \emph{objektiv} optimal, wenn er den spieltheoretischen Wert der Stellung nicht verschlechtert Da dieser theoretische Wert unzugänglich ist, lässt sich diese Eigenschaft für keinen konkreten Zug nachweisen. In der Praxis wird ein Zug daher \emph{operativ} bewertet: Er ist gut, wenn er unter gegebener Rechenzeit die Gewinnerwartung gegen einen realen Gegner maximiert.
  
-Für die Zugwahl durch Engines im Schach gibt es im Wesentlichen zwei Stellschrauben: \emph{wie viele} Stellungen ein Programm betrachtet (Suche) und \emph{wie gut} es eine einzelne Stellung einschätzt (Bewertung). Klassische Engines setzen primär auf die erste Stellschraube und kompensieren eine vergleichsweise grobe Bewertungsfunktion durch enorme Suchbreite (Abschnitt~\ref{sec:minimax}). Der in dieser Arbeit verfolgte AlphaZero-artige Ansatz verschiebt das Gewicht auf die zweite: Ein aufwändiges neuronales Netz liefert Bewertung und Zugvorauswahl, sodass mit deutlichweniger besuchten Stellungen ausgekommen wird (Abschnitte~\ref{sec:nn}--\ref{sec:mcts}).
+Für die Zugwahl durch Engines im Schach gibt es im Wesentlichen zwei Stellschrauben: \emph{wie viele} Stellungen ein Programm betrachtet (Suche) und \emph{wie gut} es eine einzelne Stellung einschätzt (Bewertung). Klassische Engines setzen primär auf die erste Stellschraube und kompensieren eine vergleichsweise grobe Bewertungsfunktion durch enorme Suchbreite (Abschnitt~\ref{sec:minimax}). Der in dieser Arbeit verfolgte AlphaZero-artige Ansatz verschiebt das Gewicht auf die zweite: Ein aufwändiges neuronales Netz liefert Bewertung und Zugvorauswahl, sodass mit deutlich weniger besuchten Stellungen ausgekommen wird (Abschnitte~\ref{sec:nn}--\ref{sec:mcts}).
  
 Eine unmittelbare Konsequenz dieser Sichtweise ist, dass Spielstärke nicht absolut, sondern nur \emph{relativ} messbar ist und zwar über Partieergebnisse gegen andere Spieler. Der nächste Abschnitt stellt mit dem Elo-Modell das Verfahren vor, mit dem diese relativen Ergebnisse in eine vergleichbare Skala überführt werden.
  
@@ -336,9 +337,93 @@ aus dem eigenen Spiel gewinnt und so die Lehrerquelle hinter sich lassen kann
 
 \subsection{Monte Carlo Tree Search (UCT, PUCT)}\label{sec:mcts}                  % [Tim]
 % Selektion/Expansion/Simulation/Backprop; UCT, PUCT mit Netz-Prior.  (~1.25 S.)
+Die klassische Alpha-Beta-Suche durchsucht den Spielbaum bis zu einer festen Tiefe weitgehend gleichmäßig. Monte Carlo Tree Search (MCTS) verfolgt einen anderen Ansatz: Der Suchbaum wird schrittweise und \emph{asymmetrisch} aufgebaut, indem wiederholt einzelne Pfade von der Wurzel abwärts durchlaufen und die dabei gewonnenen Bewertungen in den besuchten Knoten aggregiert werden \parencite{coulom2006efficient, klein2022neural}. Das Ziel ist hierbei vielversprechendere Varianten tiefer auszubauen.
+
+\paragraph{Ablauf einer Simulation}
+Jeder Knoten des Baumes entspricht einer Stellung, jede Kante einem Zug. Zu jeder Kante \((s,a)\) werden die Besuchszahl \(N(s,a)\), die kumulierte Bewertung \(W(s,a)\) und der daraus gemittelte Aktionswert \(Q(s,a) = W(s,a)/N(s,a)\) gespeichert. Eine Simulation besteht aus vier Phasen:
+ 
+\begin{enumerate}
+  \item \textbf{Selektion} Von der Wurzel aus wird solange ein Kind nach       einer Auswahlregel gewählt, bis ein noch nicht expandierter Knoten erreicht  ist. Diese Auswahlregel ist der Kern des Verfahrens und Gegenstand des Folgenden.
+  \item \textbf{Expansion} Der erreichte Knoten wird in den Baum eingefügt und seine legalen Züge als Kanten angelegt.
+  \item \textbf{Simulation oder Evaluation} Die neue Stellung wird bewertet. Klassisch geschieht dies durch eine oder mehrere zufällige Partien bis zum Ende (Rollout), im hier verwendeten Ansatz durch einen einzelnen Forwardpass des neuronalen Netzes (Abschnitt~\ref{sec:nn}).
+  \item \textbf{Backpropagation} Der Bewertungswert wird entlang des durchlaufenen Pfades zur Wurzel zurückgereicht; dabei werden \(N\) und \(W\) aktualisiert. Da Bewertungen stets aus Sicht der Seite am Zug gelten, wird das Vorzeichen auf jeder Ebene invertiert.
+\end{enumerate}
+Nach Erschöpfen des Simulationsbudgets wird an der Wurzel nicht der Zug mit dem höchsten \(Q\) gespielt, sondern der meistbesuchte. Besuchszahlen sind robuster, da eine einzelne fehlerhafte Bewertung einen Mittelwert stark verzerren kann, sich in den Besuchen aber nur langsam niederschlägt.
+
+\paragraph{UCT}
+Die Selektion stellt ein Abwägungsproblem zwischen Ausnutzung bereits guter Züge und Erkundung wenig besuchter Alternativen dar. UCT (\emph{Upper Confidence Bounds applied to Trees}) behandelt jeden Knoten als eigenständiges Multi-Armed-Bandit-Problem und überträgt die UCB1-Regel \autocite{auer2002finite} auf den Spielbaum \autocite{kocsis2006bandit}:
+\[
+  a^{*} = \arg\max_{a}\left[\,Q(s,a) + c\,\sqrt{\frac{\ln N(s)}{N(s,a)}}\,\right],
+  \qquad N(s) = \sum_{b} N(s,b).
+\]
+Der zweite Term wächst, wenn Geschwisterknoten häufig besucht wurden, und schrumpft mit den eigenen Besuchen. Für \(N(s,a) = 0\) ist er unbeschränkt: Jeder legale Zug muss also mindestens einmal besucht werden, bevor ein Zug ein zweites Mal ausgewählt wird. Zudem enthält die Regel kein Domänenwissen und alle unbesuchten Züge sind a priori gleichwertig.
+ 
+Beides ist für Schach ungünstig. Bei einem Verzweigungsgrad von \(b \approx 35\) (Abschnitt~\ref{sec:formal}) verbraucht bereits die vollständige Erstexpansion einen erheblichen Teil eines realistischen Simulationsbudgets für offensichtlich sinnlose Züge. Hinzu kommt, dass zufällige Rollouts in taktisch scharfen Schachstellungen kaum mit der tatsächlichen Stellungsqualität korrelieren.
+
+\paragraph{PUCT} PUCT (\emph{Predictor + UCT}) ersetzt daher den uninformierten Erkundungsterm durch einen, der eine vorab geschätzte Zugwahrscheinlichkeit gewichtet \autocite{rosin2011multi}. In der von AlphaZero verwendeten Form \parencite{silver2018} lautet die Regel
+\[
+  a^{*} = \arg\max_{a}\bigl[\,Q(s,a) + U(s,a)\,\bigr],
+  \qquad
+  U(s,a) = c_{\mathrm{puct}}\; P(s,a)\;
+           \frac{\sqrt{N(s)}}{1 + N(s,a)} .
+\]
+Dabei ist \(P(s,a)\) der Prior aus dem Policy-Head, also die über die legalen Züge maskierte und normierte Softmax-Ausgabe (Abschnitt~\ref{sec:encoding}). Der Prior wirkt multiplikativ. Ein vom Netz als plausibel eingestufter Zug erhält einen um Größenordnungen höheren Erkundungsbonus als ein unplausibler. Damit sinkt der effektive Verzweigungsgrad erheblich, und das Simulationsbudget konzentriert sich auf den relevanten Teil des Baumes.
+
+Der Unterschied im Nenner (\(1 + N(s,a)\) statt \(\sqrt{N(s,a)}\)) ist wichtig. Der Bonus bleibt für unbesuchte Knoten endlich, sodass Züge mit sehr kleinem Prior bei begrenztem Budget nie besucht werden. 
+PUCT gibt die Vollständigkeit von UCT also bewusst zugunsten größerer Suchtiefe auf und wird dadurch von der Qualität des Priors abhängig. Der Wechsel von \(\sqrt{\ln N(s)}\) zu \(\sqrt{N(s)}\) im Zähler wirkt dem teilweise entgegen, da die Erkundung mit wachsender Simulationszahl langsamer versiegt und die Suche einen systematisch falschen Prior korrigieren kann.
+
+Entscheidend ist, dass die resultierende Besuchsverteilung in der Regel eine bessere Zugbewertung als der Netz-Prior ist, da sie durch tatsächlich gesuchte Stellungsbewertungen korrigiert wurde. 
+MCTS wirkt damit als Verbesserung auf die Policy, die Grundlage des in Abschnitt~\ref{sec:alphazero} beschriebenen Self-Play-Trainings. Implementierungsdetails wie die Behandlung unbesuchter Knoten, die Wahl von \(c_{\mathrm{puct}}\) und dem Rauschen werden in Abschnitt~\ref{sec:rl-impl} beschrieben.
 
 \subsection{AlphaZero-Paradigma: Self-Play Reinforcement Learning}\label{sec:alphazero} % [Tim]
 % MCTS + Self-Play, Policy/Value-Ziele aus Suche und Spielausgang.  (~0.75 S.)
+Das AlphaZero-Paradigma verbindet die beiden zuvor beschriebenen Bausteine zu einem geschlossenen Kreislauf \parencite{silver2017mastering, silver2018}: Das Netz steuert über Prior und Bewertung die Suche, und die Suche erzeugt umgekehrt die Daten, mit denen das Netz trainiert wird. Externe Partien oder annotierte Stellungen werden dabei nicht zwingend benötigt. Das Verfahren startet mit zufällig initialisierten Gewichten.
+
+\paragraph{Trainingsziele}
+Grundlage ist die in Abschnitt~\ref{sec:mcts} beschriebene Eigenschaft, dass die Besuchsverteilung einer MCTS-Suche eine bessere Zugbewertung darstellt als der rohe Netz-Prior. Aus jeder im Self-Play gespielten Stellung \(s_t\) werden daher zwei Zielsignale gewonnen:
+\begin{itemize}
+  \item \(\boldsymbol{\pi}_t\), die aus den Besuchszahlen abgeleitete
+        Zugverteilung an der Wurzel, als Ziel für den Policy-Head;
+  \item \(z_t\), der tatsächliche Ausgang der Partie aus Sicht der in \(s_t\) am
+        Zug befindlichen Seite, als Ziel für den Value-Head.
+\end{itemize}
+Der Value-Head lernt also aus dem realen Partieergebnis, der Policy-Head aus der Suche. Trainiert wird auf der gemeinsamen Verlustfunktion
+\[
+  \ell = (z - v)^2 \;-\; \boldsymbol{\pi}^{\top} \log \mathbf{p}
+         \;+\; c\,\lVert\theta\rVert^2 ,
+\]
+wobei \(\mathbf{p}\) und \(v\) die Ausgaben des Netzes bezeichnen und der letzte Term der Regularisierung dient. Bei der hier verwendeten WDL-Ausgabe (Abschnitt~\ref{sec:nn}) tritt an die Stelle des quadratischen Fehlers eine Kreuzentropie über die drei möglichen Partieausgänge.
+
+\paragraph{Iterationsschleife}
+Das Training verläuft in Iterationen aus drei Schritten:
+\begin{enumerate}
+  \item \textbf{Self-Play} Das aktuelle Netz spielt eine feste Anzahl Partien
+        gegen sich selbst. Jede besuchte Stellung wird mit \(\boldsymbol{\pi}_t\)
+        und \(z_t\) in einen Puffer geschrieben.
+  \item \textbf{Training} Auf Stichproben aus diesem Puffer werden die Gewichte
+        aktualisiert.
+  \item \textbf{Evaluation} Das neue Netz tritt in einem Match gegen die
+        bisherige Iteration an und wird nur dann als neuer Ausgangspunkt
+        übernommen, wenn es einen zuvor festgelegten Punktanteil überschreitet;
+        andernfalls werden die Gewichte verworfen und die bisherige Version
+        erzeugt weiterhin die Self-Play-Daten.
+\end{enumerate}
+Dieses Aussieben (\emph{Gating}) verhindert, dass eine verschlechterte Version die Datengenerierung übernimmt. AlphaGo Zero verwendete hierfür eine Schwelle von 55\,\% über 400 Partien \parencite{silver2017mastering}. Der Nachfolger AlphaZero verzichtete auf diesen Schritt und trainierte ein einziges, fortlaufend aktualisiertes Netz \parencite{silver2018}.
+
+Damit unterscheidet sich dieser Ansatz vom überwachten Lernen im Trainingssignal. Statt aus vorgegebenen Zielwerten (Abschnitt~\ref{sec:sl-context}) stammen beide Ziele aus dem System selbst, die Policy aus der eigenen Suche, der Value aus dem eigenen Spielergebnis.
+
+Ein zweiter Unterschied betrifft die Herkunft der Daten. Lernt ein Netz, den Zug eines menschlichen Spielers vorherzusagen, approximiert es dessen Spielweise, einschließlich der darin enthaltenen systematischen Verzerrungen. Etablierte Eröffnungstheorie, positionelle Faustregeln und stilistische Vorlieben sind gewachsene Konventionen, deren Optimalität nicht bewiesen ist; da sie im gesamten Korpus geteilt werden, mitteln sie sich auch mit wachsender Datenmenge nicht heraus, sondern gehen als systematischer Fehler in das Modell ein. 
+Hinzu kommt eine ungleichmäßige Abdeckung des Stellungsraums: Menschliche Partien konzentrieren sich stark auf bekannte Theorie, sodass gerade jene Stellungen unterrepräsentiert sind, die eine Suche später dennoch betritt. 
+
+Self-Play unterliegt diesen Beschränkungen nicht (der Agent sieht allerdings nur, was seine eigene Policy erzeugt, dem wird jedoch durch Dirichlet-Rauschen am Wurzelknoten entgegengewirkt, Abschnitt~\ref{sec:rl-impl}) und erzeugt seine Daten aus genau der Verteilung, in der der Agent anschließend agiert. Dieser Punkt wird von \textcite{silver2017mastering} als wesentlicher Vorteil des Verfahrens angeführt.
+
+Als Beispiel lässt sich der frühe Vorstoß des h-Bauern (h2--h4) anführen. In
+menschlichen Partien war dieser Zug zum Zeitpunkt der Veröffentlichung von
+AlphaZero vergleichsweise selten, da der h-Bauer üblicherweise zur Deckung des
+kurz rochierten Königs benötigt wird. AlphaZero bevorzugte ihn dennoch in einer
+Vielzahl von Stellungstypen. Offenbar wiegt der damit verbundene Raumgewinn am
+Königsflügel (und die Möglichkeit mit h4--h5--h6 den gegenerischen König anzugreifen) in vielen Fällen schwerer als die Schwächung der eigenen
+Königsstellung.
 
 
 \section{Implementierung}
