@@ -20,7 +20,8 @@ twice with the colours swapped (total games = 2 x OPENINGS). Colour reversal
 cancels white bias; distinct openings (a repeat is rerolled) stop two fixed
 opponents from replaying one identical game.
 
-Usage on Kaggle (set Accelerator = GPU first):
+Usage on Kaggle (set Accelerator = GPU first): paste this file into a cell to
+define everything, then in a *separate* cell call run_match(...):
 
     !pip install chess -q
     !apt-get install -y stockfish -q          # only if you use the stockfish side
@@ -31,10 +32,8 @@ Usage on Kaggle (set Accelerator = GPU first):
     run_match(player_a="16_sl_best.weights.h5", player_b="random", openings=25)
 
 A player spec can also carry per-side overrides, e.g. "stockfish:level=8,time=0.2".
-Locally it runs as a script too (paths resolve against the repo).
 """
 
-import argparse
 import glob
 import math
 import os
@@ -57,7 +56,7 @@ PLAYER_A = "16_sl_best.weights.h5"
 PLAYER_B = "sl_best.weights.h5"
 MODE = "mcts"        # net move selection: "mcts" (search) | "raw" (policy argmax)
 SIMS = 1000          # MCTS simulations per move (net, mode="mcts")
-BATCH_SIZE = 16      # MCTS leaf batch size (net)
+BATCH_SIZE = 32      # MCTS leaf batch size (net)
 SF_TIME = 0.1        # stockfish: fixed seconds/move
 SF_LEVEL = None      # stockfish: skill level 0-20 (None = full strength)
 SF_ELO = None        # stockfish: UCI_Elo (overrides skill level; ~1320-3190)
@@ -66,23 +65,16 @@ OPENING_PLIES = 3    # random plies used to seed each opening (a "3-move" openin
 MAX_PLIES = 400      # adjudicate a draw past this so a shuffling player can't hang
 SEED = 7             # seeds the random openings + the random player
 RENDER = False       # draw the SVG board in a notebook as each game plays
-OUT_PGN = None       # None -> /kaggle/working/compare_nets_kaggle.pgn (or repo results/ locally)
+OUT_PGN = None       # None -> /kaggle/working/compare_nets_kaggle.pgn
 # ================================================================================
 
 
 # ---------------------------------------------------------------------------
-# Path setup — locate the repo both locally and on Kaggle, with no __file__
+# Path setup — locate the repo by walking the Kaggle mounts, with no __file__
 # (so it works pasted into a cell). Mirrors play_notebook._find_repo_root.
 # ---------------------------------------------------------------------------
 
 def _find_repo_root() -> str:
-    try:
-        here = os.path.dirname(os.path.abspath(__file__))
-        cand = os.path.normpath(os.path.join(here, ".."))
-        if os.path.isdir(os.path.join(cand, "reinforcement_learning")):
-            return cand
-    except NameError:
-        pass  # no __file__ (pasted into a cell) — fall back to walking mounts
     for base in ("/kaggle/input", "/kaggle/working", os.getcwd()):
         if not os.path.isdir(base):
             continue
@@ -116,11 +108,8 @@ _RESULT_SCORE = {"1-0": 1.0, "0-1": 0.0, "1/2-1/2": 0.5}
 
 
 def _default_out_pgn() -> str:
-    """Write into /kaggle/working on Kaggle (the mounts are read-only); locally
-    fall back to the repo's results/ dir."""
-    if os.path.isdir("/kaggle/working"):
-        return "/kaggle/working/compare_nets_kaggle.pgn"
-    return os.path.join("supervised_learning", "results", "compare_nets_kaggle.pgn")
+    """Write into /kaggle/working (the input mounts are read-only)."""
+    return "/kaggle/working/compare_nets_kaggle.pgn"
 
 
 def _find_weights(spec: str) -> str:
@@ -543,51 +532,3 @@ def run_match(
     save_pgn(games, summary, out_pgn)
     print(f"\nWrote {len(games)} games + summary -> {out_pgn}")
     return games
-
-
-def main():
-    ap = argparse.ArgumentParser(description="Colour-balanced net/stockfish/random match.")
-    ap.add_argument("--player-a", "--net-a", dest="player_a", default=PLAYER_A,
-                    help="net weights filename, 'stockfish[:opts]', or 'random'")
-    ap.add_argument("--player-b", "--net-b", dest="player_b", default=PLAYER_B,
-                    help="net weights filename, 'stockfish[:opts]', or 'random'")
-    ap.add_argument("--openings", type=int, default=OPENINGS,
-                    help="unique openings; total games = 2 x this")
-    ap.add_argument("--mode", default=MODE, choices=["mcts", "raw"],
-                    help="net move selection")
-    ap.add_argument("--sims", type=int, default=SIMS, help="MCTS sims/move (net, mcts mode)")
-    ap.add_argument("--batch-size", type=int, default=BATCH_SIZE)
-    ap.add_argument("--sf-time", type=float, default=SF_TIME,
-                    help="stockfish seconds/move")
-    ap.add_argument("--sf-level", type=int, default=SF_LEVEL,
-                    help="stockfish skill level 0-20")
-    ap.add_argument("--sf-elo", type=int, default=SF_ELO,
-                    help="stockfish UCI_Elo (overrides --sf-level)")
-    ap.add_argument("--opening-plies", type=int, default=OPENING_PLIES)
-    ap.add_argument("--max-plies", type=int, default=MAX_PLIES)
-    ap.add_argument("--seed", type=int, default=SEED, help="seed openings + random player")
-    ap.add_argument("--render", action="store_true",
-                    help="draw the SVG board (only visible in a notebook)")
-    ap.add_argument("--out", default=OUT_PGN, help="PGN output path (default: Kaggle working)")
-    args = ap.parse_args()
-
-    run_match(
-        player_a=args.player_a,
-        player_b=args.player_b,
-        openings=args.openings,
-        num_simulations=args.sims,
-        mode=args.mode,
-        batch_size=args.batch_size,
-        sf_time=args.sf_time,
-        sf_level=args.sf_level,
-        sf_elo=args.sf_elo,
-        opening_plies=args.opening_plies,
-        max_plies=args.max_plies,
-        seed=args.seed,
-        render=args.render,
-        out_pgn=args.out,
-    )
-
-
-if __name__ == "__main__":
-    main()

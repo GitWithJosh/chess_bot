@@ -112,7 +112,7 @@ Für die Zugwahl durch Engines im Schach gibt es im Wesentlichen zwei Stellschra
  
 Eine unmittelbare Konsequenz dieser Sichtweise ist, dass Spielstärke nicht absolut, sondern nur \emph{relativ} messbar ist und zwar über Partieergebnisse gegen andere Spieler. Der nächste Abschnitt stellt mit dem Elo-Modell das Verfahren vor, mit dem diese relativen Ergebnisse in eine vergleichbare Skala überführt werden.
  
-\subsection{Spielstärke quantifizieren !!!VOERST NUR VON CLAUDE GEVIBED!!!}             % [Tim]
+\subsection{Spielstärke quantifizieren !!!VOERST NUR VON CLAUDE GEVIBED!!!}\label{sec:elo}             % [Tim]
 Das gebräuchliche Verfahren hierfür ist das Elo-System \parencite{elo1978}. Es ordnet jedem Spieler eine Zahl \(R\) zu und modelliert den erwarteten Punktanteil \(E_A\) von Spieler \(A\) gegen Spieler \(B\) allein als Funktion der Differenz beider Zahlen:
 \[
   E_A = \frac{1}{1 + 10^{\,(R_B - R_A)/400}}.
@@ -667,13 +667,189 @@ SL-Varianten in Abschnitt~\ref{sec:sl-results}.
 \section{Evaluation \& Ergebnisse}\label{sec:eval}
 % ~4.0 S.
 
-\subsection{Versuchsaufbau}
-%  Gegnersatz, Stockfish-Level, Zeit-/Sim-Budget,
-% Eroeffnungen, Partienzahl, Farbausgleich, Elo-Anker.  (~0.75 S.)
+\subsection{Versuchsaufbau}\label{sec:eval-setup}
+Beide Agenten teilen sich Netzarchitektur (Abschnitt~\ref{sec:arch}),
+Zugkodierung (Abschnitt~\ref{sec:encoding}) und Suche (Abschnitt~\ref{sec:mcts})
+und unterscheiden sich allein im Trainingssignal. Damit die Ergebnisse auf einer
+gemeinsamen Skala vergleichbar bleiben, folgen alle Spielstärkemessungen dieses
+Kapitels demselben Messverfahren; die ansatzspezifischen Details -- welche
+Varianten gegen welche Gegner antreten -- benennen die jeweiligen
+Ergebnisabschnitte (für das überwachte Lernen Abschnitt~\ref{sec:sl-results}).
 
-\subsection{Ergebnisse Supervised Learning}\label{sec:sl-results}  % [Danny]
-% Konvergenz; Staerke gegen Stockfish-Level und Elo; Vergleich der SL-Ansaetze
-% untereinander (z.B. Outcome-only vs. Stockfish-annotiert).  (~1.0 S.)
+\paragraph{Spielprotokoll.}
+Eine Messung besteht aus einem farbausgeglichenen Match zwischen zwei Gegnern.
+Als Eröffnungen dienen zufällig erzeugte Sequenzen von je drei Halbzügen; jede
+Eröffnung wird zweimal gespielt, einmal mit vertauschten Farben. Der Farbtausch
+hebt den Vorteil des Anziehenden auf, und die zufälligen Eröffnungen verhindern,
+dass zwei deterministisch spielende Netze wiederholt dieselbe Partie austragen.
+Ein Netz wählt seine Züge über die Monte-Carlo-Baumsuche
+(Abschnitt~\ref{sec:mcts}) mit 1000 Simulationen pro Zug; Partien, die nach 400
+Halbzügen nicht entschieden sind, werden als Remis gewertet. Ein
+Netz-gegen-Netz-Match umfasst 100 Partien (50 Eröffnungen \(\times\) 2 Farben).
+
+\paragraph{Elo-Anker.}
+Aus dem in einem Match erzielten Punktanteil \(S\) einer Seite folgt nach der in
+Abschnitt~\ref{sec:elo} eingeführten Umkehrung
+\(\Delta R = 400 \cdot \log_{10}\!\big(S/(1-S)\big)\) die geschätzte
+Elo-Differenz zum Gegner, begleitet von einem 95\,\%-Konfidenzintervall aus der
+Match-Stichprobe. Da das Elo-System nur Differenzen liefert, dient als absoluter
+Anker Stockfish mit gedrosselter Spielstärke (begrenztes \texttt{UCI\_Elo} bzw.\
+Skill-Level) und fester Bedenkzeit je Zug.
+% OFFEN: konkrete Stockfish-Stufen + Bedenkzeit eintragen, sobald der Anker-Lauf vorliegt.
+
+\subsection{Ergebnisse Supervised Learning}\label{sec:sl-results}
+Der überwacht trainierte Agent entstand in vier Iterationen, die sich allein in
+der Zusammensetzung und Beschriftung der Trainingsdaten unterscheiden
+(Abschnitt~\ref{sec:sl-impl}); dasselbe Netz wurde also viermal auf jeweils
+verbessertem Datenmaterial trainiert, und jede Iteration war durch das Versagen
+der vorangegangenen motiviert. Zwei Betrachtungsweisen ziehen sich durch die
+Auswertung: gezielte \emph{Probes} des Value-Heads prüfen, wie gut das Netz eine
+Stellung \emph{bewertet}, während Matches prüfen, wie gut es \emph{spielt}.
+
+\paragraph{v1 -- nur Partien.}
+Die erste Variante lernte ausschließlich aus Partien von Spielern über
+2700\,Elo. Da rund 60\,\% dieser Partien remis enden, kollabierte der Value-Head
+auf die Remis-Vorhersage; zudem fehlte dem Netz jedes Ziel im Endspiel, da
+menschliche Partien meist vor dem Matt durch Aufgabe enden. Diese Variante konnte
+praktisch nicht mattsetzen und diente lediglich als Ausgangspunkt der folgenden
+Ausbalancierung.
+
+\paragraph{v2 -- Ausbalancierung.}
+Um beide Schwächen zu beheben, wurde der Datensatz nach Quelle (85\,:\,10\,:\,5
+für Spiele\,:\,Puzzles\,:\,Tablebase) und Ausgang (je ein Drittel Sieg, Remis,
+Niederlage) ausbalanciert (Abschnitt~\ref{sec:sl-impl});
+Tabelle~\ref{tab:sl-chunk-mix} zeigt die Zusammensetzung eines Chunks. Das Netz
+konnte nun mattsetzen, lernte aber eine neue Abkürzung: In v2 sind \emph{alle}
+Puzzle-Positionen Siege und die Tablebase kennt keine Remisen, sodass die Quelle
+einer Stellung ihren Ausgang verrät. Statt die Stellung zu bewerten, lernte das
+Netz \enquote{Puzzle bzw.\ wenige Steine \(\Rightarrow\) entschieden} und
+verallgemeinerte dies zu \enquote{Materialungleichgewicht \(\Rightarrow\)
+entschieden} -- unabhängig davon, wem das Material fehlt. Die Probes belegen dies
+(Tabelle~\ref{tab:sl-probes}): Auf beweisbar remisen Stellungen mit
+Materialungleichgewicht sagt v2 im Mittel nur \(P(\text{Remis}) = 0{,}385\)
+voraus, und auf beweisbar verlorenen Verteidiger-Stellungen erkennt es nur
+27{,}7\,\% korrekt als Niederlage.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{llrrrr}
+    \toprule
+    Quelle & Var. & Sieg & Remis & Niederlage & Summe \\
+    \midrule
+    Spiele    & v2 & 10\,417 & 16\,667 & 15\,416 & 42\,500 \\
+              & v3 & 13\,334 & 15\,834 & 13\,332 & 42\,500 \\
+    \addlinespace
+    Puzzles   & v2 &  5\,000 &      0 &      0 &  5\,000 \\
+              & v3 &  2\,500 &      0 &  2\,500 &  5\,000 \\
+    \addlinespace
+    Tablebase & v2 &  1\,250 &      0 &  1\,250 &  2\,500 \\
+              & v3 &    833 &    833 &    834 &  2\,500 \\
+    \midrule
+    Summe     & v2 & 16\,667 & 16\,667 & 16\,666 & 50\,000 \\
+              & v3 & 16\,667 & 16\,667 & 16\,666 & 50\,000 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Zusammensetzung eines 50\,000er-Chunks nach Quelle und Ausgang für
+    Variante~v2 (Quell-Abkürzung) und v3 (Anti-Abkürzung). In v2 sind alle
+    Puzzle-Positionen Siege und die Tablebase kennt keine Remisen -- beide
+    verraten so die Quelle; v3 ergänzt Verteidiger-Niederlagen und exakt remise
+    Tablebase-Stellungen. Beide halten Quellen 85\,:\,10\,:\,5 und Ausgänge je ein
+    Drittel. v4 übernimmt die v3-Verteilung und ändert nur die Value-Labels von
+    Spiel- und Puzzle-Positionen (Soft-Target statt one-hot).}
+  \label{tab:sl-chunk-mix}
+\end{table}
+
+\paragraph{v3 -- Anti-Abkürzung.}
+v3 verwendet dieselben Quellenanteile, ergänzt aber gezielt Gegenbeispiele:
+Puzzles liefern nun auch Verteidiger-Positionen (mit Niederlage-Label) und die
+Tablebase auch exakt remise Stellungen (Tabelle~\ref{tab:sl-chunk-mix}). Damit ist
+die Quelle nicht länger mit dem Ausgang korreliert, und die Abkürzung
+verschwindet: Die korrekte Niederlage-Erkennung der Verteidiger steigt von
+27{,}7\,\% auf 98{,}1\,\%, und \(P(\text{Remis})\) auf den
+Materialungleichgewichts-Remisen von 0{,}385 auf 0{,}781
+(Tabelle~\ref{tab:sl-probes}). Auch die Kalibrierung auf echten Partie-Positionen
+verbessert sich leicht. Es blieb jedoch ein etwas verrauschter Value-Head mit
+taktischer Blindheit im Mittelspiel.
+
+\paragraph{v4 -- Stockfish-Soft-Targets.}
+Die letzte Variante ändert nur die Value-Labels: Spiel- und Puzzle-Positionen
+erhalten statt des reinen Partieausgangs ein mit Stockfish (Tiefe~12) gemischtes
+Soft-Target (Abschnitt~\ref{sec:sl-impl}); die Tablebase-Labels bleiben exakt.
+Das Ergebnis ist zweischneidig: v4 ist der bessere \emph{Bewerter}, aber der
+schlechtere \emph{Ausgangs-Prädiktor} (Tabelle~\ref{tab:sl-probes}). Der Abgleich
+mit Stockfish verbessert sich deutlich (mittlerer absoluter Fehler von 0{,}120 auf
+0{,}097, Korrelation von 0{,}776 auf 0{,}819), während die Kalibrierung auf den
+tatsächlichen Partieausgang zurückgeht (Value-CE von 0{,}755 auf 0{,}831). Das ist
+zu erwarten, da v4 gerade auf die Stockfish-Bewertung hin optimiert wurde, die den
+Wert einer einzelnen Stellung genauer, aber anders als das grobe Partieergebnis
+beschreibt.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{p{6.6cm}rrr}
+    \toprule
+    Diagnostik des Value-Heads & v2 & v3 & v4 \\
+    \midrule
+    Probe A: \(P(\text{Remis})\) auf remisen Stellungen mit Materialungleichgewicht & 0{,}385 & 0{,}781 & 0{,}815 \\
+    Probe B: Niederlage-Erkennung beweisbar verlorener Verteidiger (\%) & 27{,}7 & 98{,}1 & 98{,}1 \\
+    \addlinespace
+    Kalibrierung (Spiele): Value-CE   & 0{,}793 & 0{,}755 & 0{,}831 \\
+    Kalibrierung (Spiele): ECE        & 0{,}034 & 0{,}010 & 0{,}060 \\
+    Stockfish-Abgleich: MAE           & 0{,}138 & 0{,}120 & 0{,}097 \\
+    Stockfish-Abgleich: Korrelation   & 0{,}732 & 0{,}776 & 0{,}819 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Value-Head-Diagnostik über die Varianten. v2\,\(\to\)\,v3 beseitigt die
+    Quell-Abkürzung (Probe~A und~B springen nach oben) und verbessert die
+    Kalibrierung auf echte Partieausgänge. v3\,\(\to\)\,v4 verbessert den Abgleich
+    mit Stockfish (MAE, Korrelation), verschlechtert aber die Kalibrierung auf den
+    Partieausgang -- der Zielkonflikt \enquote{besserer Bewerter, schlechterer
+    Ausgangs-Prädiktor}. Richtung \enquote{besser}: Probe~A/B und Korrelation hoch,
+    CE/ECE/MAE niedrig.}
+  \label{tab:sl-probes}
+\end{table}
+
+\paragraph{Direkter Vergleich v3 gegen v4.}
+Ob die bessere Bewertung auch stärkeres Spiel bedeutet, entscheidet ein direktes
+Match (Abschnitt~\ref{sec:eval-setup}). Ohne Suche -- allein anhand des
+Policy-Arguments des Netzes -- sind beide Varianten praktisch gleich stark
+(Punktanteil 0{,}49 für v3, innerhalb der statistischen Unsicherheit). Unter der
+vollständigen Suche mit 1000 Simulationen jedoch gewinnt v4 klar: über 100 Partien
+erreicht v4 einen Punktanteil von 0{,}645 (54\,--\,21\,--\,25), entsprechend einer
+Differenz von rund \(+104\) Elo (95\,\%-Konfidenzintervall des gegnerischen
+Punktanteils 0{,}272\,--\,0{,}438, also signifikant). Der verbesserte Value-Head
+schlägt sich demnach erst in Kombination mit der Suche in Spielstärke nieder: Die
+Suche stützt sich auf die Stellungsbewertung, und eine genauere Bewertung führt zu
+besseren Zügen.
+
+\paragraph{Konvergenz.}
+Abbildung~\ref{fig:sl-convergence} zeigt den Trainingsverlauf von v4 über die eine
+Epoche. Der Gesamt-Loss wird vom Policy-Loss dominiert (Kreuzentropie über 1858
+Züge), während der Value-Loss (über drei Klassen) klein und früh stabil ist;
+Training und Validierung laufen ohne Überanpassung nahe beieinander. Die
+Aufschlüsselung nach Datenquelle zeigt, wo das Netz unterschiedlich gut
+abschneidet: Der Value-Head bewertet Tablebase-Stellungen nahezu fehlerfrei
+(Accuracy 99\,\%), Puzzles gut (81\,\%) und die mehrdeutigen Spiel-Positionen am
+schwächsten (60\,\%); der Policy-Head sagt forcierte Puzzle-Züge (76\,\%) besser
+voraus als menschliche Spiel-Züge (50\,\%), deren Vorhersage naturgemäß mehrdeutig
+ist.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{img/sl_convergence.pdf}
+  \caption{Trainingsverlauf des Stockfish-annotierten Netzes (v4) über die 469
+    Chunks der einen Epoche. Links der Gesamt-Loss (Training vs.\ Validierung),
+    Mitte die Zerlegung des Validierungs-Loss in Policy- und Value-Loss, rechts die
+    Validierungs-Accuracy je Datenquelle (Farbe: Head; Linienstil: Quelle). Die
+    gestrichelten Vertikalen markieren die Absenkung der Lernrate bei 70\,\% und
+    90\,\% des Trainings.}
+  \label{fig:sl-convergence}
+\end{figure}
+
+\paragraph{Absolute Spielstärke.}
+Die Einordnung der besten Variante (v4) auf eine absolute Elo-Skala über den
+Stockfish-Anker (Abschnitt~\ref{sec:eval-setup}) steht noch aus.
+% OFFEN: Stockfish-verankerte absolute Elo von v4 -- Anker-Lauf ausstehend.
 
 \subsection{Ergebnisse Reinforcement Learning}                    % [Tim]
 % Konvergenz; Staerke gegen Random und Stockfish-Level; Elo.  (~1.0 S.)
