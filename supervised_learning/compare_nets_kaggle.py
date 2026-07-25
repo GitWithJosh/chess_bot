@@ -379,8 +379,10 @@ def unique_openings(rng: random.Random, count: int, plies: int) -> list[list[che
 # One game.
 # ---------------------------------------------------------------------------
 
-def play_one_game(white, black, max_plies, opening, event, round_no, render):
-    """Play a single game between two Players and return the python-chess Game."""
+def play_one_game(white, black, max_plies, opening, event, round_no, render, header=""):
+    """Play a single game between two Players and return the python-chess Game.
+    `header` is a match-context line (game no., colours, running score) prepended
+    to every rendered frame so progress is legible while a match iterates."""
     white.reset()
     black.reset()
 
@@ -403,7 +405,7 @@ def play_one_game(white, black, max_plies, opening, event, round_no, render):
         board.push(move)
         if render:
             side = white.name if board.turn == chess.BLACK else black.name  # who moved
-            _render_board(board, f"{side} played {board.peek().uci()}  "
+            _render_board(board, f"{header}\n{side} played {board.peek().uci()}  "
                                  f"(ply {board.ply()})")
 
     if board.is_game_over(claim_draw=True):
@@ -514,13 +516,18 @@ def run_match(
         for i, opening in enumerate(opening_list):
             for a_is_white in (True, False):
                 white, black = (a, b) if a_is_white else (b, a)
+                header = (f"Game {len(games) + 1}/{total}  |  "
+                          f"White: {white.name}  Black: {black.name}  |  "
+                          f"{name_a}: {sum(a_scores):.1f}/{len(a_scores)} so far")
                 game = play_one_game(
-                    white, black, max_plies, opening, event, i + 1, render)
+                    white, black, max_plies, opening, event, i + 1, render, header)
                 white_score = _RESULT_SCORE[game.headers["Result"]]
                 a_scores.append(white_score if a_is_white else 1.0 - white_score)
                 games.append(game)
                 print(f"Game {len(games)}/{total}: {game.headers['Result']} "
-                      f"({game.headers['Termination']})", flush=True)
+                      f"({game.headers['Termination']})  |  "
+                      f"White {white.name} vs Black {black.name}  |  "
+                      f"{name_a} {sum(a_scores):.1f}/{len(a_scores)}", flush=True)
     finally:
         # Always shut the stockfish subprocess(es) down, even on Ctrl-C / error.
         a.close()
