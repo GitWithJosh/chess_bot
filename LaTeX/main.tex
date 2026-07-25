@@ -663,6 +663,9 @@ Die Zugwahl im Self-Play nutzt die PUCT-Suche aus Abschnitt~\ref{sec:mcts}. Noch
 \paragraph{Self-Play}
 Die Trainingspartien erzeugt jeweils das aktuell beste Netz. In den ersten 30 Halbzügen werden die Züge proportional zu den Besuchszahlen der Children Nodes gesampelt (Temperatur 1), um die Eröffnungen zu variieren, danach spielt das Netz greedy den meistbesuchten Zug (Abschnitt~\ref{sec:alphazero}). Für jede besuchte Stellung entstehen zwei Trainingsziele, die Besuchsverteilung an der Wurzel als Policy-Ziel und der Partieausgang als Value-Ziel. Diese Samples wandern in einen Replay Buffer über ein gleitendes Fenster der letzten Iterationen, aus dem der Trainingsschritt zieht.
 
+\paragraph{Gated Training-Loop}
+Jede Iteration durchläuft drei Schritte. Zuerst erzeugt das beste Netz eine feste Zahl Self-Play-Games. Danach wird ausgehend vom besten Netz ein Kandidat trainiert. Zuletzt tritt der Kandidat in einem Match gegen das beste Netz an, unter festen Eröffnungen und ohne Noise wie bei der Stärkemessung (Abschnitt~\ref{sec:eval-setup}), und ersetzt es nur bei Überschreiten einer festen Punktschwelle. Dieses Gating verhindert, dass eine verschlechterte Version die Datenerzeugung übernimmt, ein Schritt, den das ursprüngliche AlphaZero weglässt \autocite{silver2018}, der sich hier aber unter knappem Rechenbudget als notwendig erwies (Abschnitt~\ref{sec:rl-results}).
+
 \section{Evaluation \& Ergebnisse}\label{sec:eval}
 % ~4.0 S.
 
