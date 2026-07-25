@@ -90,23 +90,16 @@ Diese Zustandsdefinition ist so gewählt, dass sie die Markov-Eigenschaft erfül
 
 Bezeichnet \(A(s)\) die Menge der in \(s\) legalen Züge und \(s\cdot a\) die Stellung, die aus \(s\) durch Ausführung von \(a \in A(s)\) hervorgeht, so lässt sich das gesamte Spiel als Baum darstellen: Die Wurzel ist die Ausgangsstellung, jede Kante entspricht einem Halbzug, die Knoten einer Ebene gehören abwechselnd der einen und der anderen Seite, und die Blätter sind terminale Stellungen mit bekanntem Ergebnis \(z(s)\). Sowohl die klassische Alpha-Beta-Search (Abschnitt~\ref{sec:minimax}) als auch die Monte-Carlo-Tree-Search (Abschnitt~\ref{sec:mcts}) operieren auf genau diesem Baum. Sie unterscheiden sich lediglich darin, welchen Ausschnitt davon sie betrachten.
 
-\paragraph{Größe des Suchraums}
-Die Schwierigkeit des Problems liegt nicht in der Komplexität der Regeln, sondern in der Größe dieses Baumes. Üblicherweise werden zwei Maße unterschieden \autocite{allis1994}. Die \emph{Zustandsraumkomplexität} zählt die Menge der erreichbaren legalen Stellungen. \textcite{shannon1950} schätzte sie auf etwa \(10^{43}\), neuere Stichprobenverfahren kommen auf rund \(4{,}59 \pm 0,38\cdot10^{44}\) mit einer Konfidenz von 95\% \parencite{tromp2021}. Die \emph{Spielbaumkomplexität} zählt dagegen die Zahl der möglichen Partieverläufe und ergibt sich näherungsweise als
-\[
-  |T| \approx b^{\,d},
-\]
-wobei \(b\) den durchschnittlichen Verzweigungsgrad und \(d\) die mittlere Partielänge in Halbzügen bezeichnet. Mit den gängigen Werten \(b \approx 35\) und \(d \approx 80\) liegt \(|T|\) in der Größenordnung von \(10^{120}\), der sogenannten Shannon-Zahl \parencite{shannon1950}.
-
 \paragraph{Theoretisch lösbar, praktisch unlösbar}
 Schach ist ein endliches Nullsummenspiel mit perfekter Information und ohne Zufallselement. Fasst man den Zustand $s$ so weit, wie es \textcite{shannon1950} für sein Stellungsformat vorsieht (Figurenstellung, Zugrecht, Rochaderechte, letzter Zug sowie der Zähler seit dem letzten Bauernzug oder Schlagfall), so besitzt jede Stellung genau einen der drei Werte \emph{gewonnen für Weiß}, \emph{remis} oder \emph{gewonnen für Schwarz}. 
 
 Da jede Partie nach endlich vielen Zügen endet, lässt sich der Wert einer Stellung bestimmen, indem man vom Partieende rückwärts arbeitet \parencite{shannon1950}. 
 Die Kombinatorik macht diesen Weg unbegehbar. Shannon rechnet mit etwa $30$ legalen Zügen pro Stellung, also rund $10^{3}$ Fortsetzungen je Zugpaar, und bei einer typischen Partielänge von $40$ Zügen mit etwa $10^{120}$ zu prüfenden Varianten. Eine Maschine, die eine Variante pro Mikrosekunde abarbeitet, bräuchte nach Shannon also über $10^{90}$ Jahre für den ersten Zug.
 
-Zwei Beispiele verdeutlichen noch einmal die Komplexität. Erstens sind Endspieldatenbanken für Schach zwar exakt gelöst, aber nur bis sieben Steine auf dem Brett. Allein diese Tabellen belegen rund 18\,TB. Zweitens gelang mit Dame 2007 die vollständige Lösung eines vergleichbaren Spiels: Bei einem Suchraum von etwa \(5\cdot10^{20}\) Stellungen konnte gezeigt werden, dass beidseitig optimales Spiel zum Remis führt \autocite{schaeffer2007}. Der Schachsuchraum liegt mehr als zwanzig Größenordnungen darüber.
+Zwei Beispiele verdeutlichen noch einmal die Komplexität. Erstens sind Endspieldatenbanken für Schach zwar exakt gelöst, aber nur bis sieben Figuren auf dem Brett. Allein diese Tabellen belegen rund 18\,TB. Zweitens gelang mit Dame 2007 die vollständige Lösung eines vergleichbaren Spiels. Bei einem Suchraum von etwa \(5\cdot10^{20}\) Stellungen konnte gezeigt werden, dass beidseitig optimales Spiel zum Remis führt \autocite{schaeffer2007}. Der Schachsuchraum liegt mehr als zwanzig Größenordnungen darüber.
 
 \paragraph{Was ist ein guter Zug?}
-Aus dieser Lücke zwischen theoretischer Bestimmtheit und praktischer Unberechenbarkeit ergibt sich eine wichtige Fragestellung dieser Arbeit. Ein Zug ist \emph{objektiv} optimal, wenn er den spieltheoretischen Wert der Stellung nicht verschlechtert Da dieser theoretische Wert unzugänglich ist, lässt sich diese Eigenschaft für keinen konkreten Zug nachweisen. In der Praxis wird ein Zug daher \emph{operativ} bewertet: Er ist gut, wenn er unter gegebener Rechenzeit die Gewinnerwartung gegen einen realen Gegner maximiert.
+Aus dieser Lücke zwischen theoretischer Bestimmtheit und praktischer Unberechenbarkeit ergibt sich eine wichtige Fragestellung dieser Arbeit. Ein Zug ist \emph{objektiv} optimal, wenn er den spieltheoretischen Wert der Stellung nicht verschlechtert. Da dieser theoretische Wert aber unzugänglich ist, lässt sich diese Eigenschaft für keinen konkreten Zug nachweisen. In der Praxis wird ein Zug daher \emph{operativ} bewertet. Ein Zug ist gut, wenn er unter gegebener Rechenzeit die Gewinnerwartung gegen einen realen Gegner maximiert.
  
 Für die Zugwahl durch Engines im Schach gibt es im Wesentlichen zwei Stellschrauben: \emph{wie viele} Stellungen ein Programm betrachtet (Suche) und \emph{wie gut} es eine einzelne Stellung einschätzt (Bewertung). Klassische Engines setzen primär auf die erste Stellschraube und kompensieren eine vergleichsweise grobe Bewertungsfunktion durch enorme Suchbreite (Abschnitt~\ref{sec:minimax}). Der in dieser Arbeit verfolgte AlphaZero-artige Ansatz verschiebt das Gewicht auf die zweite: Ein aufwändiges neuronales Netz liefert Bewertung und Zugvorauswahl, sodass mit deutlich weniger besuchten Stellungen ausgekommen wird (Abschnitte~\ref{sec:nn}--\ref{sec:mcts}).
  
@@ -662,7 +655,13 @@ SL-Varianten in Abschnitt~\ref{sec:sl-results}.
 
 \subsection{Reinforcement Learning: MCTS-Kern, Self-Play, Trainings-Loop}\label{sec:rl-impl} % [Tim]
 % MCTS-Implementierung, Self-Play-Erzeugung, Trainings-Loop.  (~2.0 S.)
+Der RL-Agent nutzt dasselbe Netz (Abschnitt~\ref{sec:arch}) und dieselbe Kodierung (Abschnitt~\ref{sec:encoding}) wie der SL-Agent und unterscheidet sich allein darin, dass er sein Trainingssignal im Self-Play selbst erzeugt (Abschnitt~\ref{sec:alphazero}). Der Kreislauf aus Suche, Datenerzeugung und Netz-Update folgt dem AlphaZero-Verfahren \autocite{silver2018} in der didaktisch reduzierten Form von Klein \autocite{klein2022neural}. Die beiden zentralen Stellhebel, die Zahl der Simulationen pro Zug und die die Zahl der Self-Play-Games pro Iteration, werden empirisch in Abschnitt~\ref{sec:rl-results} kalibriert.
 
+\paragraph{MCTS-Kern}
+Die Zugwahl im Self-Play nutzt die PUCT-Suche aus Abschnitt~\ref{sec:mcts}. Noch nicht besuchte Children-Nodes erhalten über eine First-Play-Urgency-Absenkung einen leicht reduzierten Startwert, sodass die Suche den vom Policy-Head bevorzugten Zügen folgt, statt jeden legalen Zug einmal erzwingen zu müssen. Am Root-Node mischt Dirichlet-Noise mit \(\alpha = 0{,}3\) und \(\varepsilon = 0{,}25\) zusätzliche Exploration bei (Abschnitt~\ref{sec:alphazero}), die nur im Self-Play aktiv ist und bei der Stärkemessung (Abschnitt~\ref{sec:eval-setup}) abgeschaltet wird.
+
+\paragraph{Self-Play}
+Die Trainingspartien erzeugt jeweils das aktuell beste Netz. In den ersten 30 Halbzügen werden die Züge proportional zu den Besuchszahlen der Children Nodes gesampelt (Temperatur 1), um die Eröffnungen zu variieren, danach spielt das Netz greedy den meistbesuchten Zug (Abschnitt~\ref{sec:alphazero}). Für jede besuchte Stellung entstehen zwei Trainingsziele, die Besuchsverteilung an der Wurzel als Policy-Ziel und der Partieausgang als Value-Ziel. Diese Samples wandern in einen Replay Buffer über ein gleitendes Fenster der letzten Iterationen, aus dem der Trainingsschritt zieht.
 
 \section{Evaluation \& Ergebnisse}\label{sec:eval}
 % ~4.0 S.
@@ -894,6 +893,7 @@ Glicko-2-System von Lichess liegt.
   \label{tab:sl-anchor}
 \end{table}
 
+
 \paragraph{Spielverlauf nach Phasen.}
 Wo genau v4 gegen einen nahezu ebenbürtigen Gegner Boden verliert, zeigt eine
 phasenaufgelöste Analyse der zehn Partien gegen Stockfish~2000 -- die Stufe knapp
@@ -929,7 +929,9 @@ das Endspiel daher nur dünn abdeckt.
   \label{fig:sl-phase}
 \end{figure}
 
-\subsection{Ergebnisse Reinforcement Learning}                    % [Tim]
+
+\subsection{Ergebnisse Reinforcement Learning}
+\label{sec:rl-results}% [Tim]
 % Konvergenz; Staerke gegen Random und Stockfish-Level; Elo.  (~1.0 S.)
 
 \subsection{Direktvergleich: SL vs. RL}\label{sec:headtohead}
