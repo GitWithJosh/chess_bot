@@ -693,9 +693,14 @@ Abschnitt~\ref{sec:elo} eingeführten Umkehrung
 \(\Delta R = 400 \cdot \log_{10}\!\big(S/(1-S)\big)\) die geschätzte
 Elo-Differenz zum Gegner, begleitet von einem 95\,\%-Konfidenzintervall aus der
 Match-Stichprobe. Da das Elo-System nur Differenzen liefert, dient als absoluter
-Anker Stockfish mit gedrosselter Spielstärke (begrenztes \texttt{UCI\_Elo} bzw.\
-Skill-Level) und fester Bedenkzeit je Zug.
-% OFFEN: konkrete Stockfish-Stufen + Bedenkzeit eintragen, sobald der Anker-Lauf vorliegt.
+Anker Stockfish mit über \texttt{UCI\_Elo} gedrosselter Spielstärke. Konkret tritt
+das zu verankernde Netz gegen zehn Stockfish-Stufen von 1400 bis 2300\,Elo
+(Schrittweite 100) an, bei einer festen Bedenkzeit von 0{,}75\,s je Zug auf
+Stockfish-Seite; das Netz zieht wie oben über die Suche mit 1000 Simulationen. Da
+schon fünf Eröffnungen genügen, um die Stufen abzudecken, verwendet der Anker-Lauf
+kürzere Matches von zehn Partien je Stufe (fünf Ein-Halbzug-Eröffnungen \(\times\)
+zwei Farben). Aus dem Punktverlauf über die Stufen wird die absolute Elo des Netzes
+per logistischer Anpassung der Erwartungsscore-Kurve geschätzt.
 
 \subsection{Ergebnisse Supervised Learning}\label{sec:sl-results}
 Der überwacht trainierte Agent entstand in vier Iterationen, die sich allein in
@@ -846,10 +851,43 @@ ist.
   \label{fig:sl-convergence}
 \end{figure}
 
+\paragraph{Stärke gegenüber den Vorvarianten.}
+Dass die Datenrezept-Iterationen nicht nur die Bewertung, sondern auch das Spiel
+verbesserten, bestätigen direkte Matches gegen die früheren Netze: In kürzeren
+30-Partie-Matches unter demselben Suchbudget schlägt v4 die
+Ausbalancierungs-Variante (v2) mit einem Punktanteil von 0{,}93 (26\,--\,4\,--\,0)
+und das reine Partie-Netz (v1) mit 0{,}90 (24\,--\,6\,--\,0) -- in beiden Fällen ohne
+eine einzige Niederlage. Die schrittweise verbesserte Datenaufbereitung übersetzt
+sich damit durchgängig in Spielstärke.
+
 \paragraph{Absolute Spielstärke.}
-Die Einordnung der besten Variante (v4) auf eine absolute Elo-Skala über den
-Stockfish-Anker (Abschnitt~\ref{sec:eval-setup}) steht noch aus.
-% OFFEN: Stockfish-verankerte absolute Elo von v4 -- Anker-Lauf ausstehend.
+Zur Einordnung auf eine absolute Skala tritt v4 gegen die zehn Stockfish-Stufen des
+Ankers an (Abschnitt~\ref{sec:eval-setup}); Tabelle~\ref{tab:sl-anchor} zeigt den
+Punktverlauf. Der Übergang zum ausgeglichenen Match (Punktanteil 0{,}5) liegt um
+1900\,Elo. Eine logistische Anpassung der Erwartungsscore-Kurve an alle zehn Stufen
+schätzt die absolute Spielstärke von v4 auf rund \(1920\)\,Elo
+(95\,\%-Likelihood-Intervall etwa 1840\,--\,2010). Der Verlauf ist allerdings nicht
+streng monoton -- bei nur zehn Partien je Stufe schwanken einzelne Punkte deutlich
+(etwa der Punktanteil 0{,}25 gegen Stufe~2300 gegenüber 0{,}10 gegen die schwächere
+Stufe~2200) --, sodass der Anker eher eine Größenordnung als einen präzisen Wert
+liefert. Eine Verdopplung der Partienzahl je Stufe würde die Kalibrierung robuster
+machen und bleibt zukünftigen Läufen vorbehalten.
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{lrrrrrrrrrr}
+    \toprule
+    Stockfish-Elo  & 1400 & 1500 & 1600 & 1700 & 1800 & 1900 & 2000 & 2100 & 2200 & 2300 \\
+    \midrule
+    Punktanteil~v4 & 1{,}00 & 0{,}90 & 1{,}00 & 0{,}60 & 0{,}90 & 0{,}45 & 0{,}30 & 0{,}15 & 0{,}10 & 0{,}25 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Punktanteil von v4 gegen die zehn Stockfish-Anker-Stufen (je zehn
+    Partien, Bedenkzeit 0{,}75\,s/Zug). Der Nulldurchgang bei 0{,}5 liegt um
+    1900\,Elo; die logistische Anpassung über alle Stufen ergibt rund 1920\,Elo.}
+  \label{tab:sl-anchor}
+\end{table}
 
 \subsection{Ergebnisse Reinforcement Learning}                    % [Tim]
 % Konvergenz; Staerke gegen Random und Stockfish-Level; Elo.  (~1.0 S.)
