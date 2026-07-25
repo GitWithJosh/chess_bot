@@ -689,6 +689,18 @@ Ein Netz wählt seine Züge über die Monte-Carlo-Baumsuche
 Halbzügen nicht entschieden sind, werden als Remis gewertet. Ein
 Netz-gegen-Netz-Match umfasst 100 Partien (50 Eröffnungen \(\times\) 2 Farben).
 
+\paragraph{Wahl der Suchparameter.}
+Die Einstellungen der Suche wurden vorab an 393 von Stockfish annotierten
+Teststellungen (Tiefe~16, jeder legale Zug bewertet) über ein Gitter aus
+\(c_{\mathrm{puct}}\), First-Play-Urgency-Absenkung und Simulationszahl geprüft,
+gemessen am mittleren Centipawn-Verlust der gewählten Züge. Das Ergebnis ist
+weitgehend ein Null-Resultat: \(c_{\mathrm{puct}}\) bildet zwischen 1{,}5 und 4{,}0
+ein flaches Plateau (nur 0{,}75 fällt signifikant ab), und die
+First-Play-Urgency-Absenkung zeigt im untersuchten Bereich keinen messbaren Effekt.
+Allein die Simulationszahl wirkt durchgehend -- der Centipawn-Verlust fällt monoton
+mit ihr --, weshalb \(c_{\mathrm{puct}} = 1{,}5\) beibehalten und die Simulationszahl
+mit 1000 so hoch gewählt wurde, wie es das Zeitbudget der Matches zulässt.
+
 \paragraph{Elo-Anker.}
 Aus dem in einem Match erzielten Punktanteil \(S\) einer Seite folgt nach der in
 Abschnitt~\ref{sec:elo} eingeführten Umkehrung
