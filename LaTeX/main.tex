@@ -19,6 +19,9 @@
 \usepackage[hidelinks=true]{hyperref}
 \usepackage{amsmath}
 
+\setkomafont{caption}{\small}
+\setkomafont{captionlabel}{\small\bfseries}
+\setcapindent{0em}
 
 \addbibresource{bibliography.bib}
 \begin{document}
@@ -177,7 +180,7 @@ acht weitere die Zusatzinformationen einer Stellung, und eine konstante Ebene
 liefert eine positionsunabhängige Bias-Information. Tabelle~\ref{tab:planes}
 listet die Belegung vollständig auf.
 
-\begin{table}[h]
+\begin{table}[htbp]
   \centering
   \begin{tabular}{cl}
     \hline
@@ -255,7 +258,7 @@ normierte Wahrscheinlichkeiten für Sieg, Remis und Niederlage aus Sicht der Sei
 am Zug. Da beide Heads denselben Rumpf teilen, beruhen Bewertung und Zugauswahl
 auf einer gemeinsamen Merkmalsbasis.
 
-\begin{figure}[h]
+\begin{figure}[htbp]
   \centering
   \begin{tikzpicture}[
       box/.style={draw, rounded corners, align=center, minimum height=10mm,
@@ -271,8 +274,7 @@ auf einer gemeinsamen Merkmalsbasis.
     \draw[->] (tower.east) -- (policy.west);
     \draw[->] (tower.east) -- (value.west);
   \end{tikzpicture}
-  \caption{Leela-Architektur mit zwei Heads: geteilter Rumpf aus Initial-Faltung und
-    SE-Residual-Tower, darauf Policy- und Value-Head.}
+  \caption{Leela-Architektur: geteilter Rumpf, darauf Policy- und Value-Head.}
   \label{fig:architecture}
 \end{figure}
 
@@ -466,7 +468,7 @@ Residual-Tower, während beide Heads zusammen unter 4\,\% ausmachen. Innerhalb e
 Blocks dominieren die beiden \(3\times3\)-Faltungen; die SE-Rekalibrierung trägt
 mit rund 25\,000 Parametern nur etwa 2\,\% je Block bei.
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \begin{tabular}{lrr}
     \toprule
@@ -557,7 +559,7 @@ zufälligen Stellungen aus die tablebase-optimale Linie gespielt und aufgezeichn
 die gewinnende Seite mit dem schnellsten Fortschritt zum Matt, die verlierende mit
 dem längsten Widerstand. Ergänzt werden exakt remise Stellungen ohne Policy-Ziel.
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \begin{tabular}{llll}
     \toprule
@@ -568,9 +570,7 @@ dem längsten Widerstand. Ergänzt werden exakt remise Stellungen ohne Policy-Zi
     Tablebase & DTZ-optimal / -- (Remis)      & one-hot (exakt) & 5\,\% \\
     \bottomrule
   \end{tabular}
-  \caption{Die drei Datenquellen mit Policy-Ziel, Value-Label und Anteil je Chunk.
-    Spiel- und Puzzle-Positionen erhalten ein mit Stockfish gemischtes
-    Soft-Target (siehe unten); Tablebase-Positionen bleiben exakt.}
+  \caption{Die drei Datenquellen mit Policy-Ziel, Value-Label und Anteil je Chunk.}
   \label{tab:sources}
 \end{table}
 
@@ -626,9 +626,11 @@ der Value-Loss eine Cross-Entropy über die drei WDL-Klassen. Remise
 Tablebase-Positionen besitzen kein Policy-Ziel und werden über ein Nullgewicht aus
 dem Policy-Loss ausgeschlossen. Optimierer, die stufenweise gesenkte
 Lernrate und die Regularisierung folgen AlphaZero \parencite{silver2018} und sind
-in Tabelle~\ref{tab:sl-train} zusammengefasst.
+in Tabelle~\ref{tab:sl-train} zusammengefasst. Der Rechenaufwand und die daraus
+folgende Beschränkung auf eine Epoche werden in Abschnitt~\ref{sec:compute}
+behandelt.
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \begin{tabular}{ll}
     \toprule
@@ -642,10 +644,7 @@ in Tabelle~\ref{tab:sl-train} zusammengefasst.
     Value-Loss  & Cross-Entropy (WDL) \\
     \bottomrule
   \end{tabular}
-  \caption{Trainingskonfiguration. Weight Decay und die stufenweise gesenkte
-    Lernrate übernehmen die Vorgaben von AlphaZero \parencite{silver2018};
-    Rechenaufwand und die daraus folgende Beschränkung auf eine Epoche werden in
-    Abschnitt~\ref{sec:compute} behandelt.}
+  \caption{Trainingskonfiguration des überwachten Trainings.}
   \label{tab:sl-train}
 \end{table}
 
@@ -686,8 +685,9 @@ hebt den Vorteil des Anziehenden auf, und die zufälligen Eröffnungen verhinder
 dass zwei deterministisch spielende Netze wiederholt dieselbe Partie austragen.
 Ein Netz wählt seine Züge über die Monte-Carlo-Baumsuche
 (Abschnitt~\ref{sec:mcts}) mit 1000 Simulationen pro Zug; Partien, die nach 400
-Halbzügen nicht entschieden sind, werden als Remis gewertet. Ein
-Netz-gegen-Netz-Match umfasst 100 Partien (50 Eröffnungen \(\times\) 2 Farben).
+Halbzügen nicht entschieden sind, werden als Remis gewertet. Der Umfang eines
+Matches ist bei den jeweiligen Ergebnissen angegeben. Als Referenzgegner und für
+alle Stellungsbewertungen dient Stockfish~17.1.
 
 \paragraph{Wahl der Suchparameter.}
 Die Einstellungen der Suche wurden vorab an 393 von Stockfish annotierten
@@ -724,7 +724,10 @@ der Zusammensetzung und Beschriftung der Trainingsdaten unterscheiden
 verbessertem Datenmaterial trainiert, und jede Iteration war durch das Versagen
 der vorangegangenen motiviert. Zwei Betrachtungsweisen ziehen sich durch die
 Auswertung: gezielte \emph{Probes} des Value-Heads prüfen, wie gut das Netz eine
-Stellung \emph{bewertet}, während Matches prüfen, wie gut es \emph{spielt}.
+Stellung \emph{bewertet}, während Matches prüfen, wie gut es \emph{spielt}. Die
+Probes greifen auf Stellungen aus den Syzygy-Endspieldatenbanken zurück, deren
+Ausgang exakt bekannt ist; so lässt sich eine Fehlbewertung zweifelsfrei als solche
+ausweisen.
 
 \paragraph{v1 -- nur Partien.}
 Die erste Variante lernte ausschließlich aus Partien von Spielern über
@@ -744,13 +747,13 @@ Puzzle-Positionen Siege und die Tablebase kennt keine Remisen, sodass die Quelle
 einer Stellung ihren Ausgang verrät. Statt die Stellung zu bewerten, lernte das
 Netz \enquote{Puzzle bzw.\ wenige Steine \(\Rightarrow\) entschieden} und
 verallgemeinerte dies zu \enquote{Materialungleichgewicht \(\Rightarrow\)
-entschieden} -- unabhängig davon, wem das Material fehlt. Die Probes belegen dies
-(Tabelle~\ref{tab:sl-probes}): Auf beweisbar remisen Stellungen mit
+entschieden} -- unabhängig davon, wem das Material fehlt. Die Probes belegen dies:
+Auf beweisbar remisen Stellungen mit
 Materialungleichgewicht sagt v2 im Mittel nur \(P(\text{Remis}) = 0{,}385\)
 voraus, und auf beweisbar verlorenen Verteidiger-Stellungen erkennt es nur
 27{,}7\,\% korrekt als Niederlage.
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \begin{tabular}{llrrrr}
     \toprule
@@ -769,15 +772,15 @@ voraus, und auf beweisbar verlorenen Verteidiger-Stellungen erkennt es nur
               & v3 & 16\,667 & 16\,667 & 16\,666 & 50\,000 \\
     \bottomrule
   \end{tabular}
-  \caption{Zusammensetzung eines 50\,000er-Chunks nach Quelle und Ausgang für
-    Variante~v2 (Quell-Abkürzung) und v3 (Anti-Abkürzung). In v2 sind alle
-    Puzzle-Positionen Siege und die Tablebase kennt keine Remisen -- beide
-    verraten so die Quelle; v3 ergänzt Verteidiger-Niederlagen und exakt remise
-    Tablebase-Stellungen. Beide halten Quellen 85\,:\,10\,:\,5 und Ausgänge je ein
-    Drittel. v4 übernimmt die v3-Verteilung und ändert nur die Value-Labels von
-    Spiel- und Puzzle-Positionen (Soft-Target statt one-hot).}
+  \caption{Zusammensetzung eines 50\,000er-Chunks nach Quelle und Ausgang.}
   \label{tab:sl-chunk-mix}
 \end{table}
+
+Beide Varianten halten dieselben Quellenanteile (85\,:\,10\,:\,5) und je ein Drittel
+je Ausgang; sie unterscheiden sich nur darin, \emph{wie} sich die Ausgänge auf die
+Quellen verteilen. v4 übernimmt die Verteilung von v3 unverändert und ändert
+lediglich die Value-Labels von Spiel- und Puzzle-Positionen (Soft-Target statt
+one-hot).
 
 \paragraph{v3 -- Anti-Abkürzung.}
 v3 verwendet dieselben Quellenanteile, ergänzt aber gezielt Gegenbeispiele:
@@ -786,9 +789,8 @@ Tablebase auch exakt remise Stellungen (Tabelle~\ref{tab:sl-chunk-mix}). Damit i
 die Quelle nicht länger mit dem Ausgang korreliert, und die Abkürzung
 verschwindet: Die korrekte Niederlage-Erkennung der Verteidiger steigt von
 27{,}7\,\% auf 98{,}1\,\%, und \(P(\text{Remis})\) auf den
-Materialungleichgewichts-Remisen von 0{,}385 auf 0{,}781
-(Tabelle~\ref{tab:sl-probes}). Auch die Kalibrierung auf echten Partie-Positionen
-verbessert sich leicht. Es blieb jedoch ein etwas verrauschter Value-Head mit
+Materialungleichgewichts-Remisen von 0{,}385 auf 0{,}781. Auch die Kalibrierung auf
+echten Partie-Positionen verbessert sich leicht. Es blieb jedoch ein etwas verrauschter Value-Head mit
 taktischer Blindheit im Mittelspiel.
 
 \paragraph{v4 -- Stockfish-Soft-Targets.}
@@ -796,38 +798,13 @@ Die letzte Variante ändert nur die Value-Labels: Spiel- und Puzzle-Positionen
 erhalten statt des reinen Partieausgangs ein mit Stockfish (Tiefe~12) gemischtes
 Soft-Target (Abschnitt~\ref{sec:sl-impl}); die Tablebase-Labels bleiben exakt.
 Das Ergebnis ist zweischneidig: v4 ist der bessere \emph{Bewerter}, aber der
-schlechtere \emph{Ausgangs-Prädiktor} (Tabelle~\ref{tab:sl-probes}). Der Abgleich
-mit Stockfish verbessert sich deutlich (mittlerer absoluter Fehler von 0{,}120 auf
-0{,}097, Korrelation von 0{,}776 auf 0{,}819), während die Kalibrierung auf den
-tatsächlichen Partieausgang zurückgeht (Value-CE von 0{,}755 auf 0{,}831). Das ist
+schlechtere \emph{Ausgangs-Prädiktor}. Der Abgleich mit Stockfish verbessert sich
+deutlich (mittlerer absoluter Fehler von 0{,}120 auf 0{,}097), während die
+Kalibrierung auf den tatsächlichen Partieausgang zurückgeht (Cross-Entropy des
+Value-Heads von 0{,}755 auf 0{,}831). Das ist
 zu erwarten, da v4 gerade auf die Stockfish-Bewertung hin optimiert wurde, die den
 Wert einer einzelnen Stellung genauer, aber anders als das grobe Partieergebnis
 beschreibt.
-
-\begin{table}[H]
-  \centering
-  \begin{tabular}{p{6.6cm}rrr}
-    \toprule
-    Diagnostik des Value-Heads & v2 & v3 & v4 \\
-    \midrule
-    Probe A: \(P(\text{Remis})\) auf remisen Stellungen mit Materialungleichgewicht & 0{,}385 & 0{,}781 & 0{,}815 \\
-    Probe B: Niederlage-Erkennung beweisbar verlorener Verteidiger (\%) & 27{,}7 & 98{,}1 & 98{,}1 \\
-    \addlinespace
-    Kalibrierung (Spiele): Value-CE   & 0{,}793 & 0{,}755 & 0{,}831 \\
-    Kalibrierung (Spiele): ECE        & 0{,}034 & 0{,}010 & 0{,}060 \\
-    Stockfish-Abgleich: MAE           & 0{,}138 & 0{,}120 & 0{,}097 \\
-    Stockfish-Abgleich: Korrelation   & 0{,}732 & 0{,}776 & 0{,}819 \\
-    \bottomrule
-  \end{tabular}
-  \caption{Value-Head-Diagnostik über die Varianten. v2\,\(\to\)\,v3 beseitigt die
-    Quell-Abkürzung (Probe~A und~B springen nach oben) und verbessert die
-    Kalibrierung auf echte Partieausgänge. v3\,\(\to\)\,v4 verbessert den Abgleich
-    mit Stockfish (MAE, Korrelation), verschlechtert aber die Kalibrierung auf den
-    Partieausgang -- der Zielkonflikt \enquote{besserer Bewerter, schlechterer
-    Ausgangs-Prädiktor}. Richtung \enquote{besser}: Probe~A/B und Korrelation hoch,
-    CE/ECE/MAE niedrig.}
-  \label{tab:sl-probes}
-\end{table}
 
 \paragraph{Direkter Vergleich v3 gegen v4.}
 Ob die bessere Bewertung auch stärkeres Spiel bedeutet, entscheidet ein direktes
@@ -854,41 +831,40 @@ schwächsten (60\,\%); der Policy-Head sagt forcierte Puzzle-Züge (76\,\%) bess
 voraus als menschliche Spiel-Züge (50\,\%), deren Vorhersage naturgemäß mehrdeutig
 ist.
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\textwidth]{img/sl_convergence.pdf}
-  \caption{Trainingsverlauf des Stockfish-annotierten Netzes (v4) über die 469
-    Chunks der einen Epoche. Links der Gesamt-Loss (Training vs.\ Validierung),
-    Mitte die Zerlegung des Validierungs-Loss in Policy- und Value-Loss, rechts die
-    Validierungs-Accuracy je Datenquelle (Farbe: Head; Linienstil: Quelle). Die
-    gestrichelten Vertikalen markieren die Absenkung der Lernrate bei 70\,\% und
-    90\,\% des Trainings.}
+  \caption{Trainingsverlauf von v4 über die 469 Chunks der einen Epoche.}
   \label{fig:sl-convergence}
 \end{figure}
 
+Links steht der Gesamt-Loss (Training gegen Validierung), in der Mitte dessen
+Zerlegung in Policy- und Value-Loss auf den Validierungsdaten, rechts die
+Validierungs-Accuracy je Datenquelle (Farbe: Head, Linienstil: Quelle). Die
+gestrichelten Vertikalen markieren die Absenkung der Lernrate bei 70\,\% und 90\,\%
+des Trainings.
+
 Dass der fallende Loss tatsächlich mit gewonnener Spielstärke einhergeht, prüft ein
 Vergleich des fertigen Netzes gegen 30 eigene Trainings-Checkpoints
-(Abbildung~\ref{fig:sl-gauntlet}). Um allein das Gelernte zu messen, spielen beide
-Seiten dabei ohne Suche, also direkt das Argument des Policy-Heads. Die Spielstärke
+(Abbildung~\ref{fig:sl-gauntlet}), je 50 Partien. Um allein das Gelernte zu messen,
+spielen beide Seiten dabei ohne Suche, also direkt das Argument des Policy-Heads. Die Spielstärke
 steigt über das Training deutlich an -- frühe Checkpoints liegen rund 500\,Elo
 zurück --, sättigt aber gegen Ende: Ab etwa Chunk~400 sind die Checkpoints vom
 finalen Netz nicht mehr sicher zu unterscheiden. Das letzte Sechstel des Trainings
 trug damit kaum noch messbare Spielstärke bei.
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\textwidth]{img/sl_gauntlet.pdf}
-  \caption{Spielstärke der Trainings-Checkpoints von v4, gemessen als Elo-Differenz
-    zum fertigen Netz (je 50 Partien ohne Suche, reines Policy-Argument); an den
-    beschrifteten Punkten ist zusätzlich die Bilanz Sieg--Remis--Niederlage aus Sicht
-    des fertigen Netzes angegeben. Die Checkpoints sind gleichmäßig angeordnet, nicht
-    proportional zur Trainingsdauer -- der frühe Verlauf wurde dichter abgetastet; die
-    gestrichelten Vertikalen markieren, wo der Abstand zwischen den gesicherten
-    Checkpoints wächst (ab Chunk~12 jeder vierte, ab Chunk~40 jeder vierzigste). Die
-    Stärke steigt zunächst deutlich und erreicht ab etwa Chunk~400 das Niveau des
-    finalen Netzes.}
+  \caption{Spielstärke der Trainings-Checkpoints von v4 relativ zum fertigen Netz.}
   \label{fig:sl-gauntlet}
 \end{figure}
+
+An den beschrifteten Punkten ist zusätzlich die Bilanz Sieg--Remis--Niederlage aus
+Sicht des fertigen Netzes angegeben. Die Checkpoints sind gleichmäßig angeordnet und
+nicht proportional zur Trainingsdauer, da der frühe Verlauf dichter abgetastet wurde;
+die gestrichelten Vertikalen markieren, wo der Abstand zwischen den gesicherten
+Checkpoints wächst (ab Chunk~12 jeder vierte, ab Chunk~40 jeder vierzigste).
 
 \paragraph{Stärke gegenüber den Vorvarianten.}
 Dass die Datenrezept-Iterationen nicht nur die Bewertung, sondern auch das Spiel
@@ -915,7 +891,7 @@ von etwa 80\,\% der aktiven Spieler. Der Vergleich ist allerdings nur illustrati
 da unsere Stockfish-verankerte Elo-Näherung nicht auf derselben Skala wie das
 Glicko-2-System von Lichess liegt.
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \begin{tabular}{lrrrrrrrrrr}
@@ -926,9 +902,7 @@ Glicko-2-System von Lichess liegt.
     \bottomrule
   \end{tabular}
   \caption{Punktanteil von v4 gegen die zehn Stockfish-Anker-Stufen (je zwanzig
-    Partien über zwei Durchläufe, Bedenkzeit 0{,}75\,s/Zug). Der Nulldurchgang bei
-    0{,}5 liegt um 1900\,Elo; die logistische Anpassung über alle Stufen ergibt rund
-    1920\,Elo (95\,\%-Intervall etwa 1855\,--\,1980).}
+    Partien, 0{,}75\,s/Zug).}
   \label{tab:sl-anchor}
 \end{table}
 
@@ -962,19 +936,16 @@ Partien selten bis zum Matt gespielt werden und der Datensatz das Endspiel daher
 dünn abdeckt. Gegen den stärkeren Gegner, der Ungenauigkeiten konsequenter bestraft,
 tritt dieser Bruch entsprechend früher zutage.
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\textwidth]{img/sl_phase_advantage.pdf}
   \caption{Mittlerer Spielverlauf von v4 gegen Stockfish~1900 (links) und
-    Stockfish~2000 (rechts) über je zwanzig Partien. Aufgetragen ist der je Zugnummer
-    über alle Partien gemittelte Stellungsvorteil als Gewinn-\%-Punkte einer
-    Stockfish-Bewertung bei voller Stärke (Tiefe~16); nach oben ist v4 im Vorteil,
-    nach unten Stockfish. Die vertikale Achse ist für beide Stufen gleich skaliert. In
-    beiden Fällen startet v4 ausgeglichen bis leicht besser und wird später überspielt
-    -- gegen die stärkere Stufe~2000 früher und deutlicher. Die Kurven enden dort, wo
-    weniger als drei Partien beitragen.}
+    Stockfish~2000 (rechts) über je zwanzig Partien.}
   \label{fig:sl-phase}
 \end{figure}
+
+Nach oben ist v4 im Vorteil, nach unten Stockfish; die vertikale Achse ist für beide
+Stufen gleich skaliert. Die Kurven enden dort, wo weniger als drei Partien beitragen.
 
 
 \subsection{Ergebnisse Reinforcement Learning}
@@ -1007,7 +978,7 @@ gleichzeitig ausgewählte Blätter lassen die Suchstatistik veralten, sodass tro
 Virtual~Loss vermehrt derselbe Ast doppelt expandiert wird. Batch~32 bietet daher
 den besten Kompromiss und wurde für alle Messungen gewählt.
 
-\begin{table}[H]
+\begin{table}[htbp]
   \centering
   \small
   \begin{tabular}{rrr}
@@ -1021,11 +992,8 @@ den besten Kompromiss und wurde für alle Messungen gewählt.
     64 & 1368 & 11{,}3 \\
     \bottomrule
   \end{tabular}
-  \caption{Blattauswertungs-Batch-Größe der MCTS über 50 Teststellungen bei
-    1{,}0\,s/Zug: Durchsatz (Simulationen pro Sekunde) und Zugqualität (mittlerer
-    Centipawn-Verlust der Netz-Züge gegenüber Stockfish). Batch~32 maximiert den
-    Durchsatz ohne Qualitätsverlust; Batch~64 steigert den Durchsatz nur noch wenig
-    und verschlechtert die Züge. Gewählt: Batch~32.}
+  \caption{Batch-Größe der Blattauswertung: Durchsatz und Zugqualität über 50
+    Teststellungen bei 1{,}0\,s/Zug.}
   \label{tab:mcts-batch}
 \end{table}
 
