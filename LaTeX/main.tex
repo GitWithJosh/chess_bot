@@ -866,6 +866,30 @@ ist.
   \label{fig:sl-convergence}
 \end{figure}
 
+Dass der fallende Loss tatsächlich mit gewonnener Spielstärke einhergeht, prüft ein
+Vergleich des fertigen Netzes gegen 30 eigene Trainings-Checkpoints
+(Abbildung~\ref{fig:sl-gauntlet}). Um allein das Gelernte zu messen, spielen beide
+Seiten dabei ohne Suche, also direkt das Argument des Policy-Heads. Die Spielstärke
+steigt über das Training deutlich an -- frühe Checkpoints liegen rund 500\,Elo
+zurück --, sättigt aber gegen Ende: Ab etwa Chunk~400 sind die Checkpoints vom
+finalen Netz nicht mehr sicher zu unterscheiden. Das letzte Sechstel des Trainings
+trug damit kaum noch messbare Spielstärke bei.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{img/sl_gauntlet.pdf}
+  \caption{Spielstärke der Trainings-Checkpoints von v4, gemessen als Elo-Differenz
+    zum fertigen Netz (je 50 Partien ohne Suche, reines Policy-Argument); an den
+    beschrifteten Punkten ist zusätzlich die Bilanz Sieg--Remis--Niederlage aus Sicht
+    des fertigen Netzes angegeben. Die Checkpoints sind gleichmäßig angeordnet, nicht
+    proportional zur Trainingsdauer -- der frühe Verlauf wurde dichter abgetastet; die
+    gestrichelten Vertikalen markieren, wo der Abstand zwischen den gesicherten
+    Checkpoints wächst (ab Chunk~12 jeder vierte, ab Chunk~40 jeder vierzigste). Die
+    Stärke steigt zunächst deutlich und erreicht ab etwa Chunk~400 das Niveau des
+    finalen Netzes.}
+  \label{fig:sl-gauntlet}
+\end{figure}
+
 \paragraph{Stärke gegenüber den Vorvarianten.}
 Dass die Datenrezept-Iterationen nicht nur die Bewertung, sondern auch das Spiel
 verbesserten, bestätigen direkte Matches gegen die früheren Netze: In kürzeren
