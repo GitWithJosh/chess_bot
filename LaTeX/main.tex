@@ -700,9 +700,10 @@ das zu verankernde Netz gegen zehn Stockfish-Stufen von 1400 bis 2300\,Elo
 (Schrittweite 100) an, bei einer festen Bedenkzeit von 0{,}75\,s je Zug auf
 Stockfish-Seite; das Netz zieht wie oben über die Suche mit 1000 Simulationen. Da
 schon fünf Eröffnungen genügen, um die Stufen abzudecken, verwendet der Anker-Lauf
-kürzere Matches von zehn Partien je Stufe (fünf Ein-Halbzug-Eröffnungen \(\times\)
-zwei Farben). Aus dem Punktverlauf über die Stufen wird die absolute Elo des Netzes
-per logistischer Anpassung der Erwartungsscore-Kurve geschätzt.
+kürzere Matches von zwanzig Partien je Stufe, verteilt auf zwei Durchläufe mit je
+fünf Eröffnungen (Ein- bzw.\ Zwei-Halbzug-Eröffnungen, jeweils \(\times\) zwei
+Farben). Aus dem Punktverlauf über die Stufen wird die absolute Elo des Netzes per
+logistischer Anpassung der Erwartungsscore-Kurve geschätzt.
 
 \subsection{Ergebnisse Supervised Learning}\label{sec:sl-results}
 Der überwacht trainierte Agent entstand in vier Iterationen, die sich allein in
@@ -865,15 +866,13 @@ sich damit durchgängig in Spielstärke.
 \paragraph{Absolute Spielstärke.}
 Zur Einordnung auf eine absolute Skala tritt v4 gegen die zehn Stockfish-Stufen des
 Ankers an (Abschnitt~\ref{sec:eval-setup}); Tabelle~\ref{tab:sl-anchor} zeigt den
-Punktverlauf. Der Übergang zum ausgeglichenen Match (Punktanteil 0{,}5) liegt um
-1900\,Elo. Eine logistische Anpassung der Erwartungsscore-Kurve an alle zehn Stufen
-schätzt die absolute Spielstärke von v4 auf rund \(1920\)\,Elo
-(95\,\%-Likelihood-Intervall etwa 1840\,--\,2010). Der Verlauf ist allerdings nicht
-streng monoton -- bei nur zehn Partien je Stufe schwanken einzelne Punkte deutlich
-(etwa der Punktanteil 0{,}25 gegen Stufe~2300 gegenüber 0{,}10 gegen die schwächere
-Stufe~2200) --, sodass der Anker eher eine Größenordnung als einen präzisen Wert
-liefert. Eine Verdopplung der Partienzahl je Stufe würde die Kalibrierung robuster
-machen und bleibt zukünftigen Läufen vorbehalten. Zur Veranschaulichung dieser
+über zwei Durchläufe (zwanzig Partien je Stufe) gemittelten Punktverlauf. Der
+Übergang zum ausgeglichenen Match (Punktanteil 0{,}5) liegt bei etwa 1900\,Elo. Eine
+logistische Anpassung der Erwartungsscore-Kurve an alle zehn Stufen schätzt die
+absolute Spielstärke von v4 auf rund \(1920\)\,Elo (95\,\%-Likelihood-Intervall etwa
+1855\,--\,1980). Der Punktverlauf ist über die zwanzig Partien je Stufe weitgehend
+monoton; die verbleibende Reststreuung gegen die stärksten Stufen fällt kaum noch ins
+Gewicht, sodass der Anker eine belastbare Schätzung liefert. Zur Veranschaulichung dieser
 Größenordnung lässt sich der Anker auf die wöchentliche Blitz-Ratingverteilung von
 Lichess beziehen \parencite{lichess_blitz_dist}: Rund 1920\,Elo liegt dort oberhalb
 von etwa 80\,\% der aktiven Spieler. Der Vergleich ist allerdings nur illustrativ,
@@ -887,21 +886,22 @@ Glicko-2-System von Lichess liegt.
     \toprule
     Stockfish-Elo  & 1400 & 1500 & 1600 & 1700 & 1800 & 1900 & 2000 & 2100 & 2200 & 2300 \\
     \midrule
-    Punktanteil~v4 & 1{,}00 & 0{,}90 & 1{,}00 & 0{,}60 & 0{,}90 & 0{,}45 & 0{,}30 & 0{,}15 & 0{,}10 & 0{,}25 \\
+    Punktanteil~v4 & 1{,}00 & 0{,}93 & 0{,}93 & 0{,}68 & 0{,}68 & 0{,}48 & 0{,}33 & 0{,}18 & 0{,}18 & 0{,}25 \\
     \bottomrule
   \end{tabular}
-  \caption{Punktanteil von v4 gegen die zehn Stockfish-Anker-Stufen (je zehn
-    Partien, Bedenkzeit 0{,}75\,s/Zug). Der Nulldurchgang bei 0{,}5 liegt um
-    1900\,Elo; die logistische Anpassung über alle Stufen ergibt rund 1920\,Elo.}
+  \caption{Punktanteil von v4 gegen die zehn Stockfish-Anker-Stufen (je zwanzig
+    Partien über zwei Durchläufe, Bedenkzeit 0{,}75\,s/Zug). Der Nulldurchgang bei
+    0{,}5 liegt um 1900\,Elo; die logistische Anpassung über alle Stufen ergibt rund
+    1920\,Elo (95\,\%-Intervall etwa 1855\,--\,1980).}
   \label{tab:sl-anchor}
 \end{table}
 
 
 \paragraph{Spielverlauf nach Phasen.}
-Wo genau v4 gegen einen nahezu ebenbürtigen Gegner Boden verliert, zeigt eine
-phasenaufgelöste Analyse der zehn Partien gegen Stockfish~2000 -- die Stufe knapp
-über der Ankerstärke des Netzes, gegen die v4 nur einen Punktanteil von 0{,}30
-erreichte. Jede Stellung jeder Partie wurde dazu von Stockfish bei voller Stärke
+Wo genau v4 im Spielverlauf Boden verliert, zeigt eine phasenaufgelöste Analyse der
+Partien gegen die beiden Stufen um die Ankerstärke des Netzes: Stockfish~1900 (knapp
+darunter, Punktanteil 0{,}48) und Stockfish~2000 (knapp darüber, Punktanteil 0{,}33).
+Jede Stellung aller je zwanzig Partien wurde dazu von Stockfish bei voller Stärke
 (Tiefe~16) bewertet. Die Centipawn-Bewertung \(c\) einer Stellung (aus Sicht des
 Anziehenden) wurde anschließend über eine logistische Funktion in einen
 Gewinnvorteil überführt,
@@ -911,24 +911,32 @@ Gewinnvorteil überführt,
 \]
 sodass große Materialvorteile nicht beliebig stark ins Gewicht fallen.
 Abbildung~\ref{fig:sl-phase} mittelt diesen -- aus Sicht von v4 orientierten --
-Vorteil (positiv für v4, negativ für Stockfish) über alle Partien je Zugnummer. Das Bild ist eindeutig:
-In Eröffnung und Mittelspiel hält v4 ausgeglichene bis leicht bessere Stellungen
-(mittlerer Vorteil +3{,}9 bzw.\ +4{,}7 Gewinn-\%-Punkte), verliert dann aber ab etwa
-Zug~26 die Kontrolle und wird im Endspiel klar überspielt (\(-24{,}8\)). Die Schwäche
-des überwacht trainierten Netzes liegt somit nicht in der Eröffnungs- oder
-Mittelspielbehandlung, sondern in der Verwertung und Endspieltechnik -- konsistent
-damit, dass menschliche Partien selten bis zum Matt gespielt werden und der Datensatz
-das Endspiel daher nur dünn abdeckt.
+Vorteil (positiv für v4, negativ für Stockfish) je Zugnummer über alle Partien; die
+vertikale Achse ist für beide Stufen gleich skaliert. Beide Kurven erzählen dieselbe
+Geschichte: v4 startet
+ausgeglichen bis leicht besser und verliert erst im weiteren Verlauf die Kontrolle --
+gegen die stärkere Stufe~2000 jedoch deutlich früher und tiefer. Gegen Stockfish~1900
+hält v4 bis weit ins Mittelspiel einen Vorteil (Mittelwert +3{,}9 in der Eröffnung,
++11{,}7 im Mittelspiel) und gibt erst spät nach (+7{,}0 im Endspiel); gegen
+Stockfish~2000 bleibt es früh nur ausgeglichen (+1{,}2 bzw.\ +0{,}7) und wird schon ab
+etwa Zug~23 klar überspielt (\(-22{,}3\) im Endspiel). Die Schwäche des überwacht
+trainierten Netzes liegt somit nicht in der Eröffnungs- oder Mittelspielbehandlung,
+sondern in der Verwertung und Endspieltechnik -- konsistent damit, dass menschliche
+Partien selten bis zum Matt gespielt werden und der Datensatz das Endspiel daher nur
+dünn abdeckt. Gegen den stärkeren Gegner, der Ungenauigkeiten konsequenter bestraft,
+tritt dieser Bruch entsprechend früher zutage.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\textwidth]{img/sl_phase_advantage_2000.pdf}
-  \caption{Mittlerer Spielverlauf von v4 gegen Stockfish~2000 über zehn Partien.
-    Aufgetragen ist der je Zugnummer über alle Partien gemittelte Stellungsvorteil,
-    ausgedrückt als Gewinn-\%-Punkte einer Stockfish-Bewertung bei voller Stärke
-    (Tiefe~16); nach oben ist v4 im Vorteil, nach unten Stockfish. v4 hält bis in das
-    Mittelspiel ausgeglichene Stellungen und wird erst im Endspiel deutlich
-    überspielt. Die Kurve endet dort, wo weniger als drei Partien beitragen.}
+  \includegraphics[width=\textwidth]{img/sl_phase_advantage.pdf}
+  \caption{Mittlerer Spielverlauf von v4 gegen Stockfish~1900 (links) und
+    Stockfish~2000 (rechts) über je zwanzig Partien. Aufgetragen ist der je Zugnummer
+    über alle Partien gemittelte Stellungsvorteil als Gewinn-\%-Punkte einer
+    Stockfish-Bewertung bei voller Stärke (Tiefe~16); nach oben ist v4 im Vorteil,
+    nach unten Stockfish. Die vertikale Achse ist für beide Stufen gleich skaliert. In
+    beiden Fällen startet v4 ausgeglichen bis leicht besser und wird später überspielt
+    -- gegen die stärkere Stufe~2000 früher und deutlicher. Die Kurven enden dort, wo
+    weniger als drei Partien beitragen.}
   \label{fig:sl-phase}
 \end{figure}
 
