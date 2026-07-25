@@ -871,7 +871,12 @@ streng monoton -- bei nur zehn Partien je Stufe schwanken einzelne Punkte deutli
 (etwa der Punktanteil 0{,}25 gegen Stufe~2300 gegenüber 0{,}10 gegen die schwächere
 Stufe~2200) --, sodass der Anker eher eine Größenordnung als einen präzisen Wert
 liefert. Eine Verdopplung der Partienzahl je Stufe würde die Kalibrierung robuster
-machen und bleibt zukünftigen Läufen vorbehalten.
+machen und bleibt zukünftigen Läufen vorbehalten. Zur Veranschaulichung dieser
+Größenordnung lässt sich der Anker auf die wöchentliche Blitz-Ratingverteilung von
+Lichess beziehen \parencite{lichess_blitz_dist}: Rund 1920\,Elo liegt dort oberhalb
+von etwa 80\,\% der aktiven Spieler. Der Vergleich ist allerdings nur illustrativ,
+da unsere Stockfish-verankerte Elo-Näherung nicht auf derselben Skala wie das
+Glicko-2-System von Lichess liegt.
 
 \begin{table}[H]
   \centering
@@ -889,6 +894,41 @@ machen und bleibt zukünftigen Läufen vorbehalten.
   \label{tab:sl-anchor}
 \end{table}
 
+\paragraph{Spielverlauf nach Phasen.}
+Wo genau v4 gegen einen nahezu ebenbürtigen Gegner Boden verliert, zeigt eine
+phasenaufgelöste Analyse der zehn Partien gegen Stockfish~2000 -- die Stufe knapp
+über der Ankerstärke des Netzes, gegen die v4 nur einen Punktanteil von 0{,}30
+erreichte. Jede Stellung jeder Partie wurde dazu von Stockfish bei voller Stärke
+(Tiefe~16) bewertet. Die Centipawn-Bewertung \(c\) einer Stellung (aus Sicht des
+Anziehenden) wurde anschließend über eine logistische Funktion in einen
+Gewinnvorteil überführt,
+\[
+  V(c) = 100 \cdot \left(\frac{1}{1 + e^{-0{,}00368\,c}} - \tfrac{1}{2}\right)
+  \quad [\text{Gewinn-\%-Punkte}],
+\]
+sodass große Materialvorteile nicht beliebig stark ins Gewicht fallen.
+Abbildung~\ref{fig:sl-phase} mittelt diesen -- aus Sicht von v4 orientierten --
+Vorteil (positiv für v4, negativ für Stockfish) über alle Partien je Zugnummer. Das Bild ist eindeutig:
+In Eröffnung und Mittelspiel hält v4 ausgeglichene bis leicht bessere Stellungen
+(mittlerer Vorteil +3{,}9 bzw.\ +4{,}7 Gewinn-\%-Punkte), verliert dann aber ab etwa
+Zug~26 die Kontrolle und wird im Endspiel klar überspielt (\(-24{,}8\)). Die Schwäche
+des überwacht trainierten Netzes liegt somit nicht in der Eröffnungs- oder
+Mittelspielbehandlung, sondern in der Verwertung und Endspieltechnik -- konsistent
+damit, dass menschliche Partien selten bis zum Matt gespielt werden und der Datensatz
+das Endspiel daher nur dünn abdeckt.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\textwidth]{img/sl_phase_advantage_2000.pdf}
+  \caption{Mittlerer Spielverlauf von v4 gegen Stockfish~2000 über zehn Partien.
+    Aufgetragen ist der je Zugnummer über alle Partien gemittelte Stellungsvorteil,
+    ausgedrückt als Gewinn-\%-Punkte einer Stockfish-Bewertung bei voller Stärke
+    (Tiefe~16); nach oben ist v4 im Vorteil, nach unten Stockfish. v4 hält bis in das
+    Mittelspiel ausgeglichene Stellungen und wird erst im Endspiel deutlich
+    überspielt. Die Kurve endet dort, wo weniger als drei Partien beitragen.}
+  \label{fig:sl-phase}
+\end{figure}
+
 \subsection{Ergebnisse Reinforcement Learning}                    % [Tim]
 % Konvergenz; Staerke gegen Random und Stockfish-Level; Elo.  (~1.0 S.)
 
@@ -896,7 +936,59 @@ machen und bleibt zukünftigen Läufen vorbehalten.
 % Head-to-Head-Partien, Elo-Differenz; wer ist frueher/spaeter besser.  (~0.75 S.)
 
 \subsection{Rechenaufwand \& Inferenzzeit}\label{sec:compute}
-% Trainings-/Inferenzkosten; Trainingszeiten als Einschraenkung (untersch. Hardware).  (~0.5 S.)
+Der Rechenaufwand wird vom Reinforcement Learning mit seiner Selbstspiel-Schleife
+dominiert; aus Sicht des überwachten Lernens fallen die Kosten in drei Posten an.
+
+\paragraph{Datenaufbereitung und Training (SL).}
+Der teuerste Einzelposten war die Datengrundlage: Der Lichess-Partiendump umfasst
+rund 2\,TB, dessen Filterung und Aufbereitung zu Trainings-Chunks
+(Abschnitt~\ref{sec:sl-impl}) etwa 13 Stunden in Anspruch nahm. Das eigentliche
+Training einer Epoche über die 469 Chunks dauerte anschließend rund 8 Stunden auf
+einer Kaggle-GPU (P100).
+
+\paragraph{Blattauswertung und Batch-Größe.}
+Zur Laufzeit dominiert die Auswertung der Suchbaum-Blätter durch das Netz die
+Kosten. Da die MCTS die Blätter stapelweise auf der GPU auswertet, wurde die
+Batch-Größe über 50 Teststellungen bei fester Bedenkzeit von 1{,}0\,s je Zug
+variiert (Tabelle~\ref{tab:mcts-batch}). Der Durchsatz steigt bis Batch~32 auf das
+rund Zehnfache (108 auf 1147 Simulationen/s), während die Zugqualität -- gemessen
+als mittlerer Centipawn-Verlust gegenüber Stockfish -- praktisch konstant bleibt
+(rund 9{,}1). Erst bei Batch~64 bricht die Qualität ein (11{,}3\,cp): So viele
+gleichzeitig ausgewählte Blätter lassen die Suchstatistik veralten, sodass trotz
+Virtual~Loss vermehrt derselbe Ast doppelt expandiert wird. Batch~32 bietet daher
+den besten Kompromiss und wurde für alle Messungen gewählt.
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{rrr}
+    \toprule
+    Batch-Größe & Simulationen/s & Mittl.\ cp-Verlust \\
+    \midrule
+     1 &  108 &  9{,}1 \\
+     8 &  573 &  9{,}2 \\
+    16 &  882 &  9{,}2 \\
+    32 & 1147 &  9{,}1 \\
+    64 & 1368 & 11{,}3 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Blattauswertungs-Batch-Größe der MCTS über 50 Teststellungen bei
+    1{,}0\,s/Zug: Durchsatz (Simulationen pro Sekunde) und Zugqualität (mittlerer
+    Centipawn-Verlust der Netz-Züge gegenüber Stockfish). Batch~32 maximiert den
+    Durchsatz ohne Qualitätsverlust; Batch~64 steigert den Durchsatz nur noch wenig
+    und verschlechtert die Züge. Gewählt: Batch~32.}
+  \label{tab:mcts-batch}
+\end{table}
+
+\paragraph{Kosten je Partie.}
+Bei Batch~32 benötigt das Netz für einen Zug (1000 Simulationen) rund 0{,}75\,s;
+Stockfish wurde daher mit 0{,}75\,s/Zug ungefähr dieselbe Bedenkzeit zugestanden,
+was einen fairen Zeitvergleich für den Anker sicherstellt
+(Abschnitt~\ref{sec:eval-setup}). Eine vollständige Partie zweier Netze mit je
+1000 Simulationen dauert so im Mittel etwa 1{,}6 Minuten, ein 100-Partie-Match
+entsprechend rund 2{,}5 bis 3 Stunden.
+
+% [Tim] Reinforcement Learning: Selbstspiel-Kosten, Generationen, Gesamtrechenzeit.
 
 
 \section{Diskussion}
