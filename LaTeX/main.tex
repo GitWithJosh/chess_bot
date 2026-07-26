@@ -710,12 +710,10 @@ Match-Stichprobe. Da das Elo-System nur Differenzen liefert, dient als absoluter
 Anker Stockfish mit über \texttt{UCI\_Elo} gedrosselter Spielstärke. Konkret tritt
 das zu verankernde Netz gegen zehn Stockfish-Stufen von 1400 bis 2300\,Elo
 (Schrittweite 100) an, bei einer festen Bedenkzeit von 0{,}75\,s je Zug auf
-Stockfish-Seite. Das Netz zieht wie oben über die Suche mit 1000 Simulationen. Da
-schon fünf Eröffnungen genügen, um die Stufen abzudecken, verwendet der Anker-Lauf
-kürzere Matches von zwanzig Partien je Stufe, verteilt auf zwei Durchläufe mit je
-fünf Eröffnungen (Ein- bzw.\ Zwei-Halbzug-Eröffnungen, jeweils \(\times\) zwei
-Farben). Aus dem Punktverlauf über die Stufen wird die absolute Elo des Netzes per
-logistischer Anpassung der Erwartungsscore-Kurve geschätzt.
+Stockfish-Seite. Das Netz zieht wie oben über die Suche mit 1000 Simulationen. Je
+Stufe werden zwanzig Partien gespielt, wieder farbausgeglichen über zufällige
+Eröffnungen. Aus dem Punktverlauf über die Stufen wird die absolute Elo des Netzes
+per logistischer Anpassung der Erwartungsscore-Kurve geschätzt.
 
 \subsection{Ergebnisse Supervised Learning}\label{sec:sl-results}
 Der überwacht trainierte Agent entstand in vier Iterationen, die sich allein in
