@@ -1083,11 +1083,12 @@ Der Rechenaufwand wird vom Reinforcement Learning mit seiner Selbstspiel-Schleif
 dominiert. Aus Sicht des überwachten Lernens fallen die Kosten in drei Posten an.
 
 \paragraph{Datenaufbereitung und Training (SL).}
-Der teuerste Einzelposten war die Datengrundlage. Der Lichess-Partiendump umfasst
-rund 2\,TB, dessen Filterung und Aufbereitung zu Trainings-Chunks
-(Abschnitt~\ref{sec:sl-impl}) etwa 13 Stunden in Anspruch nahm. Das eigentliche
-Training einer Epoche über die 469 Chunks dauerte anschließend rund 8 Stunden auf
-einer Kaggle-GPU (P100).
+Der teuerste Posten war die Datengrundlage. Der Lichess-Partiendump umfasst rund
+2\,TB, dessen Filterung etwa 13 Stunden in Anspruch nahm. Die anschließende
+Annotation der rund 22{,}4\,Mio.\ Spiel- und Puzzle-Positionen mit Stockfish bis
+Tiefe~12 (Abschnitt~\ref{sec:sl-impl}) benötigte weitere 18 Stunden. Beide Schritte
+fallen einmalig an und laufen ohne GPU. Das eigentliche Training einer Epoche über
+die 469 Chunks dauerte anschließend rund 8 Stunden auf einer Kaggle-GPU (P100).
 
 \paragraph{Blattauswertung und Batch-Größe.}
 Zur Laufzeit dominiert die Auswertung der Suchbaum-Blätter durch das Netz die
@@ -1127,15 +1128,99 @@ was einen fairen Zeitvergleich für den Anker sicherstellt
 1000 Simulationen dauert so im Mittel etwa 1{,}6 Minuten, ein 100-Partie-Match
 entsprechend rund 2{,}5 bis 3 Stunden.
 
-% [Tim] Reinforcement Learning: Selbstspiel-Kosten, Generationen, Gesamtrechenzeit.
+\paragraph{Selbstspiel (RL).}
+Auf der Seite des bestärkenden Lernens dominiert die Datenerzeugung. Jede
+Trainingsposition entsteht aus einer vollständigen Baumsuche, sodass die Kosten mit
+der Zahl der Simulationen und der Games je Iteration multiplikativ wachsen. Über
+alle Läufe hinweg, einschließlich der in Abschnitt~\ref{sec:rl-results}
+beschriebenen gescheiterten Konfigurationen, wurden dafür rund 120 GPU-Stunden auf
+derselben Kaggle-GPU (P100) aufgewendet.
+% [Tim] Aufschlüsselung je Lauf und Kosten je Iteration ergänzen.
 
 
 \section{Diskussion}
-% Interpretation, Limitierungen,  (~1.5 S.)
 
+\paragraph{Einordnung der Ergebnisse.}
+Unter den hier gewählten Bedingungen ist der überwacht trainierte Agent dem im
+Self-Play trainierten deutlich überlegen. Er erreicht rund 1920 gegenüber rund
+1330\,Elo und gewinnt das direkte Match mit einem Punktanteil von 0{,}93
+(Abschnitt~\ref{sec:sl-vs-rl}). Dieses Ergebnis ist allerdings kein Beleg dafür,
+dass Self-Play als Verfahren versagt. Gegen sein eigenes Ausgangsnetz gewinnt
+gen\_4 klar und hat dessen Spielstärke um gut 200\,Elo angehoben. Das Verfahren
+lernt also auch in diesem Rahmen, es startete nur von einem deutlich niedrigeren
+Niveau und konnte den Abstand im verfügbaren Budget nicht aufholen.
+
+\paragraph{Der entscheidende Faktor ist der Rechenaufwand.}
+Der Grund für diesen Abstand liegt weniger im Lernverfahren als in den Kosten der
+Datenbeschaffung. Beide Agenten trainierten auf derselben Hardware, einer
+Kaggle-GPU vom Typ P100. Das überwachte Training benötigte davon rund acht
+GPU-Stunden, denen eine einmalige, GPU-freie Aufbereitung von etwa 31 Stunden
+vorausging. Das bestärkende Lernen verbrauchte dagegen rund 120 GPU-Stunden und
+blieb dabei fast 600\,Elo zurück (Abschnitt~\ref{sec:compute}). Der Unterschied
+folgt unmittelbar aus der Herkunft der Daten. Überwachtes Lernen greift auf einen
+Korpus zu, in dem die Spielstärke von Millionen menschlicher Partien bereits
+enthalten ist, und muss diesen nur noch aufbereiten. Self-Play muss jede einzelne
+Trainingsposition selbst erzeugen, und zwar über eine hinreichend starke Baumsuche,
+denn nur dann liefert die Suche ein besseres Ziel als das Netz selbst und es gibt
+überhaupt etwas zu lernen (Abschnitt~\ref{sec:rl-results}). Genau diese Bedingung
+macht die Datenerzeugung teuer und ist unter kleinem Budget der bindende Engpass.
+
+\paragraph{Das Trainingssignal prägt die Schwächen.}
+Beide Agenten teilen Architektur, Kodierung und Suche und unterscheiden sich allein
+im Trainingssignal. Dass sie dennoch an entgegengesetzten Stellen scheitern, ist
+daher unmittelbar auf die Daten zurückzuführen. Der überwacht trainierte Agent
+spielt Eröffnung und Mittelspiel ausgeglichen und verliert erst im Endspiel, weil
+menschliche Partien diese frühen Phasen dicht abdecken, aber meist vor dem Matt
+enden. Der bestärkend trainierte Agent zeigt das umgekehrte Bild, da Self-Play jede
+Partie zu Ende spielt, aber ohne jedes Eröffnungswissen beginnt. Auf der Seite des
+überwachten Lernens bestätigt sich derselbe Zusammenhang noch einmal im Kleinen.
+Zwischen v1 und v4 wurden weder Architektur noch Suche verändert, sondern
+ausschließlich Zusammensetzung und Beschriftung der Daten, und allein daraus
+entstand der Unterschied zwischen einem Netz, das nicht mattsetzen konnte, und dem
+stärksten Agenten dieser Arbeit.
+
+\paragraph{Grenzen der Messung.}
+Die berichteten Elo-Werte sind Schätzungen mit erheblicher Unsicherheit. Ein Match
+über 100 Partien erlaubt bestenfalls eine Auflösung von einigen Dutzend Elo, sodass
+kleinere Unterschiede nicht belastbar sind. Der absolute Anker beruht zudem auf
+Stockfish mit gedrosseltem \texttt{UCI\_Elo}, was eine künstlich geschwächte
+Spielweise erzeugt und keine auf menschliche Spieler geeichte Skala darstellt. Für
+gen\_4 kommt hinzu, dass der Übergang zum ausgeglichenen Match unterhalb der
+niedrigsten einstellbaren Stufe liegt und der Wert daher extrapoliert bleibt
+(Abschnitt~\ref{sec:sl-vs-rl}). Schließlich wurde jede Konfiguration nur einmal
+trainiert. Ohne Wiederholungen mit verschiedenen Zufallsstartwerten lässt sich nicht
+trennen, welcher Teil der beobachteten Unterschiede auf die Konfiguration und
+welcher auf die Streuung einzelner Läufe entfällt.
+
+\paragraph{Grenzen des Vergleichs.}
+Verglichen werden zwei konkrete Umsetzungen unter einem festen Budget und nicht die
+beiden Paradigmen im Allgemeinen. Auf der Seite des bestärkenden Lernens wurden in
+der funktionierenden Konfiguration zwei Faktoren gleichzeitig verändert, die Zahl
+der Games und die Wahl eines schwächeren Seeds, sodass ihr jeweiliger Anteil offen
+bleibt (Abschnitt~\ref{sec:rl-results}). Vor allem aber unterscheiden sich die
+beiden Ansätze in ihrer oberen Schranke. Ein überwacht trainiertes Netz kann seine
+Lehrerquelle nachbilden, sie aber kaum übertreffen, und diese besteht hier aus
+Partien menschlicher Spieler und einer Stockfish-Bewertung bis Tiefe~12. Self-Play
+kennt diese Schranke nicht. Mit wachsendem Rechenbudget verschiebt sich der hier
+gemessene Vorteil daher voraussichtlich, und die Reihenfolge beider Ansätze ist
+nicht als allgemeingültig zu verstehen.
 
 \section{Fazit}
-% ~0.5 S.
+Die Arbeit ist der Frage nachgegangen, welches Trainingssignal den stärkeren
+Schachagenten liefert, wenn nur studentische Rechenzeit zur Verfügung steht. Unter
+diesen Bedingungen fällt die Antwort eindeutig aus. Der überwacht trainierte Agent
+erreicht rund 1920\,Elo und gewinnt das direkte Match gegen den im Self-Play
+trainierten Agenten mit einem Punktanteil von 0{,}93, wobei er dafür nur einen
+Bruchteil der Rechenzeit benötigte. Bezogen auf die Titelfrage bleibt unter diesen
+Bedingungen also der angelernte Agent vorn.
+
+Diese Antwort gilt jedoch unter einer wesentlichen Bedingung. Self-Play hat sein
+Ausgangsnetz um gut 200\,Elo verbessert und damit gezeigt, dass es auch in diesem
+Rahmen lernt. Sein Nachteil liegt nicht im Lernprinzip, sondern darin, dass es jede
+Trainingsposition durch eine eigene Suche erzeugen muss, während das überwachte
+Lernen auf einem bereits vorhandenen Korpus aufsetzt. Da dieser Korpus zugleich die
+Obergrenze des überwachten Ansatzes bildet, ist zu erwarten, dass sich das
+Verhältnis mit wachsendem Rechenbudget umkehrt.
 
 
 \printbibliography
