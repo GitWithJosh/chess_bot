@@ -1030,7 +1030,53 @@ Games bei hinreichend starker Suche über möglichst viele gegatete Iterationen.
 \end{figure}
 
 \subsection{Direktvergleich: SL vs. RL}\label{sec:headtohead}\label{sec:sl-vs-rl}
-% Head-to-Head-Partien, Elo-Differenz; wer ist frueher/spaeter besser.  (~0.75 S.)
+Der abschließende Vergleich stellt die besten Netze beider Ansätze gegenüber, also
+das überwacht trainierte v4 (Abschnitt~\ref{sec:sl-results}) und das im Self-Play
+trainierte gen\_4 (Abschnitt~\ref{sec:rl-results}).
+
+\paragraph{Direktes Match.}
+Unter dem Protokoll aus Abschnitt~\ref{sec:eval-setup} erreicht gen\_4 über 50
+Partien mit je 1000 Simulationen gegen v4 einen Punktanteil von 0{,}07
+(1\,--\,5\,--\,44), was einer Differenz von rund \(-449\) Elo entspricht. Von
+fünfzig Partien gewann der bestärkend trainierte Agent eine einzige.
+
+\paragraph{Einordnung über den Anker.}
+Beide Netze wurden unabhängig voneinander gegen dieselben zehn Stockfish-Stufen
+vermessen (Tabellen~\ref{tab:sl-anchor} und~\ref{tab:rl-anchor}). Für v4 ergibt die
+logistische Anpassung rund 1920\,Elo. Für gen\_4 liefert dieselbe Anpassung über
+alle Stufen rund 1360\,Elo, über die aussagekräftigen unteren Stufen jedoch nur rund
+1330\,Elo. Der niedrigere Wert ist der belastbarere, denn gegen die stärksten Stufen
+stammen nahezu alle von gen\_4 erzielten Punkte aus Remisen durch
+Stellungswiederholung, was die Anpassung nach oben zieht. Unabhängig davon bleibt
+die Zahl eine Extrapolation, da gen\_4 selbst gegen die schwächste Stufe nur einen
+Punktanteil von 0{,}38 erreicht und der Übergang zum ausgeglichenen Match damit
+unterhalb des über \texttt{UCI\_Elo} erreichbaren Bereichs liegt. Der so geschätzte
+Abstand von rund 590\,Elo weist in dieselbe Richtung wie das direkte Match und liegt
+in derselben Größenordnung.
+
+\paragraph{Self-Play verbesserte seinen Ausgangspunkt.}
+Der Rückstand bedeutet nicht, dass das Self-Play wirkungslos blieb. Gegen jenes Netz,
+aus dem es gestartet wurde, gewinnt gen\_4 deutlich. Über je 100 Partien erreicht es
+gegen den Seed-Checkpoint sl\_160 einen Punktanteil von 0{,}77
+(69\,--\,15\,--\,16, rund \(+205\) Elo) und gegen den nächsten gesicherten
+Checkpoint sl\_200 einen von 0{,}70 (61\,--\,17\,--\,22, rund \(+143\) Elo). Beide
+Matches ordnen die Checkpoints zugleich in der erwarteten Reihenfolge, denn sl\_200
+erweist sich als das stärkere der beiden. Das Self-Play hat seinen Ausgangspunkt also
+um gut 150 bis 200 Elo verbessert. Der Abstand zu v4 entsteht demnach nicht daraus,
+dass Self-Play unter diesen Bedingungen nichts lernt, sondern daraus, dass es von
+einem deutlich schwächeren Netz aus startete und diesen Vorsprung im verfügbaren
+Budget nicht aufholen konnte.
+
+\paragraph{Unterschiedliche Schwächen.}
+Aufschlussreicher als die reine Differenz ist, wo die beiden Agenten Boden verlieren.
+Die phasenaufgelösten Verläufe (Abbildungen~\ref{fig:sl-phase} und~\ref{fig:rl-phase})
+zeigen entgegengesetzte Muster. v4 hält Eröffnung und Mittelspiel ausgeglichen und
+wird erst im Endspiel überspielt, während gen\_4 bereits nach zwölf Zügen im Mittel
+14 bis 16 Gewinn-\%-Punkte zurückliegt und den größten Teil seines Rückstands lange
+vor dem Endspiel einbüßt. Dieses Muster spiegelt unmittelbar die Herkunft der
+Trainingsdaten. Menschliche Partien decken Eröffnung und Mittelspiel dicht ab und
+enden meist vor dem Matt, während Self-Play seine Partien stets zu Ende spielt, aber
+ohne jedes Eröffnungswissen beginnt.
 
 \subsection{Rechenaufwand \& Inferenzzeit}\label{sec:compute}
 Der Rechenaufwand wird vom Reinforcement Learning mit seiner Selbstspiel-Schleife
