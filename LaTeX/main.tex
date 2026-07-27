@@ -66,6 +66,35 @@
 \clearpage
 
 \section{Einleitung}
+Um ein neuronales Netz Schach spielen zu lassen, gibt es zwei grundsätzlich
+verschiedene Wege, an Trainingsdaten zu gelangen. Entweder lernt das Netz aus
+bereits vorhandenen Partien und ahmt die dort getroffenen Entscheidungen nach,
+oder es erzeugt seine Daten selbst, indem es gegen sich selbst spielt und aus dem
+Ausgang dieser Partien lernt. Beide Wege führen zum selben Artefakt, nämlich einem
+Netz, das eine Stellung auf eine Zugpräferenz und eine Bewertung abbildet, und
+beide nutzen dieselbe Suche, um daraus Züge auszuwählen. Sie unterscheiden sich
+allein darin, woher das Trainingssignal stammt.
+
+Welcher der beiden Wege der bessere ist, gilt seit AlphaZero als weitgehend
+beantwortet. Ein ausschließlich im Self-Play trainiertes Netz übertraf die damals
+stärksten Programme, ohne je eine menschliche Partie gesehen zu haben
+\parencite{silver2018}. Diese Antwort setzt allerdings einen Rechenaufwand voraus,
+der für die Datenerzeugung mehrere tausend TPUs parallel beschäftigt. Unter
+deutlich kleineren Verhältnissen ist die Frage erneut offen, denn Self-Play muss
+seine Trainingsdaten erst selbst erzeugen, während überwachtes Lernen auf einem
+bereits vorhandenen Korpus aufsetzt. Genau diese Verschiebung untersucht die
+vorliegende Arbeit. Sie fragt, welches Trainingssignal den stärkeren Agenten
+liefert, wenn die verfügbare Rechenzeit nicht die eines Rechenzentrums ist,
+sondern die einzelner GPU-Stunden auf frei verfügbaren Plattformen.
+
+Dazu wurden zwei Agenten entwickelt, die sich ausschließlich im Trainingssignal
+unterscheiden. Sie teilen sich Netzarchitektur, Zustandskodierung und
+Monte-Carlo-Baumsuche, sodass ein Vergleich zwischen ihnen allein das
+Trainingsparadigma misst und nicht die Unterschiede ihrer Bausteine. Der überwacht
+trainierte Agent lernt aus menschlichen Partien, Taktikaufgaben und
+Endspieldatenbanken, der bestärkend trainierte erzeugt seine Daten im Self-Play
+nach dem AlphaZero-Verfahren. Beide werden anschließend in Matches gegeneinander
+und gegen Stockfish auf einer gemeinsamen Elo-Skala eingeordnet.
 
 \section{Theoretische Grundlagen}
 % ~8.5 S.
@@ -1000,7 +1029,7 @@ Games bei hinreichend starker Suche über möglichst viele gegatete Iterationen.
   \label{fig:rl-phase}
 \end{figure}
 
-\subsection{Direktvergleich: SL vs. RL}\label{sec:headtohead}
+\subsection{Direktvergleich: SL vs. RL}\label{sec:headtohead}\label{sec:sl-vs-rl}
 % Head-to-Head-Partien, Elo-Differenz; wer ist frueher/spaeter besser.  (~0.75 S.)
 
 \subsection{Rechenaufwand \& Inferenzzeit}\label{sec:compute}
