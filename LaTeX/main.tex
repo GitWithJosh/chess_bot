@@ -950,6 +950,55 @@ Stufen gleich skaliert. Die Kurven enden dort, wo weniger als drei Partien beitr
 \subsection{Ergebnisse Reinforcement Learning}
 \label{sec:rl-results}% [Tim]
 % Konvergenz; Staerke gegen Random und Stockfish-Level; Elo.  (~1.0 S.)
+Dieser Abschnitt verfolgt die Entwicklung des mit RL trainierten Agenten über mehrere Self-Play-Läufe und leitet daraus die Konfiguration ab, die unter einem studentischen Rechenbudget zu konsequentem Lernen führte. 
+Die Messungen sind hier intern, Candidate gegen das vorige beste Netz oder Checkpoint gegen Checkpoint, und dienen dem Vergleich der RL-Konfigurationen untereinander. Ihre Einstellungen weichen teils vom Protokoll in Abschnitt~\ref{sec:eval-setup} ab und werden je Lauf benannt. Die Einordnung auf die absolute Stockfish-Skala und der direkte Vergleich mit dem überwachten Agenten folgen in Abschnitt~\ref{sec:sl-vs-rl}.
+\paragraph{Warum nicht from scratch?}
+Ein Agent von zufälligen Gewichten aus zu trainieren erwies sich unter dem verfügbaren Budget als aussichtslos. Nach rund 24\,h Self-Play holte das Netz gegen einen Random-Mover nur 26 von 50 Punkten. Ein Netz, das gegen zufällige Züge kaum über Zufallsniveau kommt, stellt im Mittel etwa so häufig Figuren ein wie der Gegner selbst. 
+Daraus folgt die Grundentscheidung des RL-Teils, nicht from scratch zu lernen, sondern ein per Supervised Learning vortrainiertes Netz als Seed zu verwenden und dieses per Self-Play zu verbessern.
+
+\paragraph{Erster Bootstrap-Versuch und sein Scheitern}
+Der erste Lauf startete aus einem vollständig konvergierten SL-Netz mit 100 Simulations pro Zug und 10 Self-Play-Games je Iteration, ohne Gating, und übernahm jedes trainierte Netz bedingungslos. Über rund 30\,h entstanden knapp 400 Iterationen, doch das Netz wurde nicht stärker, sondern schwächer. In einem Turnier zwischen den Checkpoints gewann das SL-Startnetz alle 24 Direktpartien gegen sämtliche RL-Checkpoints, und die späteren Checkpoints schlugen die früheren nicht, ein Verlauf ohne erkennbaren Aufwärtstrend. Die Loss-Kurven benennen die Ursache. Der Policy Loss blieb über den gesamten Lauf flach bis leicht steigend, während der Value Loss fiel. 
+Ein flacher Policy Loss bedeutet, dass die Suche keine besseren Zielverteilungen liefert als das Netz selbst, es also nichts zu lernen gibt. 
+Der fallende Value Loss ist irreführend, da er nur zeigt, dass das Netz die Ausgänge seines eigenen, remislastigen Self-Plays gut vorhersagt. Bei nur 100 Simulations ist MCTS(Netz) kaum stärker als das rohe Netz, sodass das Trainingsziel näherungsweise dem eigenen Zug des Netzes entspricht und das Update lediglich Rauschen in eine bereits starke Politik schiebt.
+
+\paragraph{Die bindende Bedingung}
+Damit Self-Play etwas zu lernen bietet, muss MCTS(Netz) stärker sein als das Netz allein. Diese Bedingung stellt zwei Anforderungen, die beide erfüllt sein müssen, und die folgenden Läufe zeigen, dass das Verletzen je einer Anforderung bereits genügt, um das Lernen zu verhindern. Ein Lauf mit starkem SL-Seed, 800 Simulations und weiterhin nur 10 Games je Iteration, nun mit Gate, akzeptierte über zehn Iterationen keinen einzigen Candidate. Die Candidates verloren durchgehend gegen das beste Netz, das Gate fing die Verschlechterung also korrekt ab. 
+Zehn Games liefern zu wenige und zu selbstähnliche Positionen, um eine konvergierte Politik in eine bessere Richtung zu schieben. 
+Ein weiterer Lauf prüfte den umgekehrten Fall mit sehr vielen Games bei schwacher Suche, 2000 Games je Iteration bei nur 100 Simulations. Über drei Iterationen und rund 15\,h lernte das Netz nicht, es holte gegen das Netz von vor diesen 15\,h nur 10{,}5 von 20 Punkten. Eine hohe Zahl an Games kompensiert eine zu schwache Suche also nicht. Zugleich verdeutlicht dieser Lauf die Kosten, denn bei rund 5\,h je Iteration verbrauchten schon drei Iterationen das halbe wöchentliche Kaggle-Kontingent.
+
+\paragraph{Die funktionierende Konfiguration}
+Erst die Kombination aus ausreichend starker Suche und ausreichend vielen Games führte zu konsequentem Lernen. In der Konfiguration mit 800 Simulations und 100 Games je Iteration, aus einem bewusst schwächer gewählten Seed und mit Gate, wurden vier von sechs Candidates promotet, die Kette klettert also mehrfach in Folge nach oben. Anders als die zuvor genannten Läufe erzeugt diese Konfiguration ein echtes
+Aufwärtssignal. 
+Einschränkend gilt, dass hier zwei Faktoren zusammenwirken, die höhere Game-Zahl und der schwächere Seed, der der Suche mehr Spielraum über dem Netz lässt. Der nachgewiesene Fortschritt ist damit ein Aufstieg von einer schwachen
+Basis. Dass das trainierte Netz auch das starke SL-Netz übertrifft, ist dadurch nicht belegt und wird in Abschnitt~\ref{sec:sl-vs-rl} geprüft.
+
+\paragraph{Einordnung unter studentischem Budget}
+AlphaZero und Leela erzeugen je Netzgeneration Zehntausende bis Millionen Partien, Klein nennt für AlphaGo Zero rund 25\,000 Games je Iteration \autocite{klein2022neural}.
+Bei rund 5\,h für 2000 Games mit reduzierter Suche liegt diese Größenordnung jenseits des Erreichbaren. Der empirisch beste Weg war hier daher nicht, die Game-Menge von AlphaZero nachzuahmen, sondern das Gegenteil, eine moderate Zahl von
+Games bei hinreichend starker Suche über möglichst viele gegatete Iterationen. Der detaillierte Rechenaufwand und die Inferenzzeiten folgen in Abschnitt~\ref{sec:compute}.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \begin{tabular}{lrrrrrrrrrr}
+    \toprule
+    Stockfish-Elo     & 1400 & 1500 & 1600 & 1700 & 1800 & 1900 & 2000 & 2100 & 2200 & 2300 \\
+    \midrule
+    Punktanteil gen\_4 & 0{,}38 & 0{,}33 & 0{,}15 & 0{,}08 & 0{,}08 & 0{,}08 & 0{,}03 & 0{,}05 & 0{,}05 & 0{,}05 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Punktanteil von gen\_4 gegen die zehn Stockfish-Anker-Stufen (je zwanzig
+    Partien, 0{,}75\,s/Zug).}
+  \label{tab:rl-anchor}
+\end{table}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{img/rl_phase_advantage.pdf}
+  \caption{Mittlerer Spielverlauf von gen\_4 gegen Stockfish~1400 (links) und
+    Stockfish~1500 (rechts) über je zwanzig Partien.}
+  \label{fig:rl-phase}
+\end{figure}
 
 \subsection{Direktvergleich: SL vs. RL}\label{sec:headtohead}
 % Head-to-Head-Partien, Elo-Differenz; wer ist frueher/spaeter besser.  (~0.75 S.)
