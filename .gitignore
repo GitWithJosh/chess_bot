@@ -6,6 +6,12 @@ __pycache__/
 # C extensions
 *.so
 
+*.weights.h5
+reinforcement_learning/networks/weights/
+*.pkl
+training_runs/checkpoints/
+training_runs/data/
+
 # Claude
 CLAUDE.md
 
@@ -233,6 +239,10 @@ __marimo__/
 # manifests; annotate_stockfish writes the work list).
 supervised_learning/processed_data/_build/
 supervised_learning/sf_cache/worklist.txt*
+
+# Raw Lichess PGN batches. Regenerable from the public Lichess dumps and far
+# too large to track.
+supervised_learning/supervised_data/
 
 *HANDOFF*
 *tools*
