@@ -11,7 +11,16 @@ from game.game import Game, GameStatus
 from engines.engine import ChessEngine
 from engines.human_engine import HumanInputEngine
 from utils.coordinates import indices_to_algebraic
+from gui.assets import load_image, load_icon
 
+
+# Short names for the draw conditions. The enum values are long snake_case and
+# do not fit the game over box at its largest font.
+DRAW_LABELS = {
+    GameStatus.THREEFOLD: "DRAW BY REPETITION",
+    GameStatus.FIFTY_MOVE: "50-MOVE RULE",
+    GameStatus.INSUFFICIENT: "INSUFFICIENT MATERIAL",
+}
 
 # Color scheme
 COLOR_BG = (45, 45, 45)
@@ -100,6 +109,14 @@ class GameOverScreen:
         self.font_medium = pygame.font.Font(None, 36)
         self.font_small = pygame.font.Font(None, 24)
 
+    def _fit(self, line: str, max_width: int) -> pygame.Surface:
+        """Render `line` at the largest of our sizes that fits `max_width`."""
+        for font in (self.font_large, self.font_medium, self.font_small):
+            surf = font.render(line, True, (255, 100, 100))
+            if surf.get_width() <= max_width:
+                return surf
+        return surf
+
     def show(self) -> str:
         """Show game over screen. Returns 'replay', 'menu', or 'close'."""
         overlay = pygame.Surface(self.screen.get_size())
@@ -119,7 +136,8 @@ class GameOverScreen:
         start_time = pygame.time.get_ticks()
         delay_ms = 800  # 0.8 second delay
 
-        # Get game status message
+        # Get game status message. Second line is spelled out rather than taken
+        # from the enum, whose values are long snake_case and overflowed the box.
         status = self.game.get_status()
         if status == GameStatus.CHECKMATE:
             winner = 'BLACK' if self.game.board.active_color == 'white' else 'WHITE'
@@ -127,7 +145,7 @@ class GameOverScreen:
         elif status == GameStatus.STALEMATE:
             message = "STALEMATE\nGAME DRAW"
         else:
-            message = f"GAME OVER\n{status.value.upper()}"
+            message = f"GAME OVER\n{DRAW_LABELS.get(status, status.value.replace('_', ' ').upper())}"
 
         while True:
             elapsed = pygame.time.get_ticks() - start_time
@@ -163,8 +181,12 @@ class GameOverScreen:
 
             msg_lines = message.split('\n')
             for i, line in enumerate(msg_lines):
-                text = self.font_large.render(line, True, (255, 100, 100))
-                self.screen.blit(text, (x + 80, y + 40 + i * 50))
+                text = self._fit(line, dialog_width - 40)
+                # Centred, so a long line stays inside the box either way.
+                self.screen.blit(
+                    text,
+                    (x + (dialog_width - text.get_width()) // 2, y + 40 + i * 50),
+                )
 
             # Only show buttons after delay
             if elapsed >= delay_ms:
@@ -268,6 +290,9 @@ class ChessGUI:
     HISTORY_START_Y = 150
     HISTORY_WIDTH = 300
     HISTORY_HEIGHT = 600
+    HISTORY_HEADER_H = 58     # title, plus room for the "more above" hint
+    HISTORY_ROW_H = 22
+    HISTORY_PAD_B = 10
 
     # Delay between engine moves in engine-vs-engine mode (milliseconds)
     ENGINE_MOVE_DELAY_MS = 700
@@ -295,8 +320,10 @@ class ChessGUI:
         self.dragging = False
         self.drag_from_square: Optional[tuple[int, int]] = None
 
+        # First visible row, one row per move pair. Following means the list
+        # sticks to the newest move until the user scrolls away from the bottom.
         self.history_scroll = 0
-        self.history_moves_per_page = 13  # More compact
+        self.history_follow = True
         self.game_over_shown = False
         self.board_flipped = False
         self.last_engine_polled_position: Optional[str] = None
@@ -315,7 +342,6 @@ class ChessGUI:
     def _load_piece_images(self) -> dict:
         """Load PNG piece images."""
         pieces = {}
-        pieces_dir = os.path.join(os.path.dirname(__file__), "..", "pieces-basic-png")
 
         piece_files = {
             ('white', 'pawn'): 'white-pawn.png',
@@ -332,24 +358,17 @@ class ChessGUI:
             ('black', 'king'): 'black-king.png',
         }
 
+        size = (self.SQUARE_SIZE - 10, self.SQUARE_SIZE - 10)
         for piece_key, filename in piece_files.items():
-            path = os.path.join(pieces_dir, filename)
-            if os.path.exists(path):
-                img = pygame.image.load(path)
-                pieces[piece_key] = pygame.transform.scale(img, (self.SQUARE_SIZE - 10, self.SQUARE_SIZE - 10))
+            img = load_image(filename, size)
+            if img is not None:
+                pieces[piece_key] = img
 
         return pieces
 
     def _load_button_image(self, filename: str, size: tuple) -> pygame.Surface | None:
-        """Load button image."""
-        path = os.path.join(os.path.dirname(__file__), "..", "pieces-basic-png", filename)
-        try:
-            if os.path.exists(path):
-                img = pygame.image.load(path)
-                return pygame.transform.scale(img, size)
-        except:
-            pass
-        return None
+        """Load a UI icon, tinted so it reads against the dark panels."""
+        return load_icon(filename, size)
 
     def run(self) -> bool:
         """Main game loop."""
@@ -394,11 +413,14 @@ class ChessGUI:
 
             elif event.type == pygame.MOUSEWHEEL:
                 # event.y is positive when scrolling up, and history_scroll is
-                # the index of the first visible move, so it has to go the
-                # other way or the list moves against the wheel.
-                self.history_scroll -= event.y
-                max_scroll = max(0, len(self.game.move_history) - self.history_moves_per_page)
-                self.history_scroll = max(0, min(self.history_scroll, max_scroll))
+                # the index of the first visible row, so it has to go the other
+                # way or the list moves against the wheel.
+                max_scroll = self._history_max_scroll()
+                self.history_scroll = max(
+                    0, min(self.history_scroll - event.y, max_scroll)
+                )
+                # Scrolling back down to the end re-arms following.
+                self.history_follow = self.history_scroll >= max_scroll
 
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
@@ -627,6 +649,24 @@ class ChessGUI:
                 y = mouse_y - self.SQUARE_SIZE // 2
                 self.screen.blit(self.piece_images[piece], (x, y))
 
+    def _history_rows_per_page(self) -> int:
+        usable = self.HISTORY_HEIGHT - self.HISTORY_HEADER_H - self.HISTORY_PAD_B
+        return max(1, usable // self.HISTORY_ROW_H)
+
+    def _history_total_rows(self) -> int:
+        return (len(self.game.move_history) + 1) // 2
+
+    def _history_max_scroll(self) -> int:
+        return max(0, self._history_total_rows() - self._history_rows_per_page())
+
+    def _clamp_history_scroll(self):
+        """Keep the scroll in range, and pin it to the bottom while following."""
+        max_scroll = self._history_max_scroll()
+        if self.history_follow:
+            self.history_scroll = max_scroll
+        else:
+            self.history_scroll = max(0, min(self.history_scroll, max_scroll))
+
     def _draw_move_history(self):
         """Draw move history panel."""
         # Panel background
@@ -646,33 +686,43 @@ class ChessGUI:
         title = self.font_medium.render("Moves", True, COLOR_TEXT_PRIMARY)
         self.screen.blit(title, (self.HISTORY_START_X + 10, self.HISTORY_START_Y + 10))
 
-        # Moves - display pairs (white and black) side-by-side
+        # Moves - display pairs (white and black) side-by-side.
         moves = self.game.move_history
-        y_offset = self.HISTORY_START_Y + 50
+        self._clamp_history_scroll()
 
-        start_idx = self.history_scroll
-        end_idx = min(start_idx + self.history_moves_per_page * 2, len(moves))
+        # Three evenly spaced columns, the number and then the two plies, so the
+        # rows reach across the panel instead of bunching up on the left.
+        num_x = self.HISTORY_START_X + 14
+        white_x = self.HISTORY_START_X + 62
+        black_x = self.HISTORY_START_X + int(self.HISTORY_WIDTH * 0.60)
 
-        i = start_idx
-        while i < end_idx:
-            move_num = i // 2 + 1
+        y_offset = self.HISTORY_START_Y + self.HISTORY_HEADER_H
+        start_row = self.history_scroll
+        end_row = min(start_row + self._history_rows_per_page(), self._history_total_rows())
 
-            # White move
-            if i < len(moves):
-                white_move = moves[i]
-                white_text = f"{move_num}. {white_move.from_square}-{white_move.to_square}"
-                white_surf = self.font_move.render(white_text, True, COLOR_TEXT_PRIMARY)
-                self.screen.blit(white_surf, (self.HISTORY_START_X + 10, y_offset))
+        for row in range(start_row, end_row):
+            i = row * 2
 
-            # Black move (on the same line, offset to the right)
+            num_surf = self.font_move.render(f"{row + 1}.", True, COLOR_TEXT_SECONDARY)
+            self.screen.blit(num_surf, (num_x, y_offset))
+
+            white_move = moves[i]
+            white_text = f"{white_move.from_square}-{white_move.to_square}"
+            white_surf = self.font_move.render(white_text, True, COLOR_TEXT_PRIMARY)
+            self.screen.blit(white_surf, (white_x, y_offset))
+
             if i + 1 < len(moves):
                 black_move = moves[i + 1]
                 black_text = f"{black_move.from_square}-{black_move.to_square}"
                 black_surf = self.font_move.render(black_text, True, COLOR_TEXT_SECONDARY)
-                self.screen.blit(black_surf, (self.HISTORY_START_X + 160, y_offset))
+                self.screen.blit(black_surf, (black_x, y_offset))
 
-            y_offset += 22
-            i += 2
+            y_offset += self.HISTORY_ROW_H
+
+        # Tell the reader there is more above, since the list follows the game.
+        if start_row > 0:
+            more = self.font_small.render(f"{start_row} more above", True, COLOR_TEXT_SECONDARY)
+            self.screen.blit(more, (num_x, self.HISTORY_START_Y + self.HISTORY_HEADER_H - 20))
 
     def _draw_ui(self):
         """Draw UI elements."""

@@ -6,6 +6,7 @@ from enum import Enum
 import os
 
 from engines import net_catalog
+from gui.assets import load_icon
 
 # Consistent color scheme
 COLOR_BG = (45, 45, 45)
@@ -99,15 +100,8 @@ class MenuScreen:
         self.back_button_img = self._load_button_image("back-button.png", (50, 50))
 
     def _load_button_image(self, filename: str, size: tuple) -> pygame.Surface | None:
-        """Load button image."""
-        path = os.path.join(os.path.dirname(__file__), "..", "pieces-basic-png", filename)
-        try:
-            if os.path.exists(path):
-                img = pygame.image.load(path)
-                return pygame.transform.scale(img, size)
-        except Exception:
-            pass
-        return None
+        """Load a UI icon, tinted so it reads against the dark panels."""
+        return load_icon(filename, size)
 
     def run(self) -> GameConfig | None:
         """Run menu loop."""
