@@ -11,7 +11,7 @@ from game.game import Game, GameStatus
 from engines.engine import ChessEngine
 from engines.human_engine import HumanInputEngine
 from utils.coordinates import indices_to_algebraic
-from gui.assets import load_image, load_icon
+from gui.assets import load_image, load_icon, ui_font
 
 
 # Short names for the draw conditions. The enum values are long snake_case and
@@ -40,8 +40,8 @@ class PromotionDialog:
 
     def __init__(self, screen: pygame.Surface):
         self.screen = screen
-        self.font_large = pygame.font.Font(None, 36)
-        self.font_small = pygame.font.Font(None, 24)
+        self.font_large = ui_font(24, bold=True)
+        self.font_small = ui_font(15)
         self.result = None
 
     def show(self) -> str:
@@ -105,9 +105,9 @@ class GameOverScreen:
     def __init__(self, screen: pygame.Surface, game: Game):
         self.screen = screen
         self.game = game
-        self.font_large = pygame.font.Font(None, 48)
-        self.font_medium = pygame.font.Font(None, 36)
-        self.font_small = pygame.font.Font(None, 24)
+        self.font_large = ui_font(30, bold=True)
+        self.font_medium = ui_font(22, bold=True)
+        self.font_small = ui_font(16)
 
     def _fit(self, line: str, max_width: int) -> pygame.Surface:
         """Render `line` at the largest of our sizes that fits `max_width`."""
@@ -217,8 +217,8 @@ class ConfirmDialog:
         self.screen = screen
         self.title = title
         self.message = message
-        self.font_medium = pygame.font.Font(None, 32)
-        self.font_small = pygame.font.Font(None, 24)
+        self.font_medium = ui_font(20, bold=True)
+        self.font_small = ui_font(16)
 
     def show(self) -> str | None:
         """Show dialog. Returns 'yes' or 'no'."""
@@ -290,8 +290,8 @@ class ChessGUI:
     HISTORY_START_Y = 150
     HISTORY_WIDTH = 300
     HISTORY_HEIGHT = 600
-    HISTORY_HEADER_H = 58     # title, plus room for the "more above" hint
-    HISTORY_ROW_H = 22
+    HISTORY_HEADER_H = 64     # title, plus room for the "more above" hint
+    HISTORY_ROW_H = 24
     HISTORY_PAD_B = 10
 
     # Delay between engine moves in engine-vs-engine mode (milliseconds)
@@ -302,10 +302,10 @@ class ChessGUI:
         self.screen = pygame.display.set_mode((self.WINDOW_WIDTH, self.WINDOW_HEIGHT))
         pygame.display.set_caption("Chess")
         self.clock = pygame.time.Clock()
-        self.font_large = pygame.font.Font(None, 48)
-        self.font_medium = pygame.font.Font(None, 32)
-        self.font_move = pygame.font.Font(None, 22)  # Larger for move history
-        self.font_small = pygame.font.Font(None, 20)
+        self.font_large = ui_font(30, bold=True)
+        self.font_medium = ui_font(22, bold=True)
+        self.font_move = ui_font(16)
+        self.font_small = ui_font(16)
 
         self.game = game
         self.white_engine = white_engine
@@ -722,7 +722,7 @@ class ChessGUI:
         # Tell the reader there is more above, since the list follows the game.
         if start_row > 0:
             more = self.font_small.render(f"{start_row} more above", True, COLOR_TEXT_SECONDARY)
-            self.screen.blit(more, (num_x, self.HISTORY_START_Y + self.HISTORY_HEADER_H - 20))
+            self.screen.blit(more, (num_x, self.HISTORY_START_Y + self.HISTORY_HEADER_H - 22))
 
     def _draw_ui(self):
         """Draw UI elements."""

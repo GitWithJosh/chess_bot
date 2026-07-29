@@ -16,6 +16,54 @@ import pygame
 
 ICON_TINT = (215, 215, 215)
 
+# pygame's bundled freesansbold hints badly below about 30 and renders far
+# smaller than its nominal size, 14 px tall at size 20, which is what made digits
+# uneven and l against i unreadable. Prefer a real UI face, regular and bold.
+# match_font is not used because it fuzzy-matches, returning Segoe UI Light for
+# "segoeui" and Arial Narrow for "arial".
+_FONT_CANDIDATES = [
+    ("segoeui.ttf", "segoeuib.ttf"),
+    ("tahoma.ttf", "tahomabd.ttf"),
+    ("verdana.ttf", "verdanab.ttf"),
+    ("arial.ttf", "arialbd.ttf"),
+]
+
+_font_cache: dict[tuple[int, bool], pygame.font.Font] = {}
+_font_files: tuple[str | None, str | None] | None = None
+
+
+def _resolve_font_files() -> tuple[str | None, str | None]:
+    """First candidate family present, as (regular, bold) paths."""
+    global _font_files
+    if _font_files is not None:
+        return _font_files
+    fonts_dir = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
+    for regular, bold in _FONT_CANDIDATES:
+        r_path = os.path.join(fonts_dir, regular)
+        if os.path.exists(r_path):
+            b_path = os.path.join(fonts_dir, bold)
+            _font_files = (r_path, b_path if os.path.exists(b_path) else r_path)
+            return _font_files
+    _font_files = (None, None)      # falls back to the pygame default
+    return _font_files
+
+
+def ui_font(size: int, bold: bool = False) -> pygame.font.Font:
+    """A cached UI font. Sizes are in real points, not the pygame default's scale."""
+    key = (size, bold)
+    cached = _font_cache.get(key)
+    if cached is not None:
+        return cached
+    regular, bold_path = _resolve_font_files()
+    path = bold_path if bold else regular
+    try:
+        font = pygame.font.Font(path, size)
+    except (OSError, pygame.error):
+        font = pygame.font.Font(None, size)
+        font.set_bold(bold)
+    _font_cache[key] = font
+    return font
+
 _PIECES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                            "pieces-basic-png")
 

@@ -6,7 +6,7 @@ from enum import Enum
 import os
 
 from engines import net_catalog
-from gui.assets import load_icon
+from gui.assets import load_icon, ui_font
 
 # Consistent color scheme
 COLOR_BG = (45, 45, 45)
@@ -72,9 +72,9 @@ class MenuScreen:
         self.screen = pygame.display.set_mode((self.WINDOW_WIDTH, self.WINDOW_HEIGHT))
         pygame.display.set_caption("Chess - Game Setup")
         self.clock = pygame.time.Clock()
-        self.font_large = pygame.font.Font(None, 56)
-        self.font_medium = pygame.font.Font(None, 36)
-        self.font_small = pygame.font.Font(None, 24)
+        self.font_large = ui_font(34, bold=True)
+        self.font_medium = ui_font(24, bold=True)
+        self.font_small = ui_font(16)
 
         self.config = None
         self.running = True
