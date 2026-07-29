@@ -468,7 +468,9 @@ def sf_analyse(rows, depth: int, workers: int, cache: dict):
                         info = eng.analyse(board, chess.engine.Limit(depth=depth))
                     except chess.engine.EngineError:
                         continue
-                    score = info["score"].pov(board.turn)
+                    raw_score = info.get("score")
+                    assert raw_score is not None
+                    score = raw_score.pov(board.turn)
                     wdl_info = info.get("wdl")
                     wdl = (wdl_info.pov(board.turn) if wdl_info is not None
                            else score.wdl(ply=board.ply()))

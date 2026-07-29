@@ -252,7 +252,9 @@ def _analyse(eng, fen: str):
     # selector — measured present on 3520/3520 positions — for 1.16x throughput.
     info = eng.analyse(board, chess.engine.Limit(depth=DEPTH, time=SOFT_TIME_CAP),
                        info=chess.engine.INFO_SCORE)
-    score = info["score"].pov(board.turn)          # Score, side-to-move relative
+    raw_score = info.get("score")
+    assert raw_score is not None
+    score = raw_score.pov(board.turn)              # Score, side-to-move relative
     wdl_info = info.get("wdl")
     # info["wdl"] is a PovWdl and needs .pov(); Score.wdl() returns a plain Wdl
     # that is ALREADY side-to-move relative and has no .pov() at all — calling

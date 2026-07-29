@@ -15,7 +15,8 @@ dependencies = [
 ]
 
 [tool.pyright]
-# reinforcement_learning/ is added to sys.path at runtime, so its subpackages
-# (networks, monte_carlo_tree_search, helpers) are importable as top-level.
-# Tell Pylance/Pyright the same so imports like `networks.big_network` resolve.
-extraPaths = ["reinforcement_learning"]
+# reinforcement_learning/ and supervised_learning/create_dataset/ are added to
+# sys.path at runtime, so their modules (networks, monte_carlo_tree_search,
+# helpers, dataset_common, process_tablebase_data, ...) are importable as
+# top-level. Tell Pylance/Pyright the same so those imports resolve.
+extraPaths = ["reinforcement_learning", "supervised_learning/create_dataset"]

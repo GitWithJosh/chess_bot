@@ -234,9 +234,16 @@ def query_stockfish(engine, board: chess.Board):
         pv = info.get("pv")
         if not pv:
             continue
-        score = info["score"].pov(board.turn)
+        raw_score = info.get("score")
+        assert raw_score is not None
+        score = raw_score.pov(board.turn)
         lines.append((board.san(pv[0]), score))
-    pos_eval = infos[0]["score"].pov(board.turn) if infos else None
+    if infos:
+        first_score = infos[0].get("score")
+        assert first_score is not None
+        pos_eval = first_score.pov(board.turn)
+    else:
+        pos_eval = None
     return {"eval": pos_eval, "lines": lines}
 
 
@@ -385,6 +392,7 @@ class InspectorApp:
                               coordinates=False, check=check, size=self.bpx)
         png = cairosvg.svg2png(bytestring=svg.encode("utf-8"),
                                output_width=self.bpx, output_height=self.bpx)
+        assert png is not None
         return Image.open(io.BytesIO(png)).convert("RGBA")
 
     def piece_sprite(self, symbol: str) -> ImageTk.PhotoImage:
@@ -393,6 +401,7 @@ class InspectorApp:
             svg = chess.svg.piece(piece, size=self.sq)
             png = cairosvg.svg2png(bytestring=svg.encode("utf-8"),
                                    output_width=self.sq, output_height=self.sq)
+            assert png is not None
             img = Image.open(io.BytesIO(png)).convert("RGBA")
             self._piece_cache[symbol] = ImageTk.PhotoImage(img)
         return self._piece_cache[symbol]

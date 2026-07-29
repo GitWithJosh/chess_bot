@@ -107,7 +107,7 @@ class Converter:
 
         return move_uci
     
-    def mask_illegal_moves(self, board: chess.Board, move_logits: tf.Tensor) -> tf.Tensor:
+    def mask_illegal_moves(self, board: chess.Board, move_logits: tf.Tensor | np.ndarray) -> tf.Tensor:
         """
         Mask illegal moves and return a probability distribution over the legal
         moves only (sums to 1).

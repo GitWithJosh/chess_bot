@@ -82,7 +82,9 @@ def eval_white_cp(engine: chess.engine.SimpleEngine, board: chess.Board, depth: 
     if board.is_game_over():  # stalemate / insufficient material / 75-move / etc.
         return 0
     info = engine.analyse(board, chess.engine.Limit(depth=depth))
-    return info["score"].white().score(mate_score=MATE_CP)
+    score = info.get("score")
+    assert score is not None
+    return score.white().score(mate_score=MATE_CP)
 
 
 def analyze_game(game: chess.pgn.Game, engine, depth: int, stats: dict):

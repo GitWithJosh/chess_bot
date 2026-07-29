@@ -181,8 +181,12 @@ def annotate(board: chess.Board, engine: chess.engine.SimpleEngine) -> list[list
     infos = engine.analyse(board, chess.engine.Limit(depth=DEPTH), multipv=n)
     moves = []
     for info in infos:
-        uci = info["pv"][0].uci()
-        cp = info["score"].relative.score(mate_score=MATE_CP)
+        pv = info.get("pv")
+        assert pv is not None
+        uci = pv[0].uci()
+        score = info.get("score")
+        assert score is not None
+        cp = score.relative.score(mate_score=MATE_CP)
         moves.append([uci, int(cp)])
     moves.sort(key=lambda m: m[1], reverse=True)  # best (highest, mover POV) first
     if len(moves) != n:
