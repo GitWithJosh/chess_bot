@@ -80,11 +80,12 @@ class BigNetworkEngine(ChessEngine):
         self, board_state: BoardState, move_history: list[Move] | None = None
     ) -> Move | None:
         chess_board = self._board_with_history(board_state, move_history)
-        # claim_draw so threefold repetition and the fifty-move rule count as
-        # over. Without it python-chess only stops at fivefold and seventy-five,
-        # and the engine would answer in positions the application has already
-        # declared drawn.
-        if chess_board.is_game_over(claim_draw=True):
+        # Deliberately without claim_draw. The caller owns the draw rules, and
+        # Game.get_status() only calls threefold once the position has actually
+        # occurred three times, while claim_draw already fires a ply earlier
+        # when some legal move would produce the third occurrence. Refusing to
+        # move there would strand the game one ply short of its own end.
+        if chess_board.is_game_over():
             return None
 
         if self._mode == "mcts":
