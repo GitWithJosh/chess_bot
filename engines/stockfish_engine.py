@@ -65,7 +65,7 @@ class StockfishEngine(ChessEngine):
 
     def _send_command(self, cmd: str):
         """Send command to Stockfish."""
-        if self.process:
+        if self.process and self.process.stdin:
             self.process.stdin.write(cmd + '\n')
             self.process.stdin.flush()
 
@@ -110,7 +110,9 @@ class StockfishEngine(ChessEngine):
 
         return lines
 
-    def get_best_move(self, board_state: BoardState) -> Move | None:
+    def get_best_move(
+        self, board_state: BoardState, move_history: list[Move] | None = None
+    ) -> Move | None:
         """Get best move using Stockfish."""
         if not self.process:
             return None

@@ -10,7 +10,9 @@ from engines.engine import ChessEngine
 class RandomEngine(ChessEngine):
     """Engine that plays random legal moves."""
 
-    def get_best_move(self, board_state: BoardState) -> Move | None:
+    def get_best_move(
+        self, board_state: BoardState, move_history: list[Move] | None = None
+    ) -> Move | None:
         """Return a random legal move."""
         gen = MoveGenerator(board_state)
         legal_moves = gen.get_legal_moves()

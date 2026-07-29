@@ -1,0 +1,1228 @@
+\documentclass[
+  a4paper, 12pt,
+  parskip=half,
+  headings=small,
+  bibliography=totoc
+]{scrartcl}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[ngerman]{babel}
+\usepackage[german=quotes]{csquotes}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage[style=numeric]{biblatex}
+\usepackage[hidelinks=true]{hyperref}
+\usepackage{amsmath}
+
+\setkomafont{caption}{\small}
+\setkomafont{captionlabel}{\small\bfseries}
+\setcapindent{0em}
+
+\addbibresource{bibliography.bib}
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+
+  {\Huge\bfseries Angelernt oder Autodidakt?\par}
+  \vspace{0.4cm}
+  {\large\itshape  Supervised Learning vs.
+  Self-Play Reinforcement Learning mit MCTS in Schachagenten\par}
+
+  \vspace{2cm}
+
+  {\large
+  Danny Hoffmann \quad Tim Lehmann \quad Joshua Meyer \quad Philipp Meyer
+  \par}
+
+  \vspace{1.5cm}
+
+  \begin{tabular}{rl}
+    \textbf{Modul:}   & Projekt Data Science und Künstliche Intelligenz \\
+    \textbf{Kurs:}    & WDSKI23B \\
+    \textbf{Dozent:}  & Prof.\ Dr.\ Maximilian Scherer \\
+    \textbf{Umfang:}  & 16--20 Seiten \\
+    \textbf{Abgabe:}  & 30./31.\ Juli 2026 \\
+  \end{tabular}
+
+\includegraphics[width=0.4\textwidth]{img/magcal.jpg}
+
+\vfill
+
+  {\large Mai -- Juli 2026}
+  
+
+\end{titlepage}
+
+\pagenumbering{arabic}
+
+\tableofcontents
+\clearpage
+
+\section{Einleitung}
+Um ein neuronales Netz Schach spielen zu lassen, gibt es zwei grundsätzlich
+verschiedene Wege, an Trainingsdaten zu gelangen. Entweder lernt das Netz aus
+bereits vorhandenen Partien und ahmt die dort getroffenen Entscheidungen nach,
+oder es erzeugt seine Daten selbst, indem es gegen sich selbst spielt und aus dem
+Ausgang dieser Partien lernt. Beide Wege führen zum selben Artefakt, nämlich einem
+Netz, das eine Stellung auf eine Zugpräferenz und eine Bewertung abbildet, und
+beide nutzen dieselbe Suche, um daraus Züge auszuwählen. Sie unterscheiden sich
+allein darin, woher das Trainingssignal stammt.
+
+Welcher der beiden Wege der bessere ist, gilt seit AlphaZero als weitgehend
+beantwortet. Ein ausschließlich im Self-Play trainiertes Netz übertraf die damals
+stärksten Programme, ohne je eine menschliche Partie gesehen zu haben
+\parencite{silver2018}. Diese Antwort setzt allerdings einen Rechenaufwand voraus,
+der für die Datenerzeugung mehrere tausend TPUs parallel beschäftigt. Unter
+deutlich kleineren Verhältnissen ist die Frage erneut offen, denn Self-Play muss
+seine Trainingsdaten erst selbst erzeugen, während überwachtes Lernen auf einem
+bereits vorhandenen Korpus aufsetzt. Genau diese Verschiebung untersucht die
+vorliegende Arbeit. Sie fragt, welches Trainingssignal den stärkeren Agenten
+liefert, wenn die verfügbare Rechenzeit nicht die eines Rechenzentrums ist,
+sondern die einzelner GPU-Stunden auf frei verfügbaren Plattformen.
+
+Dazu wurden zwei Agenten entwickelt, die sich ausschließlich im Trainingssignal
+unterscheiden. Sie teilen sich Netzarchitektur, Zustandskodierung und
+Monte-Carlo-Baumsuche, sodass ein Vergleich zwischen ihnen allein das
+Trainingsparadigma misst und nicht die Unterschiede ihrer Bausteine. Der überwacht
+trainierte Agent lernt aus menschlichen Partien, Taktikaufgaben und
+Endspieldatenbanken, der bestärkend trainierte erzeugt seine Daten im Self-Play
+nach dem AlphaZero-Verfahren. Beide werden anschließend in Matches gegeneinander
+und gegen Stockfish auf einer gemeinsamen Elo-Skala eingeordnet.
+
+\section{Theoretische Grundlagen}
+% ~8.5 S.
+
+\subsection{Schach als formales Problem}\label{sec:formal}                          % [Tim]
+% Spielregeln knapp; Spielbaum, Zustands-/Suchraumkomplexitaet, warum der
+% exakte beste Zug praktisch unberechenbar ist; was ein "guter" Zug ist.  (~1.5 S.)
+Bevor Verfahren zur Zugwahl verglichen werden können, muss präzisiert werden, welches Problem sie eigentlich lösen. 
+\paragraph{Spieltheoretische Einordnung}
+Schach ist ein endliches, deterministisches Zwei-Personen-Nullsummenspiel mit perfekter Information und alternierenden Zügen. Jede dieser Eigenschaften hat unmittelbare Konsequenzen für die in dieser Arbeit betrachteten Verfahren:
+
+\begin{itemize}
+    \item \textbf{Perfekte Information und Determinismus} Beiden Spielern ist zu jedem Zeitpunkt der vollständige Spielzustand bekannt, und jeder Zug führt genau zu einer Folgestellung. Der Spielbaum ist damit von jeder Stellung aus prinzipiell vollständig expandierbar. Anders als etwa beim Poker müssen keine Annahmen über verdeckte Information getroffen werden und anders als beim Backgammon verbreitern keine Zufallsknoten den Baum.
+    \item \textbf{Nullsumme} Der Gewinn der einen Seite ist exakt der Verlust der anderen. Eine einzige Bewertungsgröße aus Sicht der Seite am Zug genügt daher, um die Präferenzen beider Spieler zu beschreiben. Das rechtfertigt sowohl das Minimax-Prinzip (Abschnitt~\ref{sec:minimax}) als auch die Eigenschaft, dass das Netz mit einem einzigen Value-Head auskommt (Abschnitt~\ref{sec:nn}).
+    \item \textbf{Endlichkeit} Die 50-Züge-Regel (eine Partie ist Remis wenn 50 Züge lang kein Bauer bewegt und keine Figur geschlagen wurde) und die Stellungswiederholungsregel (eine Partie ist Remis wenn dreimal die gleiche Stellung auf dem Brett steht) stellen sicher, dass jede Partie nach endlich vielen Zügen terminiert. Der Ausgang ist eines von drei Ergebnissen, formal \(z \in \{1, \tfrac{1}{2}, 0\}\) für Sieg, Remis und Niederlage.
+    \item \textbf{Alternierende Züge} Es gibt keine simultanen Entscheidungen. Zusammen mit perfekter Information folgt daraus, dass für beide Seiten eine optimale Strategie existiert.
+\end{itemize}
+
+Von den Spielregeln selbst sind für das Weitere vor allem jene Details relevant: die Sonderzüge Rochade, en-passant und Bauernumwandlung sowie die Remisregeln. Sie erscheinen in Abschnitt~\ref{sec:encoding} als eigene Ebenen des Eingabetensors bzw.\ als eigene Gruppe im Ausgaberaum wieder.
+
+\paragraph{Zustand, Zug und Spielbaum}
+Eine Stellung \(s\) umfasst mehr als die Belegung der 64 Felder. Zum Zustand gehören zusätzlich die Seite am Zug, die vier Rochadenrechte, ein etwaiges en-passant-Zielfeld und der Halbzuzähler der 50-Züge-Regel. Genau dieses Tupel hält die Forsyth-Edwards-Notation (FEN) fest, und genau diese tauchen in Tabelle~\ref{tab:planes} als Ebenen des Brett-Tensors wieder auf.
+
+Diese Zustandsdefinition ist so gewählt, dass sie die Markov-Eigenschaft erfüllt. Sowohl die Menge der legalen Fortsetzungen als auch der spieltheoretische Wert einer Stellung hängen ausschließlich von \(s\) ab und nicht davon, über welche Zugfolge \(s\) erreicht wurde. Zwei durch unterschiedliche Zugreihenfolgen entstandene, ansonsten identische Stellungen (Transpositionen) sind spielrelevant dasselbe Objekt. Streng genommen bildet die Regel zur dreifachen Stellungswiederholung hiervon eine Ausnahme, da sie auf die Partiehistorie zurückgreift. Sie wird in der Suche gesondert behandelt und geht nicht in die Stellungsbewertung ein. Diese Eigenschaft ist die Grundlage für die Abschnitt~\ref{sec:encoding} gewählte historienfreie Kodierung.
+
+Bezeichnet \(A(s)\) die Menge der in \(s\) legalen Züge und \(s\cdot a\) die Stellung, die aus \(s\) durch Ausführung von \(a \in A(s)\) hervorgeht, so lässt sich das gesamte Spiel als Baum darstellen: Die Wurzel ist die Ausgangsstellung, jede Kante entspricht einem Halbzug, die Knoten einer Ebene gehören abwechselnd der einen und der anderen Seite, und die Blätter sind terminale Stellungen mit bekanntem Ergebnis \(z(s)\). Sowohl die klassische Alpha-Beta-Search (Abschnitt~\ref{sec:minimax}) als auch die Monte-Carlo-Tree-Search (Abschnitt~\ref{sec:mcts}) operieren auf genau diesem Baum. Sie unterscheiden sich lediglich darin, welchen Ausschnitt davon sie betrachten.
+
+\paragraph{Theoretisch lösbar, praktisch unlösbar}
+Schach ist ein endliches Nullsummenspiel mit perfekter Information und ohne Zufallselement. Fasst man den Zustand $s$ so weit, wie es \textcite{shannon1950} für sein Stellungsformat vorsieht (Figurenstellung, Zugrecht, Rochaderechte, letzter Zug sowie der Zähler seit dem letzten Bauernzug oder Schlagfall), so besitzt jede Stellung genau einen der drei Werte \emph{gewonnen für Weiß}, \emph{remis} oder \emph{gewonnen für Schwarz}. 
+
+Da jede Partie nach endlich vielen Zügen endet, lässt sich der Wert einer Stellung bestimmen, indem man vom Partieende rückwärts arbeitet \parencite{shannon1950}. 
+Die Kombinatorik macht diesen Weg unbegehbar. Shannon rechnet mit etwa $30$ legalen Zügen pro Stellung, also rund $10^{3}$ Fortsetzungen je Zugpaar, und bei einer typischen Partielänge von $40$ Zügen mit etwa $10^{120}$ zu prüfenden Varianten. Eine Maschine, die eine Variante pro Mikrosekunde abarbeitet, bräuchte nach Shannon also über $10^{90}$ Jahre für den ersten Zug.
+
+Zwei Beispiele verdeutlichen noch einmal die Komplexität. Erstens sind Endspieldatenbanken für Schach zwar exakt gelöst, aber nur bis sieben Figuren auf dem Brett. Allein diese Tabellen belegen rund 18\,TB. Zweitens gelang mit Dame 2007 die vollständige Lösung eines vergleichbaren Spiels. Bei einem Suchraum von etwa \(5\cdot10^{20}\) Stellungen konnte gezeigt werden, dass beidseitig optimales Spiel zum Remis führt \autocite{schaeffer2007}. Der Schachsuchraum liegt mehr als zwanzig Größenordnungen darüber.
+
+\paragraph{Was ist ein guter Zug?}
+Aus dieser Lücke zwischen theoretischer Bestimmtheit und praktischer Unberechenbarkeit ergibt sich eine wichtige Fragestellung dieser Arbeit. Ein Zug ist \emph{objektiv} optimal, wenn er den spieltheoretischen Wert der Stellung nicht verschlechtert. Da dieser theoretische Wert aber unzugänglich ist, lässt sich diese Eigenschaft für keinen konkreten Zug nachweisen. In der Praxis wird ein Zug daher \emph{operativ} bewertet. Ein Zug ist gut, wenn er unter gegebener Rechenzeit die Gewinnerwartung gegen einen realen Gegner maximiert.
+ 
+Für die Zugwahl durch Engines im Schach gibt es im Wesentlichen zwei Stellschrauben: \emph{wie viele} Stellungen ein Programm betrachtet (Suche) und \emph{wie gut} es eine einzelne Stellung einschätzt (Bewertung). Klassische Engines setzen primär auf die erste Stellschraube und kompensieren eine vergleichsweise grobe Bewertungsfunktion durch enorme Suchbreite (Abschnitt~\ref{sec:minimax}). Der in dieser Arbeit verfolgte AlphaZero-artige Ansatz verschiebt das Gewicht auf die zweite: Ein aufwändiges neuronales Netz liefert Bewertung und Zugvorauswahl, sodass mit deutlich weniger besuchten Stellungen ausgekommen wird (Abschnitte~\ref{sec:nn}--\ref{sec:mcts}).
+ 
+Eine unmittelbare Konsequenz dieser Sichtweise ist, dass Spielstärke nicht absolut, sondern nur \emph{relativ} messbar ist und zwar über Partieergebnisse gegen andere Spieler. Der nächste Abschnitt stellt mit dem Elo-Modell das Verfahren vor, mit dem diese relativen Ergebnisse in eine vergleichbare Skala überführt werden.
+ 
+\subsection{Spielstärke quantifizieren !!!VOERST NUR VON CLAUDE GEVIBED!!!}\label{sec:elo}             % [Tim]
+Das gebräuchliche Verfahren hierfür ist das Elo-System \parencite{elo1978}. Es ordnet jedem Spieler eine Zahl \(R\) zu und modelliert den erwarteten Punktanteil \(E_A\) von Spieler \(A\) gegen Spieler \(B\) allein als Funktion der Differenz beider Zahlen:
+\[
+  E_A = \frac{1}{1 + 10^{\,(R_B - R_A)/400}}.
+\]
+Die Skalierung ist so gewählt, dass 400 Punkte Vorsprung einem erwarteten Punktanteil von etwa \(0{,}91\) entsprechen, also einem Verhältnis von rund \(10:1\). Ein Remis zählt dabei als halber Punkt.
+ 
+Für die Evaluation in Kapitel~\ref{sec:eval} wird die Beziehung invertiert: Aus dem in einem Match erzielten Punktanteil \(S \in (0,1)\) folgt die geschätzte Elo-Differenz zum Gegner als
+\[
+  \Delta R = 400 \cdot \log_{10}\!\left(\frac{S}{1-S}\right).
+\]
+Ist die Stärke des Gegners bekannt, ergibt sich daraus ein absoluter Wert; das Elo-System liefert also stets nur Differenzen und benötigt einen Anker. In dieser Arbeit dienen dafür Stockfish-Skill-Level mit bekannter Referenzstärke.
+ 
+Zwei Einschränkungen sind zu beachten. Erstens ist \(\Delta R\) eine Schätzung aus einer endlichen Stichprobe; die Unsicherheit fällt mit \(1/\sqrt{n}\), sodass für ein 95\,\%-Konfidenzintervall von etwa \(\pm 30\) Elo bereits einige hundert Partien nötig sind. Zweitens setzt das Modell näherungsweise transitive Spielstärken voraus. Gerade zwischen unterschiedlich trainierten Engines treten jedoch Stilunterschiede auf, die zu nicht-transitiven Ergebnissen führen können -- ein Grund, warum in Abschnitt~\ref{sec:headtohead} zusätzlich der direkte Vergleich beider Agenten ausgewertet wird.
+
+\subsection{Klassische Engines: Minimax, Alpha-Beta, Stockfish/NNUE} % [Danny]
+\label{sec:minimax}
+Klassische Schachprogramme behandeln die Zugwahl als Suche im Spielbaum
+(Abschnitt~\ref{sec:formal}). Da dieser Baum praktisch nicht vollständig durchsucht werden
+kann, begrenzt man die Suchtiefe und bewertet die so erreichten Blattstellungen
+mit einer heuristischen Bewertungsfunktion \(\mathrm{eval}(s)\), die Merkmale
+wie Material, Königssicherheit und Bauernstruktur zu einer einzigen Zahl
+verrechnet \parencite{shannon1950}.
+
+Der Wert einer Stellung ergibt sich rekursiv nach dem Minimax-Prinzip. Die Seite
+am Zug wählt den für sie besten Zug, der Gegner den für ihn besten. Bezeichnet
+\(s\cdot a\) die aus \(s\) durch Zug \(a\) entstehende Stellung, so gilt
+\[
+  V(s) =
+  \begin{cases}
+    \mathrm{eval}(s)          & \text{Tiefenlimit erreicht,}\\
+    \max_{a} V(s\cdot a)      & \text{Seite am Zug,}\\
+    \min_{a} V(s\cdot a)      & \text{Gegner am Zug.}
+  \end{cases}
+\]
+An der Wurzel wird der Zug mit dem höchsten Wert gespielt.
+
+Naiv bewertet Minimax exponentiell viele Stellungen. Alpha-Beta-Pruning liefert
+dasselbe Ergebnis, überspringt aber Teilbäume, die den Wurzelwert nicht mehr
+verändern können, weil eine Seite dort bereits einen ausreichend guten
+Alternativzug kennt. Bei guter Zugsortierung sinkt der effektive
+Verzweigungsgrad von \(b\) auf etwa \(\sqrt{b}\), was bei gleichem Aufwand annähernd
+die doppelte Suchtiefe erlaubt \parencite{knuth1975}. Auf dieser Grundlage
+gelang mit Deep Blue 1997 der erste Sieg eines Computers gegen einen
+amtierenden Schachweltmeister \parencite{campbell2002}.
+
+Moderne Spitzenprogramme wie Stockfish kombinieren eine stark optimierte
+Alpha-Beta-Suche mit einer neuronalen Bewertungsfunktion (NNUE), die die früher
+handgeschriebene Heuristik ersetzt \parencite{klein2022neural}. In dieser Arbeit
+dient Stockfish als Referenzgegner und Elo-Anker (Kapitel~\ref{sec:eval}).
+
+Allen klassischen Verfahren ist gemein, dass die Spielstärke primär aus breiter
+Suche entsteht, während die Bewertung einer einzelnen Stellung vergleichsweise
+günstig bleibt. Der hier verfolgte Ansatz verlagert diesen Schwerpunkt. Ein
+aufwändiges neuronales Netz übernimmt Bewertung und Zugvorauswahl, sodass
+deutlich weniger Stellungen durchsucht werden müssen
+(Abschnitte~\ref{sec:nn}--\ref{sec:mcts}).
+
+\subsection{Brettrepräsentation \& Zugkodierung}\label{sec:encoding} % [Danny]
+Beide Agenten nutzen dieselbe Kodierung, die eine Schachstellung in einen
+Eingabetensor fester Größe und jeden Zug in einen Ausgabeindex übersetzt. Das
+Brett wird dabei stets aus Sicht der Seite am Zug kodiert. Ist Schwarz am Zug,
+wird es gespiegelt, sodass das Netz nur eine Perspektive lernen muss. Repräsentation
+und Zugkodierung folgen dem AlphaZero-Schema \parencite{silver2018}.
+
+\paragraph{Brett-Tensor.}
+Eine Stellung wird als Tensor der Form \(8\times8\times20\) dargestellt. Die ersten
+zwölf Ebenen kodieren die Figuren beider Seiten (je eine Ebene pro Figurentyp),
+acht weitere die Zusatzinformationen einer Stellung, und eine konstante Ebene
+liefert eine positionsunabhängige Bias-Information. Tabelle~\ref{tab:planes}
+listet die Belegung vollständig auf.
+
+\begin{table}[htbp]
+  \centering
+  \begin{tabular}{cl}
+    \hline
+    Ebene(n) & Inhalt \\
+    \hline
+    0--5   & eigene Figuren (Bauer, Springer, Läufer, Turm, Dame, König) \\
+    6--11  & gegnerische Figuren (gleiche Reihenfolge) \\
+    12--13 & eigene Rochaderechte (Damen-/Königsflügel) \\
+    14--15 & gegnerische Rochaderechte \\
+    16     & Farbe am Zug (1, falls im Original Schwarz am Zug) \\
+    17     & Halbzugzähler \(/100\) (50-Züge-Regel) \\
+    18     & En-passant-Zielfeld (1 auf dem Zielfeld, sonst 0) \\
+    19     & konstante Ebene (Wert 1) \\
+    \hline
+  \end{tabular}
+  \caption{Die 20 Ebenen des Brett-Tensors \(8\times8\times20\).}
+  \label{tab:planes}
+\end{table}
+
+Kodiert wird ausschließlich die aktuelle Stellung, ohne Zughistorie. Die Gründe
+für diese Abweichung von AlphaZero und Leela werden in Abschnitt~\ref{sec:arch}
+erläutert.
+
+\paragraph{Zugkodierung.}
+Ein Zug wird als Paar \((\text{Startfeld}, \text{Ebene})\) kodiert, wobei jedem der
+64 Felder 73 Ebenen zugeordnet sind. Die 73 Ebenen gliedern sich in drei Gruppen.
+\begin{itemize}
+  \item \textbf{Ebenen 0--55, Damenzüge (Sliding).} Acht Himmelsrichtungen
+        \(\times\) sieben Distanzen (1--7 Felder). Diese Gruppe deckt alle Zieh-
+        und Schlagzüge von Dame, Turm, Läufer, König und Bauer ab. Auch die
+        Umwandlung in eine Dame wird als gewöhnlicher Zug in diese Ebenen
+        kodiert.
+  \item \textbf{Ebenen 56--63, Springerzüge.} Die acht festen Sprungoffsets.
+  \item \textbf{Ebenen 64--72, Unterverwandlungen.} Drei Figuren (Springer,
+        Läufer, Turm) \(\times\) drei Richtungen (geradeaus, Schlag links/rechts).
+\end{itemize}
+Das ergibt einen Ausgaberaum von \(8\times8\times73 = 4672\) Zellen. Von diesen
+können jedoch nur 1858 jemals einem legalen Zug entsprechen, denn viele Paare
+liegen außerhalb des Bretts (etwa ein Springersprung vom Rand). Eine feste
+Lookup-Tabelle bildet daher jeden Zug auf genau einen von 1858
+Ausgabeindizes ab. Vor der Softmax-Normierung werden die in der jeweiligen
+Stellung illegalen Indizes maskiert.
+
+\subsection{Neuronale Netze für Schach: CNN/ResNet, Policy- und Value-Head}\label{sec:nn} % [Danny]
+Eine Schachstellung liegt bereits als zweidimensionales \(8\times8\)-Raster vor
+und ähnelt damit einem Bild. Faltungsnetze (CNNs) sind für solche gitterförmigen
+Eingaben besonders geeignet. Ihre Filter erkennen lokale Muster, etwa
+Bauernketten oder die Königsstellung, unabhängig davon, wo auf dem Brett sie
+auftreten, und teilen ihre Gewichte über alle Felder. Der in
+Abschnitt~\ref{sec:encoding} beschriebene Eingabetensor \(8\times8\times20\) dient
+dabei als \enquote{Bild} mit 20 Kanälen.
+
+Um Stellungen ausreichend tief zu verarbeiten, werden viele Faltungsschichten
+gestapelt. Sehr tiefe Netze leiden jedoch unter verschwindenden Gradienten.
+Residual-Netze (ResNets) begegnen dem mit Skip Connections,
+die den Eingang eines Blocks direkt zu dessen Ausgang addieren, sodass der Block
+nur noch die Abweichung (das Residuum) lernen muss \parencite{he2016}. Die für
+Schach etablierte und auch hier verwendete Architektur von Leela Chess Zero
+besteht aus einem solchen Residual-Tower \parencite{lczero_nn, klein2022neural}.
+
+Anders als klassische ResNet-Blöcke setzt Leela auf
+Squeeze-and-Excitation-Blöcke (SE), die einen Aufmerksamkeitsmechanismus über
+die Kanäle ergänzen. Aus dem globalen Mittel jeder Feature Map wird ein Gewicht
+je Kanal bestimmt, mit dem die Kanäle anschließend neu skaliert werden. So kann
+das Netz kontextabhängig betonen, welche Merkmale in einer Stellung wichtig sind
+\parencite{hu2018}. Leela nutzt dabei eine erweiterte, multiplikativ-additive
+Variante.
+
+Auf den gemeinsamen Rumpf folgen zwei Heads (Abbildung~\ref{fig:architecture}).
+Der Policy-Head gibt für jeden der 1858 möglichen Züge (Abschnitt~\ref{sec:encoding})
+einen unnormierten Wert (Logit) aus und bildet damit die Zugpräferenz. Der
+Value-Head schätzt den Ausgang der Partie. Statt eines einzelnen skalaren Wertes
+verwendet die betrachtete Architektur eine WDL-Ausgabe, also drei über Softmax
+normierte Wahrscheinlichkeiten für Sieg, Remis und Niederlage aus Sicht der Seite
+am Zug. Da beide Heads denselben Rumpf teilen, beruhen Bewertung und Zugauswahl
+auf einer gemeinsamen Merkmalsbasis.
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[
+      box/.style={draw, rounded corners, align=center, minimum height=10mm,
+                  inner sep=5pt, font=\small},
+      >=Stealth, node distance=7mm and 13mm]
+    \node[box] (in) {Eingabe\\\(8\times8\times20\)};
+    \node[box, right=of in] (conv) {Initial-\\Conv};
+    \node[box, right=of conv] (tower) {SE-Residual-\\Tower (20 Blöcke)};
+    \node[box, above right=of tower] (policy) {Policy-Head\\\(\rightarrow\) 1858 Zug-Logits};
+    \node[box, below right=of tower] (value) {Value-Head\\\(\rightarrow\) WDL};
+    \draw[->] (in) -- (conv);
+    \draw[->] (conv) -- (tower);
+    \draw[->] (tower.east) -- (policy.west);
+    \draw[->] (tower.east) -- (value.west);
+  \end{tikzpicture}
+  \caption{Leela-Architektur: geteilter Rumpf, darauf Policy- und Value-Head.}
+  \label{fig:architecture}
+\end{figure}
+
+Die konkrete Konfiguration dieses Netzes, also Anzahl der Blöcke, Filterzahl und
+der genaue Aufbau der Heads, wird in Abschnitt~\ref{sec:arch} beschrieben.
+
+\subsection{Supervised Learning im Schachkontext}\label{sec:sl-context}
+Beim überwachten Lernen (Supervised Learning) lernt das Netz die Abbildung einer
+Stellung auf ihre Zielwerte, also eine Zugverteilung (Policy) und eine Bewertung
+(Value), aus einem festen, bereits beschrifteten Datensatz. Anders als das
+bestärkende Lernen (Abschnitt~\ref{sec:alphazero}), das seine Trainingsdaten
+selbst erzeugt, ahmt ein überwacht trainiertes Netz die im Datensatz enthaltenen
+Entscheidungen nach. Seine Spielstärke ist dadurch grundsätzlich durch die
+Qualität der Beschriftung begrenzt, denn das Netz kann seine Lehrerquelle
+nachbilden, sie aber kaum übertreffen. Prominent ist dieser Ansatz aus AlphaGo, dessen
+Policy-Netz zunächst überwacht aus menschlichen Meisterpartien lernte
+\parencite{silver2016}.
+
+Für beide Heads werden Zielwerte benötigt. Das Policy-Ziel kann der tatsächlich
+gespielte Zug sein (eine einzelne \enquote{richtige} Antwort) oder eine ganze
+Zugverteilung, etwa aus den Analysen einer Engine. Das Value-Ziel beschreibt den
+Ausgang der Stellung. Dabei stehen sich zwei Signale gegenüber, nämlich der
+Ausgang der gesamten Partie, billig zu erheben, aber verrauscht, da jede Stellung
+einer gewonnenen Partie pauschal als \enquote{Sieg} gilt, und die genauere, aber
+rechenintensive Einzelbewertung durch eine starke Engine. Diese Unterscheidung
+wird in Abschnitt~\ref{sec:sl-impl} vertieft.
+
+Ebenso entscheidend ist, woher die Stellungen stammen. Menschliche
+Partiedatenbanken sind umfangreich und stilistisch vielfältig, enthalten aber
+Fehler und menschliche Eigenheiten. Engine-Partien sind stärker und konsistenter,
+dafür einseitiger und teurer zu erzeugen. Auch die Zusammensetzung des Datensatzes
+prägt, was das Netz lernt.
+\begin{itemize}
+  \item \textbf{Vollständige Partien} liefern die natürliche Verteilung der
+        Stellungen über alle Partiephasen, sind jedoch schief, denn Remis und
+        ruhige Mittelspielstellungen dominieren und klare Taktik ist selten.
+  \item \textbf{Taktikaufgaben (Puzzles)} konzentrieren scharfe, forcierte
+        Stellungen, sind aber untypisch und meist auf eine einzige Lösung sowie
+        auf die Gewinnerseite ausgerichtet.
+  \item \textbf{Endspieldatenbanken (Tablebases)} liefern exakte, fehlerfreie
+        Bewertungen, allerdings nur für die wenigen Steine eines Endspiels
+        (bis zu sieben Figuren).
+\end{itemize}
+Da unausgewogene Daten das Netz zu Abkürzungen verleiten, etwa stets
+\enquote{Remis} vorherzusagen, wenn dieses Ergebnis überwiegt, sind Abdeckung
+und Ausbalancierung von Klassen und Partiephasen ein zentrales methodisches Thema.
+
+Zwei Grenzen bleiben dem überwachten Ansatz eigen. Erstens die genannte
+Obergrenze durch die Lehrerquelle. Zweitens die Verteilungsverschiebung
+(Distribution Shift). Im Spiel trifft das Netz auf Stellungen, die aus seinen
+eigenen Zügen entstehen und im Trainingsdatensatz unterrepräsentiert sein können.
+Beide Grenzen motivieren das bestärkende Lernen durch Self-Play, das seine Daten
+aus dem eigenen Spiel gewinnt und so die Lehrerquelle hinter sich lassen kann
+(Abschnitt~\ref{sec:alphazero}).
+
+\subsection{Monte Carlo Tree Search (UCT, PUCT)}\label{sec:mcts}                  % [Tim]
+% Selektion/Expansion/Simulation/Backprop; UCT, PUCT mit Netz-Prior.  (~1.25 S.)
+Die klassische Alpha-Beta-Suche durchsucht den Spielbaum bis zu einer festen Tiefe weitgehend gleichmäßig. Monte Carlo Tree Search (MCTS) verfolgt einen anderen Ansatz: Der Suchbaum wird schrittweise und \emph{asymmetrisch} aufgebaut, indem wiederholt einzelne Pfade von der Wurzel abwärts durchlaufen und die dabei gewonnenen Bewertungen in den besuchten Knoten aggregiert werden \parencite{coulom2006efficient, klein2022neural}. Das Ziel ist hierbei vielversprechendere Varianten tiefer auszubauen.
+
+\paragraph{Ablauf einer Simulation}
+Jeder Knoten des Baumes entspricht einer Stellung, jede Kante einem Zug. Zu jeder Kante \((s,a)\) werden die Besuchszahl \(N(s,a)\), die kumulierte Bewertung \(W(s,a)\) und der daraus gemittelte Aktionswert \(Q(s,a) = W(s,a)/N(s,a)\) gespeichert. Eine Simulation besteht aus vier Phasen:
+ 
+\begin{enumerate}
+  \item \textbf{Selektion} Von der Wurzel aus wird solange ein Kind nach       einer Auswahlregel gewählt, bis ein noch nicht expandierter Knoten erreicht  ist. Diese Auswahlregel ist der Kern des Verfahrens und Gegenstand des Folgenden.
+  \item \textbf{Expansion} Der erreichte Knoten wird in den Baum eingefügt und seine legalen Züge als Kanten angelegt.
+  \item \textbf{Simulation oder Evaluation} Die neue Stellung wird bewertet. Klassisch geschieht dies durch eine oder mehrere zufällige Partien bis zum Ende (Rollout), im hier verwendeten Ansatz durch einen einzelnen Forwardpass des neuronalen Netzes (Abschnitt~\ref{sec:nn}).
+  \item \textbf{Backpropagation} Der Bewertungswert wird entlang des durchlaufenen Pfades zur Wurzel zurückgereicht; dabei werden \(N\) und \(W\) aktualisiert. Da Bewertungen stets aus Sicht der Seite am Zug gelten, wird das Vorzeichen auf jeder Ebene invertiert.
+\end{enumerate}
+Nach Erschöpfen des Simulationsbudgets wird an der Wurzel nicht der Zug mit dem höchsten \(Q\) gespielt, sondern der meistbesuchte. Besuchszahlen sind robuster, da eine einzelne fehlerhafte Bewertung einen Mittelwert stark verzerren kann, sich in den Besuchen aber nur langsam niederschlägt.
+
+\paragraph{UCT}
+Die Selektion stellt ein Abwägungsproblem zwischen Ausnutzung bereits guter Züge und Erkundung wenig besuchter Alternativen dar. UCT (\emph{Upper Confidence Bounds applied to Trees}) behandelt jeden Knoten als eigenständiges Multi-Armed-Bandit-Problem und überträgt die UCB1-Regel \autocite{auer2002finite} auf den Spielbaum \autocite{kocsis2006bandit}:
+\[
+  a^{*} = \arg\max_{a}\left[\,Q(s,a) + c\,\sqrt{\frac{\ln N(s)}{N(s,a)}}\,\right],
+  \qquad N(s) = \sum_{b} N(s,b).
+\]
+Der zweite Term wächst, wenn Geschwisterknoten häufig besucht wurden, und schrumpft mit den eigenen Besuchen. Für \(N(s,a) = 0\) ist er unbeschränkt: Jeder legale Zug muss also mindestens einmal besucht werden, bevor ein Zug ein zweites Mal ausgewählt wird. Zudem enthält die Regel kein Domänenwissen und alle unbesuchten Züge sind a priori gleichwertig.
+ 
+Beides ist für Schach ungünstig. Bei einem Verzweigungsgrad von \(b \approx 35\) (Abschnitt~\ref{sec:formal}) verbraucht bereits die vollständige Erstexpansion einen erheblichen Teil eines realistischen Simulationsbudgets für offensichtlich sinnlose Züge. Hinzu kommt, dass zufällige Rollouts in taktisch scharfen Schachstellungen kaum mit der tatsächlichen Stellungsqualität korrelieren.
+
+\paragraph{PUCT} PUCT (\emph{Predictor + UCT}) ersetzt daher den uninformierten Erkundungsterm durch einen, der eine vorab geschätzte Zugwahrscheinlichkeit gewichtet \autocite{rosin2011multi}. In der von AlphaZero verwendeten Form \parencite{silver2018} lautet die Regel
+\[
+  a^{*} = \arg\max_{a}\bigl[\,Q(s,a) + U(s,a)\,\bigr],
+  \qquad
+  U(s,a) = c_{\mathrm{puct}}\; P(s,a)\;
+           \frac{\sqrt{N(s)}}{1 + N(s,a)} .
+\]
+Dabei ist \(P(s,a)\) der Prior aus dem Policy-Head, also die über die legalen Züge maskierte und normierte Softmax-Ausgabe (Abschnitt~\ref{sec:encoding}). Der Prior wirkt multiplikativ. Ein vom Netz als plausibel eingestufter Zug erhält einen um Größenordnungen höheren Erkundungsbonus als ein unplausibler. Damit sinkt der effektive Verzweigungsgrad erheblich, und das Simulationsbudget konzentriert sich auf den relevanten Teil des Baumes.
+
+Der Unterschied im Nenner (\(1 + N(s,a)\) statt \(\sqrt{N(s,a)}\)) ist wichtig. Der Bonus bleibt für unbesuchte Knoten endlich, sodass Züge mit sehr kleinem Prior bei begrenztem Budget nie besucht werden. 
+PUCT gibt die Vollständigkeit von UCT also bewusst zugunsten größerer Suchtiefe auf und wird dadurch von der Qualität des Priors abhängig. Der Wechsel von \(\sqrt{\ln N(s)}\) zu \(\sqrt{N(s)}\) im Zähler wirkt dem teilweise entgegen, da die Erkundung mit wachsender Simulationszahl langsamer versiegt und die Suche einen systematisch falschen Prior korrigieren kann.
+
+Entscheidend ist, dass die resultierende Besuchsverteilung in der Regel eine bessere Zugbewertung als der Netz-Prior ist, da sie durch tatsächlich gesuchte Stellungsbewertungen korrigiert wurde. 
+MCTS wirkt damit als Verbesserung auf die Policy, die Grundlage des in Abschnitt~\ref{sec:alphazero} beschriebenen Self-Play-Trainings. Implementierungsdetails wie die Behandlung unbesuchter Knoten, die Wahl von \(c_{\mathrm{puct}}\) und dem Rauschen werden in Abschnitt~\ref{sec:rl-impl} beschrieben.
+
+\subsection{AlphaZero-Paradigma: Self-Play Reinforcement Learning}\label{sec:alphazero} % [Tim]
+% MCTS + Self-Play, Policy/Value-Ziele aus Suche und Spielausgang.  (~0.75 S.)
+Das AlphaZero-Paradigma verbindet die beiden zuvor beschriebenen Bausteine zu einem geschlossenen Kreislauf \parencite{silver2017mastering, silver2018}: Das Netz steuert über Prior und Bewertung die Suche, und die Suche erzeugt umgekehrt die Daten, mit denen das Netz trainiert wird. Externe Partien oder annotierte Stellungen werden dabei nicht zwingend benötigt. Das Verfahren startet mit zufällig initialisierten Gewichten.
+
+\paragraph{Trainingsziele}
+Grundlage ist die in Abschnitt~\ref{sec:mcts} beschriebene Eigenschaft, dass die Besuchsverteilung einer MCTS-Suche eine bessere Zugbewertung darstellt als der rohe Netz-Prior. Aus jeder im Self-Play gespielten Stellung \(s_t\) werden daher zwei Zielsignale gewonnen:
+\begin{itemize}
+  \item \(\boldsymbol{\pi}_t\), die aus den Besuchszahlen abgeleitete
+        Zugverteilung an der Wurzel, als Ziel für den Policy-Head;
+  \item \(z_t\), der tatsächliche Ausgang der Partie aus Sicht der in \(s_t\) am
+        Zug befindlichen Seite, als Ziel für den Value-Head.
+\end{itemize}
+Der Value-Head lernt also aus dem realen Partieergebnis, der Policy-Head aus der Suche. Trainiert wird auf der gemeinsamen Verlustfunktion
+\[
+  \ell = (z - v)^2 \;-\; \boldsymbol{\pi}^{\top} \log \mathbf{p}
+         \;+\; c\,\lVert\theta\rVert^2 ,
+\]
+wobei \(\mathbf{p}\) und \(v\) die Ausgaben des Netzes bezeichnen und der letzte Term der Regularisierung dient. Bei der hier verwendeten WDL-Ausgabe (Abschnitt~\ref{sec:nn}) tritt an die Stelle des quadratischen Fehlers eine Kreuzentropie über die drei möglichen Partieausgänge.
+
+\paragraph{Iterationsschleife}
+Das Training verläuft in Iterationen aus drei Schritten:
+\begin{enumerate}
+  \item \textbf{Self-Play} Das aktuelle Netz spielt eine feste Anzahl Partien
+        gegen sich selbst. Jede besuchte Stellung wird mit \(\boldsymbol{\pi}_t\)
+        und \(z_t\) in einen Puffer geschrieben.
+  \item \textbf{Training} Auf Stichproben aus diesem Puffer werden die Gewichte
+        aktualisiert.
+  \item \textbf{Evaluation} Das neue Netz tritt in einem Match gegen die
+        bisherige Iteration an und wird nur dann als neuer Ausgangspunkt
+        übernommen, wenn es einen zuvor festgelegten Punktanteil überschreitet;
+        andernfalls werden die Gewichte verworfen und die bisherige Version
+        erzeugt weiterhin die Self-Play-Daten.
+\end{enumerate}
+Dieses Aussieben (\emph{Gating}) verhindert, dass eine verschlechterte Version die Datengenerierung übernimmt. AlphaGo Zero verwendete hierfür eine Schwelle von 55\,\% über 400 Partien \parencite{silver2017mastering}. Der Nachfolger AlphaZero verzichtete auf diesen Schritt und trainierte ein einziges, fortlaufend aktualisiertes Netz \parencite{silver2018}.
+
+Damit unterscheidet sich dieser Ansatz vom überwachten Lernen im Trainingssignal. Statt aus vorgegebenen Zielwerten (Abschnitt~\ref{sec:sl-context}) stammen beide Ziele aus dem System selbst, die Policy aus der eigenen Suche, der Value aus dem eigenen Spielergebnis.
+
+Ein zweiter Unterschied betrifft die Herkunft der Daten. Lernt ein Netz, den Zug eines menschlichen Spielers vorherzusagen, approximiert es dessen Spielweise, einschließlich der darin enthaltenen systematischen Verzerrungen. Etablierte Eröffnungstheorie, positionelle Faustregeln und stilistische Vorlieben sind gewachsene Konventionen, deren Optimalität nicht bewiesen ist; da sie im gesamten Korpus geteilt werden, mitteln sie sich auch mit wachsender Datenmenge nicht heraus, sondern gehen als systematischer Fehler in das Modell ein. 
+Hinzu kommt eine ungleichmäßige Abdeckung des Stellungsraums: Menschliche Partien konzentrieren sich stark auf bekannte Theorie, sodass gerade jene Stellungen unterrepräsentiert sind, die eine Suche später dennoch betritt. 
+
+Self-Play unterliegt diesen Beschränkungen nicht (der Agent sieht allerdings nur, was seine eigene Policy erzeugt, dem wird jedoch durch Dirichlet-Rauschen am Wurzelknoten entgegengewirkt, Abschnitt~\ref{sec:rl-impl}) und erzeugt seine Daten aus genau der Verteilung, in der der Agent anschließend agiert. Dieser Punkt wird von \textcite{silver2017mastering} als wesentlicher Vorteil des Verfahrens angeführt.
+
+Als Beispiel lässt sich der frühe Vorstoß des h-Bauern (h2--h4) anführen. In
+menschlichen Partien war dieser Zug zum Zeitpunkt der Veröffentlichung von
+AlphaZero vergleichsweise selten, da der h-Bauer üblicherweise zur Deckung des
+kurz rochierten Königs benötigt wird. AlphaZero bevorzugte ihn dennoch in einer
+Vielzahl von Stellungstypen. Offenbar wiegt der damit verbundene Raumgewinn am
+Königsflügel (und die Möglichkeit mit h4--h5--h6 den gegenerischen König anzugreifen) in vielen Fällen schwerer als die Schwächung der eigenen
+Königsstellung.
+
+
+\section{Implementierung}
+% ~5.0 S.
+
+\subsection{Modellarchitektur}\label{sec:arch} % [gemeinsam]
+Beide Agenten, der überwacht und der bestärkend trainierte, verwenden
+dasselbe neuronale Netz, dieselbe Kodierung (Abschnitt~\ref{sec:encoding}) und zur
+Zugwahl dieselbe Monte-Carlo-Baumsuche (Abschnitt~\ref{sec:mcts}, Umsetzung in
+Abschnitt~\ref{sec:rl-impl}). Sie unterscheiden sich einzig im Trainingssignal.
+Damit misst der Vergleich in Kapitel~\ref{sec:eval} allein den Effekt des
+Trainingsparadigmas und nicht den unterschiedlicher Architekturen.
+
+Das Netz folgt dem Residual-Tower-Entwurf von Leela Chess Zero
+\parencite{lczero_nn, klein2022neural} und ist in Abbildung~\ref{fig:architecture}
+skizziert. Den Eingang bildet der Tensor \(8\times8\times20\)
+(Abschnitt~\ref{sec:encoding}), wobei Leela hier 112 Ebenen verwendet, da es
+zusätzlich acht vorangehende Halbzüge stapelt. Eine Initial-Faltung
+(\(3\times3\), Schrittweite 1) projiziert den Eingang auf 256 Feature Maps,
+gefolgt von Batch-Normierung und ReLU. Darauf folgt der Tower aus 20
+Squeeze-and-Excitation-Residualblöcken und schließlich die beiden Heads. Als
+Standardkonfigurationen nennt Leela \(10\times128\), \(20\times256\) und
+\(24\times320\) (\texttt{BLOCKS}\,\(\times\)\,\texttt{FILTERS})
+\parencite{lczero_nn}. Übernommen wurde die mittlere Variante \(20\times256\).
+
+Jeder Residualblock enthält zwei \(3\times3\)-Faltungen (Schrittweite 1) mit
+Batch-Normierung, gefolgt von einer SE-Rekalibrierung, und wird durch eine
+Skip Connection überbrückt. Die SE-Schicht übernimmt Leelas Aufbau
+(Abschnitt~\ref{sec:nn}). Global Average Pooling verdichtet die 256
+Feature Maps zu einem Vektor der Länge \texttt{FILTERS} (256), eine
+Dense-Schicht reduziert ihn auf \texttt{SE\_CHANNELS} (hier 32) mit ReLU, und eine
+weitere expandiert ihn auf \(2\times\)\texttt{FILTERS}, also je Kanal einen
+multiplikativen Faktor (Sigmoid) und einen additiven Bias, mit denen die
+Feature Maps skaliert und verschoben werden.
+
+Der Policy-Head reduziert die Feature Maps über eine \(3\times3\)- und eine
+\(1\times1\)-Faltung auf die 73 Zugebenen und liest daraus mit einer festen
+Zuordnung (Gather) die 1858 Zug-Logits aus. Eine Ausgabe-Softmax entfällt, da die
+Normierung erst nachgelagert bei Loss-Berechnung, Legalitätsmaskierung und Suche
+erfolgt. Der Value-Head verdichtet das Brett über eine \(1\times1\)- und eine
+\(8\times8\)-Faltung zu einem Vektor der Länge 128 und gibt über eine
+Dense-Schicht mit Softmax die WDL-Wahrscheinlichkeiten aus.
+
+Insgesamt besitzt das Netz rund 25{,}0 Millionen trainierbare Parameter.
+Tabelle~\ref{tab:params} zeigt ihre Verteilung. Über 96\,\% entfallen auf den
+Residual-Tower, während beide Heads zusammen unter 4\,\% ausmachen. Innerhalb eines
+Blocks dominieren die beiden \(3\times3\)-Faltungen, während die SE-Rekalibrierung
+mit rund 25\,000 Parametern nur etwa 2\,\% je Block beiträgt.
+
+\begin{table}[htbp]
+  \centering
+  \begin{tabular}{lrr}
+    \toprule
+    Komponente & Parameter & Anteil \\
+    \midrule
+    \textbf{Eingangsblock}                          & 46\,592      & 0{,}2\,\% \\
+    \quad Conv \(3\times3\) (20\(\to\)256)          & 46\,080      & \\
+    \quad BatchNorm                                 & 512          & \\
+    \addlinespace
+    \textbf{SE-Residual-Tower (20 Blöcke)}           & 24\,115\,840 & 96{,}3\,\% \\
+    \quad je Block                                  & 1\,205\,792  & \\
+    \quad\quad 2\,\(\times\) Conv \(3\times3\) (256\(\to\)256)  & 1\,179\,648 & \\
+    \quad\quad SE: FC \(256\to32\) (ReLU)           & 8\,224       & \\
+    \quad\quad SE: FC \(32\to256\) (Skalierung, Sigmoid) & 8\,448  & \\
+    \quad\quad SE: FC \(32\to256\) (Bias)           & 8\,448       & \\
+    \quad\quad 2\,\(\times\) BatchNorm              & 1\,024       & \\
+    \addlinespace
+    \textbf{Policy-Head}                            & 609\,097     & 2{,}4\,\% \\
+    \quad Conv \(3\times3\) (256\(\to\)256)         & 589\,824     & \\
+    \quad BatchNorm                                 & 512          & \\
+    \quad Conv \(1\times1\) (256\(\to\)73)          & 18\,761      & \\
+    \quad Gather \(\to\) 1858                       & 0            & \\
+    \addlinespace
+    \textbf{Value-Head}                             & 270\,915     & 1{,}1\,\% \\
+    \quad Conv \(1\times1\) (256\(\to\)32)          & 8\,192       & \\
+    \quad BatchNorm                                 & 64           & \\
+    \quad Conv \(8\times8\) (32\(\to\)128)          & 262\,272     & \\
+    \quad Dense (128\(\to\)3)                       & 387          & \\
+    \midrule
+    \textbf{Parameter Anzahl}                   & \textbf{25\,042\,444} & \textbf{100\,\%} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Verteilung der trainierbaren Parameter.}
+  \label{tab:params}
+\end{table}
+
+\paragraph{Abweichungen von Leela.}
+Gegenüber der ursprünglichen Leela-Architektur wurde das Netz an drei Stellen
+vereinfacht.
+\begin{itemize}
+  \item \textbf{Keine Zughistorie.} Der Eingabetensor umfasst nur die aktuelle
+        Stellung (20 statt 112 Ebenen). Das verkleinert Netz und Rechenaufwand und
+        macht die Kodierung eindeutig, denn dieselbe Stellung (FEN) wird stets auf
+        denselben Tensor abgebildet. Eine historienbehaftete Kodierung erzeugte je
+        nach Zugreihenfolge unterschiedliche Tensoren (Transpositionen), was die
+        gezielte Untersuchung einzelner Stellungen, etwa bei der Fehlersuche am
+        Value-Head, mehrdeutig machte.
+  \item \textbf{Kein Moves-Left-Head.} Leela besitzt optional einen dritten Head,
+        der die verbleibende Partielänge schätzt. Er wurde weggelassen, um
+        Parameterzahl und Komplexität zu senken, und ist als optionale Komponente
+        für die Zugwahl verzichtbar.
+  \item \textbf{Gather statt Fully-Connected im Policy-Head.} Frühere Varianten,
+        sowohl bei Leela \parencite{lc0issue637} als auch in einer früheren Version
+        dieses Projekts, bildeten das 73-Ebenen-Feld über eine voll verbundene
+        Schicht auf die 1858 Züge ab. Der hier verwendete parameterfreie Gather
+        ersetzt diese Schicht. Eine äquivalente Dense-Abbildung von den
+        \(73\times8\times8 = 4672\) Zellen auf 1858 Züge benötigte 8\,682\,434
+        Parameter, also etwa ein Drittel des gesamten Netzes.
+\end{itemize}
+
+\subsection{Supervised Learning: Datenpipeline, Modell, Training}\label{sec:sl-impl} % [Danny]
+Der überwacht trainierte Agent verwendet dasselbe Netz (Abschnitt~\ref{sec:arch})
+und dieselbe Suche (Abschnitt~\ref{sec:mcts}) wie der bestärkend trainierte und
+unterscheidet sich allein im Trainingssignal. Dieses Signal stammt aus einem
+festen, beschrifteten Korpus, dessen Aufbau dieser Abschnitt von den Rohquellen
+über die Ausbalancierung und die Stockfish-Annotation bis zum Trainingslauf
+beschreibt. Der fertige Datensatz umfasst rund 23{,}5\,Mio.\ Positionen in 471
+Chunks zu je 50\,000 Beispielen.
+
+\paragraph{Datenquellen und Zielwerte.}
+Der Korpus speist sich aus drei Quellen mit unterschiedlichen Stärken
+(Abschnitt~\ref{sec:sl-context}), zusammengefasst in Tabelle~\ref{tab:sources}.
+
+\emph{Spiele.} Aus etwa 2\,TB Lichess-Rohdaten (rund 910\,Mio.\ Partien)
+verbleiben nach Filterung auf beidseitig mindestens 2700\,Elo und Ausschluss von
+Bullet-Partien 324\,000 Partien mit bekanntem Ausgang. Jede Stellung einer Partie
+liefert ein Trainingsbeispiel. Policy-Ziel ist der tatsächlich gespielte
+(menschliche) Zug als One-Hot-Vektor.
+
+\emph{Puzzles.} Aus der Lichess-Puzzle-Datenbank werden Matt- und Endspielthemen
+bevorzugt, da sie Matt- und Endspielsituationen gezielt abdecken, die im
+menschlichen Material, durch Aufgabe vor dem Matt, unterrepräsentiert sind.
+Die lösende Seite liefert Sieg-Positionen mit dem Lösungszug als Ziel, die
+verteidigende Seite Niederlage-Positionen mit dem jeweiligen Verteidigungszug.
+
+\emph{Tablebase.} Aus den Syzygy-Endspieldatenbanken (bis fünf Steine) wird von
+zufälligen Stellungen aus die tablebase-optimale Linie gespielt und aufgezeichnet,
+also die gewinnende Seite mit dem schnellsten Fortschritt zum Matt und die
+verlierende mit dem längsten Widerstand. Ergänzt werden exakt remise Stellungen ohne Policy-Ziel.
+
+\begin{table}[htbp]
+  \centering
+  \begin{tabular}{llll}
+    \toprule
+    Quelle & Policy-Ziel & Value-Label & Anteil \\
+    \midrule
+    Spiele    & gespielter Zug (Mensch)       & Soft-Target (SF) & 85\,\% \\
+    Puzzles   & Lösungs- / Verteidigungszug   & Soft-Target (SF) & 10\,\% \\
+    Tablebase & DTZ-optimal / -- (Remis)      & one-hot (exakt) & 5\,\% \\
+    \bottomrule
+  \end{tabular}
+  \caption{Die drei Datenquellen mit Policy-Ziel, Value-Label und Anteil je Chunk.}
+  \label{tab:sources}
+\end{table}
+
+\paragraph{Ausbalancierung von Klassen und Quellen.}
+Die Rohquellen sind stark unausgewogen. Menschliche Partien sind remislastig und
+enden häufig vor dem Matt durch Aufgabe, während Puzzles und Tablebase-Läufe fast
+ausschließlich entscheidend sind. Ohne Ausgleich verleiten diese Schieflagen das
+Netz zu den in Abschnitt~\ref{sec:sl-context} genannten Abkürzungen. Der Datensatz
+wird daher chunkweise nach einer festen Quote zusammengesetzt. Die Quellen stehen
+im Verhältnis 85\,:\,10\,:\,5 (Spiele\,:\,Puzzles\,:\,Tablebase), das heißt je
+50\,000er-Chunk 42\,500 Spiel-, 5\,000 Puzzle- und 2\,500 Tablebase-Positionen. Die
+drei Value-Klassen Sieg, Remis und Niederlage sind zu je einem Drittel vertreten.
+
+Zwei gezielte Konstruktionen verhindern zusätzlich, dass bereits die Datenquelle
+den Ausgang verrät.
+\begin{itemize}
+  \item Puzzles liefern nicht nur Sieg-, sondern auch Verteidigungspositionen
+        (mit Niederlage-Label), sodass \enquote{sieht aus wie ein Puzzle} nicht länger
+        \enquote{Seite am Zug gewinnt} bedeutet.
+  \item Die Tablebase steuert neben entscheidenden auch exakt remise Stellungen
+        bei, sodass wenige Steine auf dem Brett nicht pauschal als
+        \enquote{entscheidend} gelernt werden.
+\end{itemize}
+Ohne diese Ergänzungen lernte das Netz die Quelle als Abkürzung, statt die Stellung
+zu bewerten. Die zugehörigen Belege aus den Value-Head-Probes folgen in
+Abschnitt~\ref{sec:sl-results}.
+
+\paragraph{Stockfish-Annotation (Soft-Targets).}
+Das Value-Ziel für Spiel- und Puzzle-Positionen ist nicht der reine Partieausgang.
+Dieser ist verrauscht, da jede Stellung einer gewonnenen Partie pauschal als Sieg
+gilt (Abschnitt~\ref{sec:sl-context}), auch wenn die Stellung selbst ausgeglichen
+oder unterlegen ist. Jede dieser Positionen wird daher zusätzlich von Stockfish
+bewertet. Aus einer Suche bis Tiefe~12, einem festen Kompromiss zwischen
+Bewertungsqualität und dem Aufwand, rund 22{,}4\,Mio.\ Positionen zu annotieren,
+liefert Stockfish eine WDL-Verteilung \(q\). Mit dem als One-Hot kodierten
+Partieausgang \(z\) ergibt sich das Soft-Target als konvexe Mischung
+\[
+  t = \lambda\, z + (1-\lambda)\, q, \qquad \lambda = 0{,}5 .
+\]
+Der Wert \(\lambda = 0{,}5\) gewichtet Partieausgang und Stellungsbewertung gleich
+und entspricht damit der gleichgewichtigen Mischung aus Ausgang und Suchbewertung,
+wie sie auch Leela verwendet. Tablebase-Positionen bleiben one-hot, da die
+Syzygy-Bewertung exakt ist und keiner Glättung bedarf.
+
+\paragraph{Chunking und Training.}
+Der ausbalancierte Datensatz wird in 471 Chunks zu je 50\,000 Positionen geschrieben
+(Format \texttt{npz} mit Brett-Tensor, Policy- und Value-Ziel). Zwei Chunks
+(100\,000 Positionen) werden als Validierungsmenge zurückgehalten. Trainiert wird
+dasselbe Netz wie auf der RL-Seite (Abschnitt~\ref{sec:arch}). Der Gesamt-Loss
+summiert Policy- und Value-Loss. Da der Policy-Head rohe Logits ausgibt
+(Abschnitt~\ref{sec:arch}), ist der Policy-Loss eine Cross-Entropy über die Logits,
+der Value-Loss eine Cross-Entropy über die drei WDL-Klassen. Remise
+Tablebase-Positionen besitzen kein Policy-Ziel und werden über ein Nullgewicht aus
+dem Policy-Loss ausgeschlossen. Optimierer, die stufenweise gesenkte
+Lernrate und die Regularisierung folgen AlphaZero \parencite{silver2018} und sind
+in Tabelle~\ref{tab:sl-train} zusammengefasst. Der Rechenaufwand und die daraus
+folgende Beschränkung auf eine Epoche werden in Abschnitt~\ref{sec:compute}
+behandelt.
+
+\begin{table}[htbp]
+  \centering
+  \begin{tabular}{ll}
+    \toprule
+    Hyperparameter & Wert \\
+    \midrule
+    Optimierer     & AdamW (Weight Decay \(10^{-4}\), nur Kernel) \\
+    Lernrate       & \(10^{-4} \to 10^{-5}\) (70\,\%) \(\to 10^{-6}\) (90\,\%) \\
+    Batch-Größe    & 512 \\
+    Epochen        & 1 \\
+    Policy-Loss & Cross-Entropy (aus Logits) \\
+    Value-Loss  & Cross-Entropy (WDL) \\
+    \bottomrule
+  \end{tabular}
+  \caption{Trainingskonfiguration des überwachten Trainings.}
+  \label{tab:sl-train}
+\end{table}
+
+Während des Trainings werden regelmäßig Checkpoints gesichert. Sie bilden die
+Grundlage für den Vergleich der Trainingsstände und der verschiedenen
+SL-Varianten in Abschnitt~\ref{sec:sl-results}.
+
+\subsection{Reinforcement Learning: MCTS-Kern, Self-Play, Trainings-Loop}\label{sec:rl-impl} % [Tim]
+% MCTS-Implementierung, Self-Play-Erzeugung, Trainings-Loop.  (~2.0 S.)
+Der RL-Agent nutzt dasselbe Netz (Abschnitt~\ref{sec:arch}) und dieselbe Kodierung (Abschnitt~\ref{sec:encoding}) wie der SL-Agent und unterscheidet sich allein darin, dass er sein Trainingssignal im Self-Play selbst erzeugt (Abschnitt~\ref{sec:alphazero}). Der Kreislauf aus Suche, Datenerzeugung und Netz-Update folgt dem AlphaZero-Verfahren \autocite{silver2018} in der didaktisch reduzierten Form von Klein \autocite{klein2022neural}. Die beiden zentralen Stellhebel, die Zahl der Simulationen pro Zug und die die Zahl der Self-Play-Games pro Iteration, werden empirisch in Abschnitt~\ref{sec:rl-results} kalibriert.
+
+\paragraph{MCTS-Kern}
+Die Zugwahl im Self-Play nutzt die PUCT-Suche aus Abschnitt~\ref{sec:mcts}. Noch nicht besuchte Children-Nodes erhalten über eine First-Play-Urgency-Absenkung einen leicht reduzierten Startwert, sodass die Suche den vom Policy-Head bevorzugten Zügen folgt, statt jeden legalen Zug einmal erzwingen zu müssen. Am Root-Node mischt Dirichlet-Noise mit \(\alpha = 0{,}3\) und \(\varepsilon = 0{,}25\) zusätzliche Exploration bei (Abschnitt~\ref{sec:alphazero}), die nur im Self-Play aktiv ist und bei der Stärkemessung (Abschnitt~\ref{sec:eval-setup}) abgeschaltet wird.
+
+\paragraph{Self-Play}
+Die Trainingspartien erzeugt jeweils das aktuell beste Netz. In den ersten 30 Halbzügen werden die Züge proportional zu den Besuchszahlen der Children Nodes gesampelt (Temperatur 1), um die Eröffnungen zu variieren, danach spielt das Netz greedy den meistbesuchten Zug (Abschnitt~\ref{sec:alphazero}). Für jede besuchte Stellung entstehen zwei Trainingsziele, die Besuchsverteilung an der Wurzel als Policy-Ziel und der Partieausgang als Value-Ziel. Diese Samples wandern in einen Replay Buffer über ein gleitendes Fenster der letzten Iterationen, aus dem der Trainingsschritt zieht.
+
+\paragraph{Gated Training-Loop}
+Jede Iteration durchläuft drei Schritte. Zuerst erzeugt das beste Netz eine feste Zahl Self-Play-Games. Danach wird ausgehend vom besten Netz ein Kandidat trainiert. Zuletzt tritt der Kandidat in einem Match gegen das beste Netz an, unter festen Eröffnungen und ohne Noise wie bei der Stärkemessung (Abschnitt~\ref{sec:eval-setup}), und ersetzt es nur bei Überschreiten einer festen Punktschwelle. Dieses Gating verhindert, dass eine verschlechterte Version die Datenerzeugung übernimmt, ein Schritt, den das ursprüngliche AlphaZero weglässt \autocite{silver2018}, der sich hier aber unter knappem Rechenbudget als notwendig erwies (Abschnitt~\ref{sec:rl-results}).
+
+\section{Evaluation \& Ergebnisse}\label{sec:eval}
+% ~4.0 S.
+
+\subsection{Versuchsaufbau}\label{sec:eval-setup}
+Beide Agenten teilen sich Netzarchitektur (Abschnitt~\ref{sec:arch}),
+Zugkodierung (Abschnitt~\ref{sec:encoding}) und Suche (Abschnitt~\ref{sec:mcts})
+und unterscheiden sich allein im Trainingssignal. Damit die Ergebnisse auf einer
+gemeinsamen Skala vergleichbar bleiben, folgen alle Spielstärkemessungen dieses
+Kapitels demselben Messverfahren. Die ansatzspezifischen Details, also welche
+Varianten gegen welche Gegner antreten, benennen die jeweiligen
+Ergebnisabschnitte (für das überwachte Lernen Abschnitt~\ref{sec:sl-results}).
+
+\paragraph{Spielprotokoll.}
+Eine Messung besteht aus einem farbausgeglichenen Match zwischen zwei Gegnern.
+Als Eröffnungen dienen zufällig erzeugte Sequenzen von je drei Halbzügen. Jede
+Eröffnung wird zweimal gespielt, einmal mit vertauschten Farben. Der Farbtausch
+hebt den Vorteil des Anziehenden auf, und die zufälligen Eröffnungen verhindern,
+dass zwei deterministisch spielende Netze wiederholt dieselbe Partie austragen.
+Ein Netz wählt seine Züge über die Monte-Carlo-Baumsuche
+(Abschnitt~\ref{sec:mcts}) mit 1000 Simulationen pro Zug. Partien, die nach 400
+Halbzügen nicht entschieden sind, werden als Remis gewertet. Der Umfang eines
+Matches ist bei den jeweiligen Ergebnissen angegeben. Als Referenzgegner und für
+alle Stellungsbewertungen dient Stockfish~17.1.
+
+\paragraph{Wahl der Suchparameter.}
+Die Einstellungen der Suche wurden vorab an 393 von Stockfish annotierten
+Teststellungen (Tiefe~16, jeder legale Zug bewertet) über ein Gitter aus
+\(c_{\mathrm{puct}}\), First-Play-Urgency-Absenkung und Simulationszahl geprüft,
+gemessen am mittleren Centipawn-Verlust der gewählten Züge. Das Ergebnis ist
+weitgehend ein Null-Resultat. \(c_{\mathrm{puct}}\) bildet zwischen 1{,}5 und 4{,}0
+ein flaches Plateau (nur 0{,}75 fällt signifikant ab), und die
+First-Play-Urgency-Absenkung zeigt im untersuchten Bereich keinen messbaren Effekt.
+Allein die Simulationszahl wirkt durchgehend, denn der Centipawn-Verlust fällt
+monoton mit ihr. Deshalb wurde \(c_{\mathrm{puct}} = 1{,}5\) beibehalten und die
+Simulationszahl mit 1000 so hoch gewählt, wie es das Zeitbudget der Matches zulässt.
+
+\paragraph{Elo-Anker.}
+Aus dem in einem Match erzielten Punktanteil \(S\) einer Seite folgt nach der in
+Abschnitt~\ref{sec:elo} eingeführten Umkehrung
+\(\Delta R = 400 \cdot \log_{10}\!\big(S/(1-S)\big)\) die geschätzte
+Elo-Differenz zum Gegner, begleitet von einem 95\,\%-Konfidenzintervall aus der
+Match-Stichprobe. Da das Elo-System nur Differenzen liefert, dient als absoluter
+Anker Stockfish mit über \texttt{UCI\_Elo} gedrosselter Spielstärke. Konkret tritt
+das zu verankernde Netz gegen zehn Stockfish-Stufen von 1400 bis 2300\,Elo
+(Schrittweite 100) an, bei einer festen Bedenkzeit von 0{,}75\,s je Zug auf
+Stockfish-Seite. Das Netz zieht wie oben über die Suche mit 1000 Simulationen. Je
+Stufe werden zwanzig Partien gespielt, wieder farbausgeglichen über zufällige
+Eröffnungen. Aus dem Punktverlauf über die Stufen wird die absolute Elo des Netzes
+per logistischer Anpassung der Erwartungsscore-Kurve geschätzt.
+
+\subsection{Ergebnisse Supervised Learning}\label{sec:sl-results}
+Der überwacht trainierte Agent entstand in vier Iterationen, die sich allein in
+der Zusammensetzung und Beschriftung der Trainingsdaten unterscheiden
+(Abschnitt~\ref{sec:sl-impl}). Dasselbe Netz wurde also viermal auf jeweils
+verbessertem Datenmaterial trainiert, und jede Iteration war durch das Versagen
+der vorangegangenen motiviert. Zwei Betrachtungsweisen ziehen sich durch die
+Auswertung. Gezielte \emph{Probes} des Value-Heads prüfen, wie gut das Netz eine
+Stellung \emph{bewertet}, während Matches prüfen, wie gut es \emph{spielt}. Die
+Probes greifen auf Stellungen aus den Syzygy-Endspieldatenbanken zurück, deren
+Ausgang exakt bekannt ist, sodass sich eine Fehlbewertung zweifelsfrei als solche
+ausweisen lässt.
+
+\paragraph{v1, nur Partien.}
+Die erste Variante lernte ausschließlich aus Partien von Spielern über
+2700\,Elo. Da rund 60\,\% dieser Partien remis enden, kollabierte der Value-Head
+auf die Remis-Vorhersage. Zudem fehlte dem Netz jedes Ziel im Endspiel, da
+menschliche Partien meist vor dem Matt durch Aufgabe enden. Diese Variante konnte
+praktisch nicht mattsetzen und diente lediglich als Ausgangspunkt der folgenden
+Ausbalancierung.
+
+\paragraph{v2, Ausbalancierung.}
+Um beide Schwächen zu beheben, wurde der Datensatz nach Quelle (85\,:\,10\,:\,5
+für Spiele\,:\,Puzzles\,:\,Tablebase) und Ausgang (je ein Drittel Sieg, Remis,
+Niederlage) ausbalanciert (Abschnitt~\ref{sec:sl-impl}).
+Tabelle~\ref{tab:sl-chunk-mix} zeigt die Zusammensetzung eines Chunks. Das Netz
+konnte nun mattsetzen, lernte aber eine neue Abkürzung. In v2 sind \emph{alle}
+Puzzle-Positionen Siege und die Tablebase kennt keine Remisen, sodass die Quelle
+einer Stellung ihren Ausgang verrät. Statt die Stellung zu bewerten, lernte das
+Netz \enquote{Puzzle bzw.\ wenige Steine \(\Rightarrow\) entschieden} und
+verallgemeinerte dies zu \enquote{Materialungleichgewicht \(\Rightarrow\)
+entschieden}, unabhängig davon, wem das Material fehlt. Die Probes belegen dies.
+Auf beweisbar remisen Stellungen mit
+Materialungleichgewicht sagt v2 im Mittel nur \(P(\text{Remis}) = 0{,}385\)
+voraus, und auf beweisbar verlorenen Verteidiger-Stellungen erkennt es nur
+27{,}7\,\% korrekt als Niederlage.
+
+\begin{table}[htbp]
+  \centering
+  \begin{tabular}{llrrrr}
+    \toprule
+    Quelle & Var. & Sieg & Remis & Niederlage & Summe \\
+    \midrule
+    Spiele    & v2 & 10\,417 & 16\,667 & 15\,416 & 42\,500 \\
+              & v3 & 13\,334 & 15\,834 & 13\,332 & 42\,500 \\
+    \addlinespace
+    Puzzles   & v2 &  5\,000 &      0 &      0 &  5\,000 \\
+              & v3 &  2\,500 &      0 &  2\,500 &  5\,000 \\
+    \addlinespace
+    Tablebase & v2 &  1\,250 &      0 &  1\,250 &  2\,500 \\
+              & v3 &    833 &    833 &    834 &  2\,500 \\
+    \midrule
+    Summe     & v2 & 16\,667 & 16\,667 & 16\,666 & 50\,000 \\
+              & v3 & 16\,667 & 16\,667 & 16\,666 & 50\,000 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Zusammensetzung eines 50\,000er-Chunks nach Quelle und Ausgang.}
+  \label{tab:sl-chunk-mix}
+\end{table}
+
+Beide Varianten halten dieselben Quellenanteile (85\,:\,10\,:\,5) und je ein Drittel
+je Ausgang. Sie unterscheiden sich nur darin, \emph{wie} sich die Ausgänge auf die
+Quellen verteilen. v4 übernimmt die Verteilung von v3 unverändert und ändert
+lediglich die Value-Labels von Spiel- und Puzzle-Positionen (Soft-Target statt
+one-hot).
+
+\paragraph{v3, Anti-Abkürzung.}
+v3 verwendet dieselben Quellenanteile, ergänzt aber gezielt Gegenbeispiele.
+Puzzles liefern nun auch Verteidiger-Positionen (mit Niederlage-Label) und die
+Tablebase auch exakt remise Stellungen (Tabelle~\ref{tab:sl-chunk-mix}). Damit ist
+die Quelle nicht länger mit dem Ausgang korreliert, und die Abkürzung
+verschwindet. Die korrekte Niederlage-Erkennung der Verteidiger steigt von
+27{,}7\,\% auf 98{,}1\,\%, und \(P(\text{Remis})\) auf den
+Materialungleichgewichts-Remisen von 0{,}385 auf 0{,}781. Auch die Kalibrierung auf
+echten Partie-Positionen verbessert sich leicht. Es blieb jedoch ein etwas verrauschter Value-Head mit
+taktischer Blindheit im Mittelspiel.
+
+\paragraph{v4, Stockfish-Soft-Targets.}
+Die letzte Variante ändert nur die Value-Labels. Spiel- und Puzzle-Positionen
+erhalten statt des reinen Partieausgangs ein mit Stockfish (Tiefe~12) gemischtes
+Soft-Target (Abschnitt~\ref{sec:sl-impl}), während die Tablebase-Labels exakt
+bleiben. Das Ergebnis ist zweischneidig, denn v4 ist der bessere \emph{Bewerter}, aber der
+schlechtere \emph{Ausgangs-Prädiktor}. Der Abgleich mit Stockfish verbessert sich
+deutlich (mittlerer absoluter Fehler von 0{,}120 auf 0{,}097), während die
+Kalibrierung auf den tatsächlichen Partieausgang zurückgeht (Cross-Entropy des
+Value-Heads von 0{,}755 auf 0{,}831). Das ist
+zu erwarten, da v4 gerade auf die Stockfish-Bewertung hin optimiert wurde, die den
+Wert einer einzelnen Stellung genauer, aber anders als das grobe Partieergebnis
+beschreibt.
+
+\paragraph{Direkter Vergleich v3 gegen v4.}
+Ob die bessere Bewertung auch stärkeres Spiel bedeutet, entscheidet ein direktes
+Match (Abschnitt~\ref{sec:eval-setup}). Ohne Suche, allein anhand des
+Policy-Arguments des Netzes, sind beide Varianten praktisch gleich stark
+(Punktanteil 0{,}49 für v3, innerhalb der statistischen Unsicherheit). Unter der
+vollständigen Suche mit 1000 Simulationen jedoch gewinnt v4 klar. Über 100 Partien
+erreicht v4 einen Punktanteil von 0{,}645 (54\,--\,21\,--\,25), entsprechend einer
+Differenz von rund \(+104\) Elo (95\,\%-Konfidenzintervall des gegnerischen
+Punktanteils 0{,}272\,--\,0{,}438, also signifikant). Der verbesserte Value-Head
+schlägt sich demnach erst in Kombination mit der Suche in Spielstärke nieder. Die
+Suche stützt sich auf die Stellungsbewertung, und eine genauere Bewertung führt zu
+besseren Zügen.
+
+\paragraph{Konvergenz.}
+Abbildung~\ref{fig:sl-convergence} zeigt den Trainingsverlauf von v4 über die eine
+Epoche. Der Gesamt-Loss wird vom Policy-Loss dominiert (Kreuzentropie über 1858
+Züge), während der Value-Loss (über drei Klassen) klein und früh stabil ist.
+Training und Validierung laufen ohne Überanpassung nahe beieinander. Die
+Aufschlüsselung nach Datenquelle zeigt, wo das Netz unterschiedlich gut
+abschneidet. Der Value-Head bewertet Tablebase-Stellungen nahezu fehlerfrei
+(Accuracy 99\,\%), Puzzles gut (81\,\%) und die mehrdeutigen Spiel-Positionen am
+schwächsten (60\,\%). Der Policy-Head sagt forcierte Puzzle-Züge (76\,\%) besser
+voraus als menschliche Spiel-Züge (50\,\%), deren Vorhersage naturgemäß mehrdeutig
+ist.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{img/sl_convergence.pdf}
+  \caption{Trainingsverlauf von v4 über die 469 Chunks der einen Epoche.}
+  \label{fig:sl-convergence}
+\end{figure}
+
+Links steht der Gesamt-Loss (Training gegen Validierung), in der Mitte dessen
+Zerlegung in Policy- und Value-Loss auf den Validierungsdaten, rechts die
+Validierungs-Accuracy je Datenquelle, wobei die Farbe den Head und der Linienstil
+die Quelle bezeichnet. Die gestrichelten Vertikalen markieren die Absenkung der
+Lernrate bei 70\,\% und 90\,\% des Trainings.
+
+Dass der fallende Loss tatsächlich mit gewonnener Spielstärke einhergeht, prüft ein
+Vergleich des fertigen Netzes gegen 30 eigene Trainings-Checkpoints
+(Abbildung~\ref{fig:sl-gauntlet}), je 50 Partien. Um allein das Gelernte zu messen,
+spielen beide Seiten dabei ohne Suche, also direkt das Argument des Policy-Heads.
+Die Spielstärke steigt über das Training deutlich an, denn frühe Checkpoints liegen
+rund 500\,Elo zurück. Gegen Ende sättigt sie jedoch, und ab etwa Chunk~400 sind die
+Checkpoints vom finalen Netz nicht mehr sicher zu unterscheiden. Das letzte Sechstel des Trainings
+trug damit kaum noch messbare Spielstärke bei.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{img/sl_gauntlet.pdf}
+  \caption{Spielstärke der Trainings-Checkpoints von v4 relativ zum fertigen Netz.}
+  \label{fig:sl-gauntlet}
+\end{figure}
+
+An den beschrifteten Punkten ist zusätzlich die Bilanz Sieg--Remis--Niederlage aus
+Sicht des fertigen Netzes angegeben. Die Checkpoints sind gleichmäßig angeordnet und
+nicht proportional zur Trainingsdauer, da der frühe Verlauf dichter abgetastet
+wurde. Die gestrichelten Vertikalen markieren, wo der Abstand zwischen den
+gesicherten Checkpoints wächst (ab Chunk~12 jeder vierte, ab Chunk~40 jeder
+vierzigste).
+
+\paragraph{Stärke gegenüber den Vorvarianten.}
+Dass die Datenrezept-Iterationen nicht nur die Bewertung, sondern auch das Spiel
+verbesserten, bestätigen direkte Matches gegen die früheren Netze. In kürzeren
+30-Partie-Matches unter demselben Suchbudget schlägt v4 die
+Ausbalancierungs-Variante (v2) mit einem Punktanteil von 0{,}93 (26\,--\,4\,--\,0)
+und das reine Partie-Netz (v1) mit 0{,}90 (24\,--\,6\,--\,0), in beiden Fällen ohne
+eine einzige Niederlage. Die schrittweise verbesserte Datenaufbereitung übersetzt
+sich damit durchgängig in Spielstärke.
+
+\paragraph{Absolute Spielstärke.}
+Zur Einordnung auf eine absolute Skala tritt v4 gegen die zehn Stockfish-Stufen des
+Ankers an (Abschnitt~\ref{sec:eval-setup}). Tabelle~\ref{tab:sl-anchor} zeigt den
+über zwei Durchläufe (zwanzig Partien je Stufe) gemittelten Punktverlauf. Der
+Übergang zum ausgeglichenen Match (Punktanteil 0{,}5) liegt bei etwa 1900\,Elo. Eine
+logistische Anpassung der Erwartungsscore-Kurve an alle zehn Stufen schätzt die
+absolute Spielstärke von v4 auf rund \(1920\)\,Elo (95\,\%-Likelihood-Intervall etwa
+1855\,--\,1980). Der Punktverlauf ist über die zwanzig Partien je Stufe weitgehend
+monoton, und die verbleibende Reststreuung gegen die stärksten Stufen fällt kaum noch
+ins Gewicht, sodass der Anker eine belastbare Schätzung liefert. Zur Veranschaulichung
+dieser Größenordnung lässt sich der Anker auf die wöchentliche Blitz-Ratingverteilung
+von Lichess beziehen \parencite{lichess_blitz_dist}. Rund 1920\,Elo liegt dort oberhalb
+von etwa 80\,\% der aktiven Spieler. Der Vergleich ist allerdings nur illustrativ,
+da unsere Stockfish-verankerte Elo-Näherung nicht auf derselben Skala wie das
+Glicko-2-System von Lichess liegt.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \begin{tabular}{lrrrrrrrrrr}
+    \toprule
+    Stockfish-Elo  & 1400 & 1500 & 1600 & 1700 & 1800 & 1900 & 2000 & 2100 & 2200 & 2300 \\
+    \midrule
+    Punktanteil~v4 & 1{,}00 & 0{,}93 & 0{,}93 & 0{,}68 & 0{,}68 & 0{,}48 & 0{,}33 & 0{,}18 & 0{,}18 & 0{,}25 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Punktanteil von v4 gegen die zehn Stockfish-Anker-Stufen (je zwanzig
+    Partien, 0{,}75\,s/Zug).}
+  \label{tab:sl-anchor}
+\end{table}
+
+
+\paragraph{Spielverlauf nach Phasen.}
+Wo genau v4 im Spielverlauf Boden verliert, zeigt eine phasenaufgelöste Analyse der
+Partien gegen die beiden Stufen um die Ankerstärke des Netzes, nämlich
+Stockfish~1900 (knapp darunter, Punktanteil 0{,}48) und Stockfish~2000 (knapp
+darüber, Punktanteil 0{,}33).
+Jede Stellung aller je zwanzig Partien wurde dazu von Stockfish bei voller Stärke
+(Tiefe~16) bewertet. Die Centipawn-Bewertung \(c\) einer Stellung (aus Sicht des
+Anziehenden) wurde anschließend über eine logistische Funktion in einen
+Gewinnvorteil überführt,
+\[
+  V(c) = 100 \cdot \left(\frac{1}{1 + e^{-0{,}00368\,c}} - \tfrac{1}{2}\right)
+  \quad [\text{Gewinn-\%-Punkte}],
+\]
+sodass große Materialvorteile nicht beliebig stark ins Gewicht fallen.
+Abbildung~\ref{fig:sl-phase} mittelt diesen, aus Sicht von v4 orientierten,
+Vorteil (positiv für v4, negativ für Stockfish) je Zugnummer über alle Partien.
+Beide Kurven erzählen dieselbe Geschichte. v4 startet ausgeglichen bis leicht besser
+und verliert erst im weiteren Verlauf die Kontrolle, gegen die stärkere Stufe~2000
+jedoch deutlich früher und tiefer. Gegen Stockfish~1900
+hält v4 bis weit ins Mittelspiel einen Vorteil (Mittelwert +3{,}9 in der Eröffnung,
++11{,}7 im Mittelspiel) und gibt erst spät nach (+7{,}0 im Endspiel). Gegen
+Stockfish~2000 bleibt es früh nur ausgeglichen (+1{,}2 bzw.\ +0{,}7) und wird schon ab
+etwa Zug~23 klar überspielt (\(-22{,}3\) im Endspiel). Die Schwäche des überwacht
+trainierten Netzes liegt somit nicht in der Eröffnungs- oder Mittelspielbehandlung,
+sondern in der Verwertung und Endspieltechnik, konsistent damit, dass menschliche
+Partien selten bis zum Matt gespielt werden und der Datensatz das Endspiel daher nur
+dünn abdeckt. Gegen den stärkeren Gegner, der Ungenauigkeiten konsequenter bestraft,
+tritt dieser Bruch entsprechend früher zutage.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{img/sl_phase_advantage.pdf}
+  \caption{Mittlerer Spielverlauf von v4 gegen Stockfish~1900 (links) und
+    Stockfish~2000 (rechts) über je zwanzig Partien.}
+  \label{fig:sl-phase}
+\end{figure}
+
+Nach oben ist v4 im Vorteil, nach unten Stockfish. Die vertikale Achse ist für beide
+Stufen gleich skaliert. Die Kurven enden dort, wo weniger als drei Partien beitragen.
+
+
+\subsection{Ergebnisse Reinforcement Learning}
+\label{sec:rl-results}% [Tim]
+% Konvergenz; Staerke gegen Random und Stockfish-Level; Elo.  (~1.0 S.)
+Dieser Abschnitt verfolgt die Entwicklung des mit RL trainierten Agenten über mehrere Self-Play-Läufe und leitet daraus die Konfiguration ab, die unter einem studentischen Rechenbudget zu konsequentem Lernen führte. 
+Die Messungen sind hier intern, Candidate gegen das vorige beste Netz oder Checkpoint gegen Checkpoint, und dienen dem Vergleich der RL-Konfigurationen untereinander. Ihre Einstellungen weichen teils vom Protokoll in Abschnitt~\ref{sec:eval-setup} ab und werden je Lauf benannt. Die Einordnung auf die absolute Stockfish-Skala und der direkte Vergleich mit dem überwachten Agenten folgen in Abschnitt~\ref{sec:sl-vs-rl}.
+\paragraph{Warum nicht from scratch?}
+Ein Agent von zufälligen Gewichten aus zu trainieren erwies sich unter dem verfügbaren Budget als aussichtslos. Nach rund 24\,h Self-Play holte das Netz gegen einen Random-Mover nur 26 von 50 Punkten. Ein Netz, das gegen zufällige Züge kaum über Zufallsniveau kommt, stellt im Mittel etwa so häufig Figuren ein wie der Gegner selbst. 
+Daraus folgt die Grundentscheidung des RL-Teils, nicht from scratch zu lernen, sondern ein per Supervised Learning vortrainiertes Netz als Seed zu verwenden und dieses per Self-Play zu verbessern.
+
+\paragraph{Erster Bootstrap-Versuch und sein Scheitern}
+Der erste Lauf startete aus einem vollständig konvergierten SL-Netz mit 100 Simulations pro Zug und 10 Self-Play-Games je Iteration, ohne Gating, und übernahm jedes trainierte Netz bedingungslos. Über rund 30\,h entstanden knapp 400 Iterationen, doch das Netz wurde nicht stärker, sondern schwächer. In einem Turnier zwischen den Checkpoints gewann das SL-Startnetz alle 24 Direktpartien gegen sämtliche RL-Checkpoints, und die späteren Checkpoints schlugen die früheren nicht, ein Verlauf ohne erkennbaren Aufwärtstrend. Die Loss-Kurven benennen die Ursache. Der Policy Loss blieb über den gesamten Lauf flach bis leicht steigend, während der Value Loss fiel. 
+Ein flacher Policy Loss bedeutet, dass die Suche keine besseren Zielverteilungen liefert als das Netz selbst, es also nichts zu lernen gibt. 
+Der fallende Value Loss ist irreführend, da er nur zeigt, dass das Netz die Ausgänge seines eigenen, remislastigen Self-Plays gut vorhersagt. Bei nur 100 Simulations ist MCTS(Netz) kaum stärker als das rohe Netz, sodass das Trainingsziel näherungsweise dem eigenen Zug des Netzes entspricht und das Update lediglich Rauschen in eine bereits starke Politik schiebt.
+
+\paragraph{Die bindende Bedingung}
+Damit Self-Play etwas zu lernen bietet, muss MCTS(Netz) stärker sein als das Netz allein. Diese Bedingung stellt zwei Anforderungen, die beide erfüllt sein müssen, und die folgenden Läufe zeigen, dass das Verletzen je einer Anforderung bereits genügt, um das Lernen zu verhindern. Ein Lauf mit starkem SL-Seed, 800 Simulations und weiterhin nur 10 Games je Iteration, nun mit Gate, akzeptierte über zehn Iterationen keinen einzigen Candidate. Die Candidates verloren durchgehend gegen das beste Netz, das Gate fing die Verschlechterung also korrekt ab. 
+Zehn Games liefern zu wenige und zu selbstähnliche Positionen, um eine konvergierte Politik in eine bessere Richtung zu schieben. 
+Ein weiterer Lauf prüfte den umgekehrten Fall mit sehr vielen Games bei schwacher Suche, 2000 Games je Iteration bei nur 100 Simulations. Über drei Iterationen und rund 15\,h lernte das Netz nicht, es holte gegen das Netz von vor diesen 15\,h nur 10{,}5 von 20 Punkten. Eine hohe Zahl an Games kompensiert eine zu schwache Suche also nicht. Zugleich verdeutlicht dieser Lauf die Kosten, denn bei rund 5\,h je Iteration verbrauchten schon drei Iterationen das halbe wöchentliche Kaggle-Kontingent.
+
+\paragraph{Die funktionierende Konfiguration}
+Erst die Kombination aus ausreichend starker Suche und ausreichend vielen Games führte zu konsequentem Lernen. In der Konfiguration mit 800 Simulations und 100 Games je Iteration, aus einem bewusst schwächer gewählten Seed und mit Gate, wurden vier von sechs Candidates promotet, die Kette klettert also mehrfach in Folge nach oben. Anders als die zuvor genannten Läufe erzeugt diese Konfiguration ein echtes
+Aufwärtssignal. 
+Einschränkend gilt, dass hier zwei Faktoren zusammenwirken, die höhere Game-Zahl und der schwächere Seed, der der Suche mehr Spielraum über dem Netz lässt. Der nachgewiesene Fortschritt ist damit ein Aufstieg von einer schwachen
+Basis. Dass das trainierte Netz auch das starke SL-Netz übertrifft, ist dadurch nicht belegt und wird in Abschnitt~\ref{sec:sl-vs-rl} geprüft.
+
+\paragraph{Einordnung unter studentischem Budget}
+AlphaZero und Leela erzeugen je Netzgeneration Zehntausende bis Millionen Partien, Klein nennt für AlphaGo Zero rund 25\,000 Games je Iteration \autocite{klein2022neural}.
+Bei rund 5\,h für 2000 Games mit reduzierter Suche liegt diese Größenordnung jenseits des Erreichbaren. Der empirisch beste Weg war hier daher nicht, die Game-Menge von AlphaZero nachzuahmen, sondern das Gegenteil, eine moderate Zahl von
+Games bei hinreichend starker Suche über möglichst viele gegatete Iterationen. Der detaillierte Rechenaufwand und die Inferenzzeiten folgen in Abschnitt~\ref{sec:compute}.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \begin{tabular}{lrrrrrrrrrr}
+    \toprule
+    Stockfish-Elo     & 1400 & 1500 & 1600 & 1700 & 1800 & 1900 & 2000 & 2100 & 2200 & 2300 \\
+    \midrule
+    Punktanteil gen\_4 & 0{,}38 & 0{,}33 & 0{,}15 & 0{,}08 & 0{,}08 & 0{,}08 & 0{,}03 & 0{,}05 & 0{,}05 & 0{,}05 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Punktanteil von gen\_4 gegen die zehn Stockfish-Anker-Stufen (je zwanzig
+    Partien, 0{,}75\,s/Zug).}
+  \label{tab:rl-anchor}
+\end{table}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{img/rl_phase_advantage.pdf}
+  \caption{Mittlerer Spielverlauf von gen\_4 gegen Stockfish~1400 (links) und
+    Stockfish~1500 (rechts) über je zwanzig Partien.}
+  \label{fig:rl-phase}
+\end{figure}
+
+\subsection{Direktvergleich: SL vs. RL}\label{sec:headtohead}\label{sec:sl-vs-rl}
+Der abschließende Vergleich stellt die besten Netze beider Ansätze gegenüber, also
+das überwacht trainierte v4 (Abschnitt~\ref{sec:sl-results}) und das im Self-Play
+trainierte gen\_4 (Abschnitt~\ref{sec:rl-results}).
+
+\paragraph{Direktes Match.}
+Unter dem Protokoll aus Abschnitt~\ref{sec:eval-setup} erreicht gen\_4 über 50
+Partien mit je 1000 Simulationen gegen v4 einen Punktanteil von 0{,}07
+(1\,--\,5\,--\,44), was einer Differenz von rund \(-449\) Elo entspricht. Von
+fünfzig Partien gewann der bestärkend trainierte Agent eine einzige.
+
+\paragraph{Einordnung über den Anker.}
+Beide Netze wurden unabhängig voneinander gegen dieselben zehn Stockfish-Stufen
+vermessen (Tabellen~\ref{tab:sl-anchor} und~\ref{tab:rl-anchor}). Für v4 ergibt die
+logistische Anpassung rund 1920\,Elo. Für gen\_4 liefert dieselbe Anpassung über
+alle Stufen rund 1360\,Elo, über die aussagekräftigen unteren Stufen jedoch nur rund
+1330\,Elo. Der niedrigere Wert ist der belastbarere, denn gegen die stärksten Stufen
+stammen nahezu alle von gen\_4 erzielten Punkte aus Remisen durch
+Stellungswiederholung, was die Anpassung nach oben zieht. Unabhängig davon bleibt
+die Zahl eine Extrapolation, da gen\_4 selbst gegen die schwächste Stufe nur einen
+Punktanteil von 0{,}38 erreicht und der Übergang zum ausgeglichenen Match damit
+unterhalb des über \texttt{UCI\_Elo} erreichbaren Bereichs liegt. Der so geschätzte
+Abstand von rund 590\,Elo weist in dieselbe Richtung wie das direkte Match und liegt
+in derselben Größenordnung.
+
+\paragraph{Self-Play verbesserte seinen Ausgangspunkt.}
+Der Rückstand bedeutet nicht, dass das Self-Play wirkungslos blieb. Gegen jenes Netz,
+aus dem es gestartet wurde, gewinnt gen\_4 deutlich. Über je 100 Partien erreicht es
+gegen den Seed-Checkpoint sl\_160 einen Punktanteil von 0{,}77
+(69\,--\,15\,--\,16, rund \(+205\) Elo) und gegen den nächsten gesicherten
+Checkpoint sl\_200 einen von 0{,}70 (61\,--\,17\,--\,22, rund \(+143\) Elo). Beide
+Matches ordnen die Checkpoints zugleich in der erwarteten Reihenfolge, denn sl\_200
+erweist sich als das stärkere der beiden. Das Self-Play hat seinen Ausgangspunkt also
+um gut 150 bis 200 Elo verbessert. Der Abstand zu v4 entsteht demnach nicht daraus,
+dass Self-Play unter diesen Bedingungen nichts lernt, sondern daraus, dass es von
+einem deutlich schwächeren Netz aus startete und diesen Vorsprung im verfügbaren
+Budget nicht aufholen konnte.
+
+\paragraph{Unterschiedliche Schwächen.}
+Aufschlussreicher als die reine Differenz ist, wo die beiden Agenten Boden verlieren.
+Die phasenaufgelösten Verläufe (Abbildungen~\ref{fig:sl-phase} und~\ref{fig:rl-phase})
+zeigen entgegengesetzte Muster. v4 hält Eröffnung und Mittelspiel ausgeglichen und
+wird erst im Endspiel überspielt, während gen\_4 bereits nach zwölf Zügen im Mittel
+14 bis 16 Gewinn-\%-Punkte zurückliegt und den größten Teil seines Rückstands lange
+vor dem Endspiel einbüßt. Dieses Muster spiegelt unmittelbar die Herkunft der
+Trainingsdaten. Menschliche Partien decken Eröffnung und Mittelspiel dicht ab und
+enden meist vor dem Matt, während Self-Play seine Partien stets zu Ende spielt, aber
+ohne jedes Eröffnungswissen beginnt.
+
+\subsection{Rechenaufwand \& Inferenzzeit}\label{sec:compute}
+Der Rechenaufwand wird vom Reinforcement Learning mit seiner Selbstspiel-Schleife
+dominiert. Aus Sicht des überwachten Lernens fallen die Kosten in drei Posten an.
+
+\paragraph{Datenaufbereitung und Training (SL).}
+Der teuerste Posten war die Datengrundlage. Der Lichess-Partiendump umfasst rund
+2\,TB, dessen Filterung etwa 13 Stunden in Anspruch nahm. Die anschließende
+Annotation der rund 22{,}4\,Mio.\ Spiel- und Puzzle-Positionen mit Stockfish bis
+Tiefe~12 (Abschnitt~\ref{sec:sl-impl}) benötigte weitere 18 Stunden. Beide Schritte
+fallen einmalig an und laufen ohne GPU. Das eigentliche Training einer Epoche über
+die 469 Chunks dauerte anschließend rund 8 Stunden auf einer Kaggle-GPU (P100).
+
+\paragraph{Blattauswertung und Batch-Größe.}
+Zur Laufzeit dominiert die Auswertung der Suchbaum-Blätter durch das Netz die
+Kosten. Da die MCTS die Blätter stapelweise auf der GPU auswertet, wurde die
+Batch-Größe über 50 Teststellungen bei fester Bedenkzeit von 1{,}0\,s je Zug
+variiert (Tabelle~\ref{tab:mcts-batch}). Der Durchsatz steigt bis Batch~32 auf das
+rund Zehnfache (108 auf 1147 Simulationen/s), während die Zugqualität, gemessen
+als mittlerer Centipawn-Verlust gegenüber Stockfish, praktisch konstant bleibt
+(rund 9{,}1). Erst bei Batch~64 bricht die Qualität ein (11{,}3\,cp). So viele
+gleichzeitig ausgewählte Blätter lassen die Suchstatistik veralten, sodass trotz
+Virtual~Loss vermehrt derselbe Ast doppelt expandiert wird. Batch~32 bietet daher
+den besten Kompromiss und wurde für alle Messungen gewählt.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \begin{tabular}{rrr}
+    \toprule
+    Batch-Größe & Simulationen/s & Mittl.\ cp-Verlust \\
+    \midrule
+     1 &  108 &  9{,}1 \\
+     8 &  573 &  9{,}2 \\
+    16 &  882 &  9{,}2 \\
+    32 & 1147 &  9{,}1 \\
+    64 & 1368 & 11{,}3 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Durchsatz und Zugqualität nach Batch-Größe der Blattauswertung.}
+  \label{tab:mcts-batch}
+\end{table}
+
+\paragraph{Kosten je Partie.}
+Bei Batch~32 benötigt das Netz für einen Zug (1000 Simulationen) rund 0{,}75\,s.
+Stockfish wurde daher mit 0{,}75\,s/Zug ungefähr dieselbe Bedenkzeit zugestanden,
+was einen fairen Zeitvergleich für den Anker sicherstellt
+(Abschnitt~\ref{sec:eval-setup}). Eine vollständige Partie zweier Netze mit je
+1000 Simulationen dauert so im Mittel etwa 1{,}6 Minuten, ein 100-Partie-Match
+entsprechend rund 2{,}5 bis 3 Stunden.
+
+\paragraph{Selbstspiel (RL).}
+Auf der Seite des bestärkenden Lernens dominiert die Datenerzeugung. Jede
+Trainingsposition entsteht aus einer vollständigen Baumsuche, sodass die Kosten mit
+der Zahl der Simulationen und der Games je Iteration multiplikativ wachsen. Über
+alle Läufe hinweg, einschließlich der in Abschnitt~\ref{sec:rl-results}
+beschriebenen gescheiterten Konfigurationen, wurden dafür rund 120 GPU-Stunden auf
+derselben Kaggle-GPU (P100) aufgewendet.
+% [Tim] Aufschlüsselung je Lauf und Kosten je Iteration ergänzen.
+
+
+\section{Diskussion}
+
+\paragraph{Einordnung der Ergebnisse.}
+Unter den hier gewählten Bedingungen ist der überwacht trainierte Agent dem im
+Self-Play trainierten deutlich überlegen. Er erreicht rund 1920 gegenüber rund
+1330\,Elo und gewinnt das direkte Match mit einem Punktanteil von 0{,}93
+(Abschnitt~\ref{sec:sl-vs-rl}). Dieses Ergebnis ist allerdings kein Beleg dafür,
+dass Self-Play als Verfahren versagt. Gegen sein eigenes Ausgangsnetz gewinnt
+gen\_4 klar und hat dessen Spielstärke um gut 200\,Elo angehoben. Das Verfahren
+lernt also auch in diesem Rahmen, es startete nur von einem deutlich niedrigeren
+Niveau und konnte den Abstand im verfügbaren Budget nicht aufholen.
+
+\paragraph{Der entscheidende Faktor ist der Rechenaufwand.}
+Der Grund für diesen Abstand liegt weniger im Lernverfahren als in den Kosten der
+Datenbeschaffung. Beide Agenten trainierten auf derselben Hardware, einer
+Kaggle-GPU vom Typ P100. Das überwachte Training benötigte davon rund acht
+GPU-Stunden, denen eine einmalige, GPU-freie Aufbereitung von etwa 31 Stunden
+vorausging. Das bestärkende Lernen verbrauchte dagegen rund 120 GPU-Stunden und
+blieb dabei fast 600\,Elo zurück (Abschnitt~\ref{sec:compute}). Der Unterschied
+folgt unmittelbar aus der Herkunft der Daten. Überwachtes Lernen greift auf einen
+Korpus zu, in dem die Spielstärke von Millionen menschlicher Partien bereits
+enthalten ist, und muss diesen nur noch aufbereiten. Self-Play muss jede einzelne
+Trainingsposition selbst erzeugen, und zwar über eine hinreichend starke Baumsuche,
+denn nur dann liefert die Suche ein besseres Ziel als das Netz selbst und es gibt
+überhaupt etwas zu lernen (Abschnitt~\ref{sec:rl-results}). Genau diese Bedingung
+macht die Datenerzeugung teuer und ist unter kleinem Budget der bindende Engpass.
+
+\paragraph{Das Trainingssignal prägt die Schwächen.}
+Beide Agenten teilen Architektur, Kodierung und Suche und unterscheiden sich allein
+im Trainingssignal. Dass sie dennoch an entgegengesetzten Stellen scheitern, ist
+daher unmittelbar auf die Daten zurückzuführen. Der überwacht trainierte Agent
+spielt Eröffnung und Mittelspiel ausgeglichen und verliert erst im Endspiel, weil
+menschliche Partien diese frühen Phasen dicht abdecken, aber meist vor dem Matt
+enden. Der bestärkend trainierte Agent zeigt das umgekehrte Bild, da Self-Play jede
+Partie zu Ende spielt, aber ohne jedes Eröffnungswissen beginnt. Auf der Seite des
+überwachten Lernens bestätigt sich derselbe Zusammenhang noch einmal im Kleinen.
+Zwischen v1 und v4 wurden weder Architektur noch Suche verändert, sondern
+ausschließlich Zusammensetzung und Beschriftung der Daten, und allein daraus
+entstand der Unterschied zwischen einem Netz, das nicht mattsetzen konnte, und dem
+stärksten Agenten dieser Arbeit.
+
+\paragraph{Grenzen der Messung.}
+Die berichteten Elo-Werte sind Schätzungen mit erheblicher Unsicherheit. Ein Match
+über 100 Partien erlaubt bestenfalls eine Auflösung von einigen Dutzend Elo, sodass
+kleinere Unterschiede nicht belastbar sind. Der absolute Anker beruht zudem auf
+Stockfish mit gedrosseltem \texttt{UCI\_Elo}, was eine künstlich geschwächte
+Spielweise erzeugt und keine auf menschliche Spieler geeichte Skala darstellt. Für
+gen\_4 kommt hinzu, dass der Übergang zum ausgeglichenen Match unterhalb der
+niedrigsten einstellbaren Stufe liegt und der Wert daher extrapoliert bleibt
+(Abschnitt~\ref{sec:sl-vs-rl}). Schließlich wurde jede Konfiguration nur einmal
+trainiert. Ohne Wiederholungen mit verschiedenen Zufallsstartwerten lässt sich nicht
+trennen, welcher Teil der beobachteten Unterschiede auf die Konfiguration und
+welcher auf die Streuung einzelner Läufe entfällt.
+
+\paragraph{Grenzen des Vergleichs.}
+Verglichen werden zwei konkrete Umsetzungen unter einem festen Budget und nicht die
+beiden Paradigmen im Allgemeinen. Auf der Seite des bestärkenden Lernens wurden in
+der funktionierenden Konfiguration zwei Faktoren gleichzeitig verändert, die Zahl
+der Games und die Wahl eines schwächeren Seeds, sodass ihr jeweiliger Anteil offen
+bleibt (Abschnitt~\ref{sec:rl-results}). Vor allem aber unterscheiden sich die
+beiden Ansätze in ihrer oberen Schranke. Ein überwacht trainiertes Netz kann seine
+Lehrerquelle nachbilden, sie aber kaum übertreffen, und diese besteht hier aus
+Partien menschlicher Spieler und einer Stockfish-Bewertung bis Tiefe~12. Self-Play
+kennt diese Schranke nicht. Mit wachsendem Rechenbudget verschiebt sich der hier
+gemessene Vorteil daher voraussichtlich, und die Reihenfolge beider Ansätze ist
+nicht als allgemeingültig zu verstehen.
+
+\section{Fazit}
+Die Arbeit ist der Frage nachgegangen, welches Trainingssignal den stärkeren
+Schachagenten liefert, wenn nur studentische Rechenzeit zur Verfügung steht. Unter
+diesen Bedingungen fällt die Antwort eindeutig aus. Der überwacht trainierte Agent
+erreicht rund 1920\,Elo und gewinnt das direkte Match gegen den im Self-Play
+trainierten Agenten mit einem Punktanteil von 0{,}93, wobei er dafür nur einen
+Bruchteil der Rechenzeit benötigte. Bezogen auf die Titelfrage bleibt unter diesen
+Bedingungen also der angelernte Agent vorn.
+
+Diese Antwort gilt jedoch unter einer wesentlichen Bedingung. Self-Play hat sein
+Ausgangsnetz um gut 200\,Elo verbessert und damit gezeigt, dass es auch in diesem
+Rahmen lernt. Sein Nachteil liegt nicht im Lernprinzip, sondern darin, dass es jede
+Trainingsposition durch eine eigene Suche erzeugen muss, während das überwachte
+Lernen auf einem bereits vorhandenen Korpus aufsetzt. Da dieser Korpus zugleich die
+Obergrenze des überwachten Ansatzes bildet, ist zu erwarten, dass sich das
+Verhältnis mit wachsendem Rechenbudget umkehrt.
+
+
+\printbibliography
+
+\end{document}
