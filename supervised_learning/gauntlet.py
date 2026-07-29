@@ -53,7 +53,7 @@ SIMS = 150            # only used if MODE == "mcts"
 BATCH_SIZE = 16
 SEED = 7              # shared across checkpoints -> everyone faces the same openings
 ELO_CAP = 800.0       # clamp the score->Elo curve so a clean sweep isn't +inf
-SAVE_PGN = True       # keep each match's PGN (feedable to phase_acpl.py)
+SAVE_PGN = True       # keep each match's PGN (input to the per-phase analysis)
 OUT_DIR = os.path.join(REPO_ROOT, "supervised_learning", "results")
 RESULTS_JSON = os.path.join(OUT_DIR, "gauntlet_results.json")
 PLOT_PNG = os.path.join(OUT_DIR, "gauntlet_plot.png")

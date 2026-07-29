@@ -16,8 +16,8 @@ fixed nets would otherwise replay one identical game forever. We seed each game
 from a short random opening and play that same opening twice with colours
 reversed, which both diversifies the games and cancels first-move/colour bias.
 
-TF-heavy (it runs the nets). For the *where are they weak* breakdown, feed the
-PGN this writes to phase_acpl.py.
+TF-heavy (it runs the nets). The PGN this writes is what the per-phase breakdown
+in the report was computed from.
 
 Edit the CONFIG block below, then just run the file (no arguments):
     python supervised_learning/compare_nets.py

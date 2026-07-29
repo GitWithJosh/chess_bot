@@ -1,5 +1,5 @@
 """Sweep MCTS search parameters (c_puct x fpu_reduction x sims) against the
-Stockfish-annotated suite from build_search_positions.py.
+Stockfish-annotated suite in inspect/search_positions.json.
 
 Runs on Kaggle (P100), pasted into one cell — it self-runs. batch_size is fixed
 at the value the batch-size experiment settled on (32); this sweep is about move
@@ -148,8 +148,9 @@ def _find_suite(explicit: str | None) -> str:
         if hits:
             return hits[-1]
     raise FileNotFoundError(
-        "search_positions.json not found. Build it with "
-        "build_search_positions.py and upload it as a Kaggle dataset, or pass "
+        "search_positions.json not found. It is committed at "
+        "supervised_learning/inspect/search_positions.json, so either run this "
+        "from the repo root, upload that file as a Kaggle dataset, or pass "
         "suite_path=..."
     )
 

@@ -18,7 +18,7 @@ train_supervised.py expects:
 
 Keeping move-indexing, board encoding and the WDL convention in ONE place is
 what guarantees game/puzzle/TB samples encode byte-identically to the
-inference-time Converter (verified by inspect/verify_pipeline.py), so the
+inference-time Converter, so the
 network sees a consistent encoding at train and play time.
 """
 
