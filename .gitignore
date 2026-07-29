@@ -236,3 +236,8 @@ supervised_learning/sf_cache/worklist.txt*
 
 *HANDOFF*
 *tools*
+
+# Cell sources for the public Kaggle play notebook — the notebook and its
+# weights dataset live on Kaggle, this folder is just the working copy.
+Kaggle Notebook/
+kaggle_dataset_upload/
