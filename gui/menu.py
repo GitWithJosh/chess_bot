@@ -1,19 +1,31 @@
 """Menu screen with consistent color scheme and styling."""
 
 import pygame
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 import os
+
+from engines import net_catalog
 
 # Consistent color scheme
 COLOR_BG = (45, 45, 45)
 COLOR_BUTTON = (70, 130, 180)
 COLOR_BUTTON_HOVER = (100, 160, 210)
 COLOR_BUTTON_ACTIVE = (120, 180, 240)
+COLOR_BUTTON_DISABLED = (60, 70, 78)
 COLOR_TEXT_PRIMARY = (255, 255, 255)
 COLOR_TEXT_SECONDARY = (200, 200, 200)
+COLOR_TEXT_DISABLED = (130, 135, 140)
 COLOR_PANEL = (60, 60, 60)
 COLOR_PANEL_BORDER = (120, 120, 120)
+COLOR_INPUT_BG = (35, 35, 35)
+COLOR_INPUT_FOCUS = (120, 180, 240)
+
+# Row geometry, shared by rendering and hit testing so the two cannot drift.
+ROW_X, ROW_W, ROW_H = 100, 600, 60
+ROW_TOP, ROW_STEP = 150, 70
+
+BACK_RECT = (30, 30, 50, 50)
 
 
 class GameMode(Enum):
@@ -23,11 +35,29 @@ class GameMode(Enum):
 
 
 @dataclass
+class SearchSettings:
+    """How a network should pick its move."""
+    mode: str = "mcts"      # "policy" or "mcts"
+    sims: int = 200         # ignored when mode is "policy"
+
+
+@dataclass
 class GameConfig:
     """Game configuration from menu."""
     mode: GameMode
     white_engine_name: str | None = None
     black_engine_name: str | None = None
+    white_search: SearchSettings = field(default_factory=SearchSettings)
+    black_search: SearchSettings = field(default_factory=SearchSettings)
+
+
+def _row_rect(i: int) -> tuple[int, int, int, int]:
+    return (ROW_X, ROW_TOP + i * ROW_STEP, ROW_W, ROW_H)
+
+
+def _in_rect(pos: tuple[int, int], rect: tuple[int, int, int, int]) -> bool:
+    x, y, w, h = rect
+    return x <= pos[0] <= x + w and y <= pos[1] <= y + h
 
 
 class MenuScreen:
@@ -51,15 +81,20 @@ class MenuScreen:
         self.selected_mode = None
         self.engine_selection = "opponent"
         self.selected_opponent_engine = None
-        self.engines = {
-            "Random": "random",
-            "BigNetwork (SL)": "big_network",
-            "Stockfish (Easy)": "stockfish_800",
-            "Stockfish (Medium)": "stockfish_1600",
-            "Stockfish (Hard)": "stockfish_2400",
+
+        # The five trained networks. Ones whose weights are not in Weights/ are
+        # still listed, greyed out, so it is obvious what is missing rather than
+        # the menu silently being short.
+        self.engine_names = list(net_catalog.NETS.keys())
+        self.selected_engines = {"opponent": None, "white": None, "black": None}
+        self.search = {
+            "opponent": SearchSettings(),
+            "white": SearchSettings(),
+            "black": SearchSettings(),
         }
-        self.selected_engines = {"opponent": "random", "white": "random", "black": "random"}
         self.hovered_engine = None
+        self.sims_text = "200"
+        self.sims_focused = False
 
         self.back_button_img = self._load_button_image("back-button.png", (50, 50))
 
@@ -70,7 +105,7 @@ class MenuScreen:
             if os.path.exists(path):
                 img = pygame.image.load(path)
                 return pygame.transform.scale(img, size)
-        except:
+        except Exception:
             pass
         return None
 
@@ -82,6 +117,8 @@ class MenuScreen:
             self.clock.tick(30)
 
         return self.config
+
+    # ------------------------------------------------------------------ input
 
     def _handle_events(self):
         """Handle menu input."""
@@ -96,137 +133,190 @@ class MenuScreen:
                 self._update_hover(event.pos)
 
             elif event.type == pygame.KEYDOWN:
+                if self.current_screen == "search_selection" and self.sims_focused:
+                    if self._handle_sims_key(event):
+                        continue
                 if event.key == pygame.K_ESCAPE:
                     if self.current_screen != "mode_selection":
-                        self.current_screen = "mode_selection"
+                        self._go_back()
                     else:
                         self.running = False
 
+    def _handle_sims_key(self, event) -> bool:
+        """Digits, backspace and Enter for the simulation count. True if consumed."""
+        if event.key == pygame.K_BACKSPACE:
+            self.sims_text = self.sims_text[:-1]
+            return True
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            self.sims_focused = False
+            return True
+        if event.unicode.isdigit() and len(self.sims_text) < 5:
+            self.sims_text += event.unicode
+            return True
+        return False
+
     def _update_hover(self, pos: tuple[int, int]):
-        """Update hovered engine."""
+        """Update hovered row."""
         self.hovered_engine = None
         if self.current_screen == "engine_selection":
-            engine_names = list(self.engines.keys())
-            for i, name in enumerate(engine_names):
-                y = 150 + i * 70
-                if 100 <= pos[0] <= 700 and y <= pos[1] <= y + 60:
+            for i in range(len(self.engine_names)):
+                if _in_rect(pos, _row_rect(i)):
                     self.hovered_engine = i
         elif self.current_screen == "color_selection":
-            colors = [("White", "white"), ("Black", "black"), ("Random", "random")]
-            for i, (name, _) in enumerate(colors):
-                y = 150 + i * 70
-                if 100 <= pos[0] <= 700 and y <= pos[1] <= y + 60:
+            for i in range(3):
+                if _in_rect(pos, _row_rect(i)):
                     self.hovered_engine = i
 
     def _handle_click(self, pos: tuple[int, int]):
         """Handle mouse click."""
         if self.current_screen == "mode_selection":
             self._handle_mode_selection_click(pos)
-        elif self.current_screen == "engine_selection":
+            return
+
+        if _in_rect(pos, BACK_RECT):
+            self._go_back()
+            return
+
+        if self.current_screen == "engine_selection":
             self._handle_engine_selection_click(pos)
+        elif self.current_screen == "search_selection":
+            self._handle_search_selection_click(pos)
         elif self.current_screen == "color_selection":
             self._handle_color_selection_click(pos)
 
+    def _go_back(self):
+        if self.current_screen == "search_selection":
+            self.current_screen = "engine_selection"
+        elif self.current_screen == "color_selection":
+            self.current_screen = "search_selection"
+        else:
+            self.current_screen = "mode_selection"
+
     def _handle_mode_selection_click(self, pos: tuple[int, int]):
         """Handle mode selection clicks."""
-        # Human vs Human (100, 140, 600, 80)
-        if 100 <= pos[0] <= 700 and 140 <= pos[1] <= 220:
-            self.config = GameConfig(mode=GameMode.HUMAN_VS_HUMAN)
+        if _in_rect(pos, (100, 140, 600, 80)):
+            self.config = GameConfig(
+                mode=GameMode.HUMAN_VS_HUMAN,
+                white_engine_name="human",
+                black_engine_name="human",
+            )
             self.running = False
             return
 
-        # Human vs Engine (100, 270, 600, 80)
-        if 100 <= pos[0] <= 700 and 270 <= pos[1] <= 350:
+        if _in_rect(pos, (100, 270, 600, 80)):
             self.selected_mode = GameMode.HUMAN_VS_ENGINE
             self.current_screen = "engine_selection"
             self.engine_selection = "opponent"
             return
 
-        # Engine vs Engine (100, 400, 600, 80)
-        if 100 <= pos[0] <= 700 and 400 <= pos[1] <= 480:
+        if _in_rect(pos, (100, 400, 600, 80)):
             self.selected_mode = GameMode.ENGINE_VS_ENGINE
             self.current_screen = "engine_selection"
             self.engine_selection = "white"
             return
 
     def _handle_engine_selection_click(self, pos: tuple[int, int]):
-        """Handle engine selection clicks."""
-        # Back button (30, 30, 50, 50)
-        if 30 <= pos[0] <= 80 and 30 <= pos[1] <= 80:
-            self.current_screen = "mode_selection"
+        """Handle engine selection clicks. Unavailable nets are inert."""
+        for i, name in enumerate(self.engine_names):
+            if not _in_rect(pos, _row_rect(i)):
+                continue
+            if not net_catalog.is_available(name):
+                return
+            self.selected_engines[self.engine_selection] = name
+            if self.engine_selection == "opponent":
+                self.selected_opponent_engine = name
+            current = self.search[self.engine_selection]
+            self.sims_text = str(current.sims)
+            self.current_screen = "search_selection"
             return
 
-        # Engine options
-        engine_names = list(self.engines.keys())
-        for i, name in enumerate(engine_names):
-            y = 150 + i * 70
-            if 100 <= pos[0] <= 700 and y <= pos[1] <= y + 60:
-                selected_engine_id = self.engines[name]
-                self.selected_engines[self.engine_selection] = selected_engine_id
+    def _handle_search_selection_click(self, pos: tuple[int, int]):
+        """Policy / MCTS choice, the simulation field and Continue."""
+        slot = self.engine_selection
+        settings = self.search[slot]
 
-                if self.engine_selection == "opponent":
-                    # Move to color selection screen
-                    self.selected_opponent_engine = selected_engine_id
-                    self.current_screen = "color_selection"
-                elif self.engine_selection == "white":
-                    self.engine_selection = "black"
-                else:
-                    self.config = GameConfig(
-                        mode=GameMode.ENGINE_VS_ENGINE,
-                        white_engine_name=self.selected_engines["white"],
-                        black_engine_name=self.selected_engines["black"],
-                    )
-                    self.running = False
-                return
+        if _in_rect(pos, (100, 140, 600, 70)):
+            settings.mode = "policy"
+            self.sims_focused = False
+            return
+
+        if _in_rect(pos, (100, 225, 600, 70)):
+            settings.mode = "mcts"
+            return
+
+        if _in_rect(pos, (390, 320, 150, 46)):
+            self.sims_focused = settings.mode == "mcts"
+            return
+
+        if _in_rect(pos, (100, 460, 600, 70)):
+            self.sims_focused = False
+            settings.sims = self._parsed_sims()
+            self.sims_text = str(settings.sims)
+            self._advance_from_search()
+            return
+
+        self.sims_focused = False
+
+    def _parsed_sims(self) -> int:
+        try:
+            return max(1, min(100000, int(self.sims_text)))
+        except ValueError:
+            return 200
+
+    def _advance_from_search(self):
+        """Where to go once a net's search settings are set."""
+        if self.engine_selection == "opponent":
+            self.current_screen = "color_selection"
+        elif self.engine_selection == "white":
+            self.engine_selection = "black"
+            self.current_screen = "engine_selection"
+        else:
+            self.config = GameConfig(
+                mode=GameMode.ENGINE_VS_ENGINE,
+                white_engine_name=self.selected_engines["white"],
+                black_engine_name=self.selected_engines["black"],
+                white_search=self.search["white"],
+                black_search=self.search["black"],
+            )
+            self.running = False
 
     def _handle_color_selection_click(self, pos: tuple[int, int]):
         """Handle color selection clicks."""
-        # Back button (30, 30, 50, 50)
-        if 30 <= pos[0] <= 80 and 30 <= pos[1] <= 80:
-            self.current_screen = "engine_selection"
+        colors = ["white", "black", "random"]
+        for i, color in enumerate(colors):
+            if not _in_rect(pos, _row_rect(i)):
+                continue
+
+            opponent = self.selected_opponent_engine
+            settings = self.search["opponent"]
+            if color == "random":
+                import random
+                color = "white" if random.random() < 0.5 else "black"
+
+            if color == "white":
+                self.config = GameConfig(
+                    mode=GameMode.HUMAN_VS_ENGINE,
+                    white_engine_name="human",
+                    black_engine_name=opponent,
+                    black_search=settings,
+                )
+            else:
+                self.config = GameConfig(
+                    mode=GameMode.HUMAN_VS_ENGINE,
+                    white_engine_name=opponent,
+                    black_engine_name="human",
+                    white_search=settings,
+                )
+            self.running = False
             return
 
-        # Color options: White, Black, Random
-        colors = [("White", "white"), ("Black", "black"), ("Random", "random")]
-        for i, (name, color) in enumerate(colors):
-            y = 150 + i * 70
-            if 100 <= pos[0] <= 700 and y <= pos[1] <= y + 60:
-                opponent_engine_id = self.selected_opponent_engine or "random"
-                if color == "white":
-                    self.config = GameConfig(
-                        mode=GameMode.HUMAN_VS_ENGINE,
-                        white_engine_name="human",
-                        black_engine_name=opponent_engine_id,
-                    )
-                elif color == "black":
-                    self.config = GameConfig(
-                        mode=GameMode.HUMAN_VS_ENGINE,
-                        white_engine_name=opponent_engine_id,
-                        black_engine_name="human",
-                    )
-                else:  # Random
-                    import random
-                    if random.random() < 0.5:
-                        self.config = GameConfig(
-                            mode=GameMode.HUMAN_VS_ENGINE,
-                            white_engine_name="human",
-                            black_engine_name=opponent_engine_id,
-                        )
-                    else:
-                        self.config = GameConfig(
-                            mode=GameMode.HUMAN_VS_ENGINE,
-                            white_engine_name=opponent_engine_id,
-                            black_engine_name="human",
-                        )
-                self.running = False
-                return
-
-    def _get_engine_display_name(self, engine_id: str) -> str:
+    def _get_engine_display_name(self, engine_id: str | None) -> str:
         """Get engine display name."""
-        for name, eid in self.engines.items():
-            if eid == engine_id:
-                return name
-        return "Random"
+        if engine_id and engine_id in net_catalog.NETS:
+            return str(net_catalog.NETS[engine_id]["label"])
+        return "Human"
+
+    # --------------------------------------------------------------- rendering
 
     def _render(self):
         """Render menu."""
@@ -236,101 +326,128 @@ class MenuScreen:
             self._render_mode_selection()
         elif self.current_screen == "engine_selection":
             self._render_engine_selection()
+        elif self.current_screen == "search_selection":
+            self._render_search_selection()
         elif self.current_screen == "color_selection":
             self._render_color_selection()
 
         pygame.display.flip()
 
+    def _title(self, text: str):
+        surf = self.font_large.render(text, True, COLOR_TEXT_PRIMARY)
+        self.screen.blit(surf, (self.WINDOW_WIDTH // 2 - surf.get_width() // 2, 30))
+
+    def _back_button(self):
+        pygame.draw.rect(self.screen, COLOR_PANEL, BACK_RECT)
+        pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, BACK_RECT, 2)
+        if self.back_button_img:
+            self.screen.blit(self.back_button_img, (30, 30))
+        else:
+            text = self.font_small.render("<-", True, COLOR_TEXT_PRIMARY)
+            self.screen.blit(text, (42, 38))
+
+    def _button(self, rect, label, *, active=False, hovered=False, enabled=True,
+                sub=None, font=None):
+        if not enabled:
+            color = COLOR_BUTTON_DISABLED
+        elif active:
+            color = COLOR_BUTTON_ACTIVE
+        elif hovered:
+            color = COLOR_BUTTON_HOVER
+        else:
+            color = COLOR_BUTTON
+        pygame.draw.rect(self.screen, color, rect)
+        pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, rect, 2)
+
+        fg = COLOR_TEXT_PRIMARY if enabled else COLOR_TEXT_DISABLED
+        font = font or self.font_small
+        text = font.render(label, True, fg)
+        y = rect[1] + (18 if sub else (rect[3] - text.get_height()) // 2)
+        self.screen.blit(text, (rect[0] + 30, y))
+        if sub:
+            sub_fg = COLOR_TEXT_SECONDARY if enabled else COLOR_TEXT_DISABLED
+            sub_surf = self.font_small.render(sub, True, sub_fg)
+            self.screen.blit(sub_surf, (rect[0] + 30, rect[1] + 40))
+
     def _render_mode_selection(self):
         """Render mode selection screen."""
-        title = self.font_large.render("Chess", True, COLOR_TEXT_PRIMARY)
-        self.screen.blit(title, (self.WINDOW_WIDTH // 2 - title.get_width() // 2, 30))
-
-        # Human vs Human
-        pygame.draw.rect(self.screen, COLOR_BUTTON, (100, 140, 600, 80))
-        pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, (100, 140, 600, 80), 2)
-        text = self.font_medium.render("Human vs Human", True, COLOR_TEXT_PRIMARY)
-        self.screen.blit(text, (160, 165))
-
-        # Human vs Engine
-        pygame.draw.rect(self.screen, COLOR_BUTTON, (100, 270, 600, 80))
-        pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, (100, 270, 600, 80), 2)
-        text = self.font_medium.render("Human vs Engine", True, COLOR_TEXT_PRIMARY)
-        self.screen.blit(text, (170, 295))
-
-        # Engine vs Engine
-        pygame.draw.rect(self.screen, COLOR_BUTTON, (100, 400, 600, 80))
-        pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, (100, 400, 600, 80), 2)
-        text = self.font_medium.render("Engine vs Engine", True, COLOR_TEXT_PRIMARY)
-        self.screen.blit(text, (170, 425))
+        self._title("Chess")
+        self._button((100, 140, 600, 80), "Human vs Human", font=self.font_medium)
+        self._button((100, 270, 600, 80), "Human vs Engine", font=self.font_medium)
+        self._button((100, 400, 600, 80), "Engine vs Engine", font=self.font_medium)
 
     def _render_engine_selection(self):
         """Render engine selection screen."""
         if self.engine_selection == "opponent":
-            title_text = "Select Opponent"
+            self._title("Select Opponent")
         elif self.engine_selection == "white":
-            title_text = "Select White Engine"
+            self._title("Select White Engine")
         else:
-            title_text = "Select Black Engine"
+            self._title("Select Black Engine")
 
-        title = self.font_large.render(title_text, True, COLOR_TEXT_PRIMARY)
-        self.screen.blit(title, (self.WINDOW_WIDTH // 2 - title.get_width() // 2, 30))
+        self._back_button()
 
-        # Back button
-        pygame.draw.rect(self.screen, COLOR_PANEL, (30, 30, 50, 50))
-        pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, (30, 30, 50, 50), 2)
-        if self.back_button_img:
-            self.screen.blit(self.back_button_img, (30, 30))
+        for i, name in enumerate(self.engine_names):
+            enabled = net_catalog.is_available(name)
+            self._button(
+                _row_rect(i),
+                net_catalog.menu_label(name),
+                active=self.selected_engines[self.engine_selection] == name,
+                hovered=self.hovered_engine == i and enabled,
+                enabled=enabled,
+                sub=None if enabled else "weights not found in Weights/",
+            )
+
+        if not net_catalog.available():
+            hint = "No weights found. Download them from Kaggle into Weights/ - see Weights/README.md"
+            surf = self.font_small.render(hint, True, COLOR_TEXT_SECONDARY)
+            self.screen.blit(surf, (self.WINDOW_WIDTH // 2 - surf.get_width() // 2, 530))
+
+    def _render_search_selection(self):
+        """Policy vs MCTS, plus the simulation count."""
+        name = self.selected_engines[self.engine_selection]
+        self._title(self._get_engine_display_name(name))
+        self._back_button()
+
+        settings = self.search[self.engine_selection]
+
+        self._button(
+            (100, 140, 600, 70), "Policy only",
+            active=settings.mode == "policy",
+            sub="one look at the board, answers instantly, clearly weaker",
+        )
+        self._button(
+            (100, 225, 600, 70), "Search (MCTS)",
+            active=settings.mode == "mcts",
+            sub="searches before moving, how the report measured Elo",
+        )
+
+        enabled = settings.mode == "mcts"
+        label_fg = COLOR_TEXT_PRIMARY if enabled else COLOR_TEXT_DISABLED
+        label = self.font_small.render("Simulations per move:", True, label_fg)
+        self.screen.blit(label, (130, 333))
+
+        box = (390, 320, 150, 46)
+        pygame.draw.rect(self.screen, COLOR_INPUT_BG, box)
+        border = COLOR_INPUT_FOCUS if (self.sims_focused and enabled) else COLOR_PANEL_BORDER
+        pygame.draw.rect(self.screen, border, box, 2)
+        value = self.font_medium.render(self.sims_text or "", True, label_fg)
+        self.screen.blit(value, (box[0] + 12, box[1] + 8))
+
+        if enabled:
+            note = "1000 is the reported setting, about 3.5 s per move on CPU. 200 answers in under a second."
         else:
-            text = self.font_small.render("←", True, COLOR_TEXT_PRIMARY)
-            self.screen.blit(text, (42, 38))
+            note = "Simulation count does not apply to the policy-only mode."
+        surf = self.font_small.render(note, True, COLOR_TEXT_SECONDARY)
+        self.screen.blit(surf, (self.WINDOW_WIDTH // 2 - surf.get_width() // 2, 390))
 
-        # Engine options
-        for i, (name, eid) in enumerate(self.engines.items()):
-            y = 150 + i * 70
-            is_selected = self.selected_engines[self.engine_selection] == eid
-            is_hovered = self.hovered_engine == i
-
-            if is_selected:
-                color = COLOR_BUTTON_ACTIVE
-            elif is_hovered:
-                color = COLOR_BUTTON_HOVER
-            else:
-                color = COLOR_BUTTON
-
-            pygame.draw.rect(self.screen, color, (100, y, 600, 60))
-            pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, (100, y, 600, 60), 2)
-            text = self.font_small.render(name, True, COLOR_TEXT_PRIMARY)
-            self.screen.blit(text, (130, y + 18))
+        self._button((100, 460, 600, 70), "Continue", font=self.font_medium)
 
     def _render_color_selection(self):
         """Render color selection screen."""
-        opponent_name = self._get_engine_display_name(self.selected_opponent_engine or "random")
-        title_text = f"Play as... ({opponent_name})"
-        title = self.font_large.render(title_text, True, COLOR_TEXT_PRIMARY)
-        self.screen.blit(title, (self.WINDOW_WIDTH // 2 - title.get_width() // 2, 30))
+        opponent_name = self._get_engine_display_name(self.selected_opponent_engine)
+        self._title(f"Play as... ({opponent_name})")
+        self._back_button()
 
-        # Back button
-        pygame.draw.rect(self.screen, COLOR_PANEL, (30, 30, 50, 50))
-        pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, (30, 30, 50, 50), 2)
-        if self.back_button_img:
-            self.screen.blit(self.back_button_img, (30, 30))
-        else:
-            text = self.font_small.render("←", True, COLOR_TEXT_PRIMARY)
-            self.screen.blit(text, (42, 38))
-
-        # Color options
-        colors = [("White", "white"), ("Black", "black"), ("Random", "random")]
-        for i, (name, color_id) in enumerate(colors):
-            y = 150 + i * 70
-            is_hovered = self.hovered_engine == i
-
-            if is_hovered:
-                color = COLOR_BUTTON_HOVER
-            else:
-                color = COLOR_BUTTON
-
-            pygame.draw.rect(self.screen, color, (100, y, 600, 60))
-            pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, (100, y, 600, 60), 2)
-            text = self.font_small.render(name, True, COLOR_TEXT_PRIMARY)
-            self.screen.blit(text, (130, y + 18))
+        for i, label in enumerate(("White", "Black", "Random")):
+            self._button(_row_rect(i), label, hovered=self.hovered_engine == i)

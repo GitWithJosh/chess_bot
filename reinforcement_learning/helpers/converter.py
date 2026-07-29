@@ -1,13 +1,23 @@
 import chess
 import numpy as np
 import json
+import os
 import tensorflow as tf
+
+# Resolved from this file's location, not the working directory, so the engine
+# runs the same whether it is started from the repo root, from a subfolder or
+# from an installed copy.
+DEFAULT_LOOKUP_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "move_lookup.json",
+)
+
 
 class Converter:
     """
     Class for converting stuff
     """
-    def __init__(self, lookup_path: str="reinforcement_learning/move_lookup.json"):
+    def __init__(self, lookup_path: str = DEFAULT_LOOKUP_PATH):
         self.board = chess.Board()
         self.lookup = {}
         with open(lookup_path, "r") as f:

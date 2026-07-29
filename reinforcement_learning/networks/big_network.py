@@ -6,7 +6,7 @@ from keras import layers
 
 from monte_carlo_tree_search.mcts_v2 import MCTS
 from monte_carlo_tree_search.nodes_and_edges_v2 import Node
-from helpers.converter import Converter
+from helpers.converter import Converter, DEFAULT_LOOKUP_PATH
 from helpers.move_encoding import gather_indices_from_lookup_path
 
 
@@ -87,7 +87,7 @@ class BigNetwork:
         num_moves: int = 1858,
         se_ratio: int = 8,
         learning_rate: float = 0.001,
-        lookup_path: str = "reinforcement_learning/move_lookup.json",
+        lookup_path: str = DEFAULT_LOOKUP_PATH,
     ):
         self.input_shape = input_shape
         self.num_res_blocks = num_res_blocks
@@ -95,6 +95,7 @@ class BigNetwork:
         self.num_moves = num_moves
         self.se_ratio = se_ratio
         self.learning_rate = learning_rate
+        self.lookup_path = lookup_path
 
         # Fixed move-index → policy-plane-cell map for the gather-based head.
         # Built from move_lookup (validated bijection); not trainable.
@@ -356,7 +357,7 @@ class BigNetwork:
             The best move according to MCTS (greedy, most-visited)
         """
         if self._search_converter is None:
-            self._search_converter = Converter()
+            self._search_converter = Converter(self.lookup_path)
         # Persistent MCTS across calls: the evaluation cache stays warm for the
         # whole game (weights are fixed between load() calls), and the previous
         # search tree is reused when the new position continues the same game

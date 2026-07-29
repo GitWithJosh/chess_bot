@@ -1,4 +1,6 @@
-pygame
-python-chess
-tensforflow
-tqdm
+tensorflow>=2.19
+numpy>=2.1
+python-chess>=1.999
+pygame>=2.6
+tqdm>=4.67
+h5py>=3.14
