@@ -35,6 +35,7 @@ from utils.coordinates import algebraic_to_indices
 
 from networks.big_network import BigNetwork
 from helpers.converter import Converter
+from monte_carlo_tree_search.nodes_and_edges_v2 import Node
 
 
 _PROMO_WORD = {"q": "queen", "r": "rook", "b": "bishop", "n": "knight"}
@@ -75,6 +76,11 @@ class BigNetworkEngine(ChessEngine):
         self._display_name = display_name or os.path.basename(weights_path).replace(
             ".weights.h5", ""
         )
+        # The top moves of the most recent move, for the search readout.
+        self.last_lines: list[dict] = []
+        # A forward pass costs about 60 ms and the GUI redraws 30 times a second,
+        # so the value head is evaluated once per position and remembered.
+        self._wdl_cache: dict[str, tuple[float, float, float]] = {}
 
     def get_best_move(
         self, board_state: BoardState, move_history: list[Move] | None = None
@@ -89,24 +95,75 @@ class BigNetworkEngine(ChessEngine):
             return None
 
         if self._mode == "mcts":
-            uci = self._net.search_for_best_move(
+            move = self._net.search_for_best_move(
                 chess_board, num_simulations=self._sims, batch_size=self._batch_size
-            ).uci()
+            )
+            node = self._net._search_root
         else:
-            uci = self._policy_move(chess_board)
+            move, node = self._policy_move(chess_board)
 
-        return self._uci_to_custom_move(uci, board_state)
+        if move is None:
+            self.last_lines = []
+            return None
 
-    def _policy_move(self, chess_board: chess.Board) -> str:
-        """One forward pass, highest-probability legal move."""
-        # Converter masks illegal moves against this board and mirrors for Black.
-        self._converter.board = chess_board
+        self.last_lines = self._read_lines(node, move)
+        return self._uci_to_custom_move(move.uci(), board_state)
 
-        # Converter is annotated tf.Tensor but builds/consumes numpy at runtime,
-        # so its signatures disagree with the network's only on paper.
-        tensor = self._converter.board_to_input_tensor(chess_board)
-        policy, _value = self._net.predict(tensor)  # type: ignore[arg-type]
-        return self._converter.output_tensor_to_move(policy)  # type: ignore[arg-type]
+    def _policy_move(self, chess_board: chess.Board) -> tuple[chess.Move | None, Node]:
+        """One forward pass, highest-prior legal move, no search.
+
+        Goes through a Node so the readout has the same edges the search path
+        produces. It also hands back a real legal move, which sidesteps the
+        converter dropping the suffix from queen promotions.
+        """
+        node = Node(chess_board.copy())
+        node.expand(self._net, self._converter)
+        if not node.edges:
+            # Node.is_terminal also counts a real threefold repetition and a
+            # claimable fifty-move draw, which board.is_game_over() above does
+            # not, so expand can decline to create any edges.
+            return None, node
+        return max(node.edges, key=lambda e: e.P).move, node
+
+    def _read_lines(self, node, chosen: chess.Move) -> list[dict]:
+        """The five most-visited moves, as the notebook's table shows them."""
+        if node is None or not getattr(node, "edges", None):
+            return []
+        total = sum(e.N for e in node.edges) or 1
+        top = sorted(node.edges, key=lambda e: (e.N, e.P), reverse=True)[:5]
+        lines = []
+        for e in top:
+            try:
+                san = node.board.san(e.move)
+            except (ValueError, AssertionError):
+                san = e.move.uci()
+            lines.append({
+                "san": san,
+                "n": e.N,
+                "share": e.N / total,
+                "p": e.P,
+                "q": e.Q,
+                "chosen": e.move == chosen,
+            })
+        return lines
+
+    def evaluate_wdl(
+        self, board_state: BoardState, move_history: list[Move] | None = None
+    ) -> tuple[float, float, float]:
+        """Win, draw and loss from the point of view of the side to move."""
+        board = self._board_with_history(board_state, move_history)
+        key = board.fen()
+        hit = self._wdl_cache.get(key)
+        if hit is not None:
+            return hit
+        _policy, wdl = self._net.predict(
+            self._converter.board_to_input_tensor(board)
+        )  # type: ignore[arg-type]
+        result = (float(wdl[0]), float(wdl[1]), float(wdl[2]))
+        if len(self._wdl_cache) > 512:
+            self._wdl_cache.clear()
+        self._wdl_cache[key] = result
+        return result
 
     def _uci_to_custom_move(self, uci: str, board_state: BoardState) -> Move:
         from_row, from_col = algebraic_to_indices(uci[0:2])
@@ -148,6 +205,10 @@ class BigNetworkEngine(ChessEngine):
         if board.board_fen() != target.board_fen():
             return target            # desync (e.g. non-standard start) — be safe
         return board
+
+    @property
+    def mode(self) -> str:
+        return self._mode
 
     def name(self) -> str:
         if self._mode == "policy":

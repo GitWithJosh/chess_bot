@@ -34,6 +34,11 @@ COLOR_TEXT_SECONDARY = (200, 200, 200)
 COLOR_PANEL = (60, 60, 60)
 COLOR_PANEL_BORDER = (120, 120, 120)
 
+# Win / draw / loss meter, the same three colours the Kaggle notebook uses.
+COLOR_WDL_WIN = (46, 158, 91)
+COLOR_WDL_DRAW = (154, 154, 154)
+COLOR_WDL_LOSS = (209, 73, 91)
+
 
 class PromotionDialog:
     """Pawn promotion selection dialog."""
@@ -285,11 +290,23 @@ class ChessGUI:
     BOARD_START_X = 50
     BOARD_START_Y = 50
 
-    # Move history panel - smaller and to the right
+    # Right-hand column, stacked top to bottom: the win/draw/loss meters, the
+    # search readout, then whatever height is left goes to the move history.
+    PANEL_X = 750
+    PANEL_W = 300
+    PANEL_TOP = 118
+    PANEL_BOTTOM = 770
+    PANEL_GAP = 10
+
+    WDL_BAR_H = 18            # the coloured bar itself
+    WDL_BLOCK_H = 62          # bar plus its two caption lines
+
+    THINK_ROWS = 5
+    THINK_HEADER_H = 46       # title and column headings
+    THINK_ROW_H = 21
+
     HISTORY_START_X = 750
-    HISTORY_START_Y = 150
     HISTORY_WIDTH = 300
-    HISTORY_HEIGHT = 600
     HISTORY_HEADER_H = 64     # title, plus room for the "more above" hint
     HISTORY_ROW_H = 24
     HISTORY_PAD_B = 10
@@ -310,6 +327,24 @@ class ChessGUI:
         self.game = game
         self.white_engine = white_engine
         self.black_engine = black_engine
+
+        # Networks whose value head can be read. One of them against a human, two
+        # of them against each other, none in a human-only game.
+        self.net_engines = [
+            (colour, eng)
+            for colour, eng in (('white', white_engine), ('black', black_engine))
+            if hasattr(eng, "evaluate_wdl")
+        ]
+        # The search readout only makes sense for a single engine. With two of
+        # them the numbers would swap sides every ply and read as noise.
+        self.think_engine = (
+            self.net_engines[0][1] if len(self.net_engines) == 1 else None
+        )
+        self.human_colour = (
+            'white' if isinstance(white_engine, HumanInputEngine)
+            else 'black' if isinstance(black_engine, HumanInputEngine)
+            else None
+        )
 
         self.selected_square: Optional[tuple[int, int]] = None
         self.legal_moves_from_selected: list[Move] = []
@@ -588,6 +623,8 @@ class ChessGUI:
         self._draw_board()
         self._draw_coordinates()
         self._draw_pieces()
+        self._draw_wdl_bars()
+        self._draw_think_table()
         self._draw_move_history()
         self._draw_ui()
         pygame.display.flip()
@@ -649,8 +686,135 @@ class ChessGUI:
                 y = mouse_y - self.SQUARE_SIZE // 2
                 self.screen.blit(self.piece_images[piece], (x, y))
 
+    def _wdl_for(self, engine, colour: str) -> tuple[float, float, float]:
+        """The engine's win/draw/loss, restated for `colour` rather than for
+        whoever happens to be on move."""
+        win, draw, loss = engine.evaluate_wdl(self.game.board, self.game.move_history)
+        if self.game.board.active_color != colour:
+            win, loss = loss, win
+        return win, draw, loss
+
+    def _draw_wdl_bars(self):
+        """One meter per network, green for a win, grey a draw, red a loss.
+
+        Against a human the single bar is stated for the human, so it reads as
+        your own chances. Two networks are both stated for White, so the bars can
+        be compared directly and you can see where they disagree.
+        """
+        if not self.net_engines:
+            return
+
+        y = self.PANEL_TOP
+        for colour, engine in self.net_engines:
+            subject = self.human_colour or 'white'
+            win, draw, loss = self._wdl_for(engine, subject)
+
+            if self.human_colour:
+                caption = "The net rates your chances"
+            else:
+                caption = f"{engine.name()} ({colour.capitalize()})"
+            label = self.font_small.render(caption, True, COLOR_TEXT_SECONDARY)
+            self.screen.blit(label, (self.PANEL_X, y))
+
+            bar_y = y + 20
+            x = self.PANEL_X
+            # Rounding each segment separately can leave a gap, so the last one
+            # takes whatever width remains.
+            widths = [int(self.PANEL_W * win), int(self.PANEL_W * draw)]
+            widths.append(self.PANEL_W - widths[0] - widths[1])
+            for w, colr in zip(widths,
+                               (COLOR_WDL_WIN, COLOR_WDL_DRAW, COLOR_WDL_LOSS)):
+                if w > 0:
+                    pygame.draw.rect(self.screen, colr, (x, bar_y, w, self.WDL_BAR_H))
+                x += w
+            pygame.draw.rect(self.screen, COLOR_PANEL_BORDER,
+                             (self.PANEL_X, bar_y, self.PANEL_W, self.WDL_BAR_H), 1)
+
+            pct = (f"{win * 100:.0f}% win   {draw * 100:.0f}% draw   "
+                   f"{loss * 100:.0f}% loss")
+            if not self.human_colour:
+                pct += "  (White)"
+            pct_surf = self.font_small.render(pct, True, COLOR_TEXT_SECONDARY)
+            self.screen.blit(pct_surf, (self.PANEL_X, bar_y + self.WDL_BAR_H + 4))
+
+            y += self.WDL_BLOCK_H
+
+    def _draw_think_table(self):
+        """The engine's top moves, read straight off its search tree.
+
+        Sims is how often a move was tried, which is what the choice is actually
+        made on. Policy is the network's opinion before any search, its first
+        instinct. Value is what the search concluded, positive when the engine
+        likes the position. In policy mode there is no tree, so only the priors
+        are real and the rest is left blank.
+        """
+        engine = self.think_engine
+        if engine is None:
+            return
+
+        top = self.PANEL_TOP
+        if self.net_engines:
+            top += len(self.net_engines) * self.WDL_BLOCK_H + self.PANEL_GAP
+
+        title = self.font_medium.render("Engine", True, COLOR_TEXT_PRIMARY)
+        self.screen.blit(title, (self.PANEL_X, top))
+
+        cols = (0, 118, 172, 222, self.PANEL_W)   # move, sims, share, policy, value
+        heads = ("Move", "Sims", "Share", "Policy", "Value")
+        head_y = top + 28
+        for i, head in enumerate(heads):
+            surf = self.font_small.render(head, True, COLOR_TEXT_SECONDARY)
+            x = self.PANEL_X + cols[i]
+            if i:                       # numeric columns are right aligned
+                x = self.PANEL_X + cols[i] - surf.get_width()
+            self.screen.blit(surf, (x, head_y))
+
+        lines = getattr(engine, "last_lines", [])
+        if not lines:
+            hint = self.font_small.render("no move yet", True, COLOR_TEXT_SECONDARY)
+            self.screen.blit(hint, (self.PANEL_X, head_y + self.THINK_ROW_H))
+            return
+
+        searched = getattr(engine, "mode", "mcts") == "mcts"
+        y = top + self.THINK_HEADER_H
+        for line in lines[:self.THINK_ROWS]:
+            colour = COLOR_TEXT_PRIMARY if line["chosen"] else COLOR_TEXT_SECONDARY
+            cells = [
+                line["san"] + (" <" if line["chosen"] else ""),
+                str(line["n"]) if searched else "-",
+                f"{line['share'] * 100:.0f}%" if searched else "-",
+                f"{line['p'] * 100:.1f}%",
+                f"{line['q']:+.2f}" if searched else "-",
+            ]
+            for i, cell in enumerate(cells):
+                surf = self.font_move.render(cell, True, colour)
+                x = self.PANEL_X + cols[i]
+                if i:
+                    x = self.PANEL_X + cols[i] - surf.get_width()
+                self.screen.blit(surf, (x, y))
+            y += self.THINK_ROW_H
+
+    def _think_block_h(self) -> int:
+        if self.think_engine is None:
+            return 0
+        return self.THINK_HEADER_H + self.THINK_ROWS * self.THINK_ROW_H
+
+    def _history_top(self) -> int:
+        """Whatever is left under the meters and the search readout."""
+        y = self.PANEL_TOP
+        if self.net_engines:
+            y += len(self.net_engines) * self.WDL_BLOCK_H + self.PANEL_GAP
+        think = self._think_block_h()
+        if think:
+            y += think + self.PANEL_GAP
+        return y
+
+    def _history_height(self) -> int:
+        return max(self.HISTORY_HEADER_H + self.HISTORY_ROW_H,
+                   self.PANEL_BOTTOM - self._history_top())
+
     def _history_rows_per_page(self) -> int:
-        usable = self.HISTORY_HEIGHT - self.HISTORY_HEADER_H - self.HISTORY_PAD_B
+        usable = self._history_height() - self.HISTORY_HEADER_H - self.HISTORY_PAD_B
         return max(1, usable // self.HISTORY_ROW_H)
 
     def _history_total_rows(self) -> int:
@@ -669,22 +833,23 @@ class ChessGUI:
 
     def _draw_move_history(self):
         """Draw move history panel."""
+        top = self._history_top()
         # Panel background
         pygame.draw.rect(
             self.screen,
             COLOR_PANEL,
-            (self.HISTORY_START_X, self.HISTORY_START_Y, self.HISTORY_WIDTH, self.HISTORY_HEIGHT),
+            (self.HISTORY_START_X, top, self.HISTORY_WIDTH, self._history_height()),
         )
         pygame.draw.rect(
             self.screen,
             COLOR_PANEL_BORDER,
-            (self.HISTORY_START_X, self.HISTORY_START_Y, self.HISTORY_WIDTH, self.HISTORY_HEIGHT),
+            (self.HISTORY_START_X, top, self.HISTORY_WIDTH, self._history_height()),
             2,
         )
 
         # Title
         title = self.font_medium.render("Moves", True, COLOR_TEXT_PRIMARY)
-        self.screen.blit(title, (self.HISTORY_START_X + 10, self.HISTORY_START_Y + 10))
+        self.screen.blit(title, (self.HISTORY_START_X + 10, top + 10))
 
         # Moves - display pairs (white and black) side-by-side.
         moves = self.game.move_history
@@ -696,7 +861,7 @@ class ChessGUI:
         white_x = self.HISTORY_START_X + 62
         black_x = self.HISTORY_START_X + int(self.HISTORY_WIDTH * 0.60)
 
-        y_offset = self.HISTORY_START_Y + self.HISTORY_HEADER_H
+        y_offset = top + self.HISTORY_HEADER_H
         start_row = self.history_scroll
         end_row = min(start_row + self._history_rows_per_page(), self._history_total_rows())
 
@@ -722,7 +887,7 @@ class ChessGUI:
         # Tell the reader there is more above, since the list follows the game.
         if start_row > 0:
             more = self.font_small.render(f"{start_row} more above", True, COLOR_TEXT_SECONDARY)
-            self.screen.blit(more, (num_x, self.HISTORY_START_Y + self.HISTORY_HEADER_H - 22))
+            self.screen.blit(more, (num_x, top + self.HISTORY_HEADER_H - 22))
 
     def _draw_ui(self):
         """Draw UI elements."""
