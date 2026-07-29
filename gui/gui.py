@@ -294,12 +294,16 @@ class ChessGUI:
     # search readout, then whatever height is left goes to the move history.
     PANEL_X = 750
     PANEL_W = 300
-    PANEL_TOP = 118
+    # Starts below the menu and flip buttons, which sit at y 30-80 and 90-140 and
+    # reach into this column's x range.
+    PANEL_TOP = 150
     PANEL_BOTTOM = 770
     PANEL_GAP = 10
 
     WDL_BAR_H = 18            # the coloured bar itself
-    WDL_BLOCK_H = 62          # bar plus its two caption lines
+    WDL_CAPTION_GAP = 5       # caption baseline to the top of the bar
+    WDL_PCT_GAP = 3           # bar to the percentages under it
+    WDL_BLOCK_GAP = 8         # between one meter and the next
 
     THINK_ROWS = 5
     THINK_HEADER_H = 46       # title and column headings
@@ -716,7 +720,7 @@ class ChessGUI:
             label = self.font_small.render(caption, True, COLOR_TEXT_SECONDARY)
             self.screen.blit(label, (self.PANEL_X, y))
 
-            bar_y = y + 20
+            bar_y = y + self.font_small.get_height() + self.WDL_CAPTION_GAP
             x = self.PANEL_X
             # Rounding each segment separately can leave a gap, so the last one
             # takes whatever width remains.
@@ -735,9 +739,10 @@ class ChessGUI:
             if not self.human_colour:
                 pct += "  (White)"
             pct_surf = self.font_small.render(pct, True, COLOR_TEXT_SECONDARY)
-            self.screen.blit(pct_surf, (self.PANEL_X, bar_y + self.WDL_BAR_H + 4))
+            self.screen.blit(pct_surf,
+                             (self.PANEL_X, bar_y + self.WDL_BAR_H + self.WDL_PCT_GAP))
 
-            y += self.WDL_BLOCK_H
+            y += self._wdl_block_h()
 
     def _draw_think_table(self):
         """The engine's top moves, read straight off its search tree.
@@ -754,7 +759,7 @@ class ChessGUI:
 
         top = self.PANEL_TOP
         if self.net_engines:
-            top += len(self.net_engines) * self.WDL_BLOCK_H + self.PANEL_GAP
+            top += self._wdl_block_total() + self.PANEL_GAP
 
         title = self.font_medium.render("Engine", True, COLOR_TEXT_PRIMARY)
         self.screen.blit(title, (self.PANEL_X, top))
@@ -794,6 +799,16 @@ class ChessGUI:
                 self.screen.blit(surf, (x, y))
             y += self.THINK_ROW_H
 
+    def _wdl_block_h(self) -> int:
+        """Caption, bar, percentages. Measured from the font so the caption
+        cannot end up sitting on top of the bar when the font changes."""
+        line = self.font_small.get_height()
+        return (line + self.WDL_CAPTION_GAP + self.WDL_BAR_H
+                + self.WDL_PCT_GAP + line + self.WDL_BLOCK_GAP)
+
+    def _wdl_block_total(self) -> int:
+        return len(self.net_engines) * self._wdl_block_h()
+
     def _think_block_h(self) -> int:
         if self.think_engine is None:
             return 0
@@ -803,7 +818,7 @@ class ChessGUI:
         """Whatever is left under the meters and the search readout."""
         y = self.PANEL_TOP
         if self.net_engines:
-            y += len(self.net_engines) * self.WDL_BLOCK_H + self.PANEL_GAP
+            y += self._wdl_block_total() + self.PANEL_GAP
         think = self._think_block_h()
         if think:
             y += think + self.PANEL_GAP
