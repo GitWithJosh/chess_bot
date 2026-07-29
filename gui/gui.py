@@ -368,7 +368,12 @@ class ChessGUI:
                 # If 'close', continue the loop to render the board
 
             self._handle_events()
-            self._update_game()
+            # Only let the engines move while the game is actually running.
+            # _handle_events may have just cleared self.running, and the status
+            # may have become final, in which case asking an engine for another
+            # move would keep the game going past its own end.
+            if self.running and self.game.get_status() == GameStatus.ONGOING:
+                self._update_game()
             self._render()
             self.clock.tick(30)
 
@@ -388,7 +393,10 @@ class ChessGUI:
                 self._handle_mouse_up(event.pos)
 
             elif event.type == pygame.MOUSEWHEEL:
-                self.history_scroll += event.y
+                # event.y is positive when scrolling up, and history_scroll is
+                # the index of the first visible move, so it has to go the
+                # other way or the list moves against the wheel.
+                self.history_scroll -= event.y
                 max_scroll = max(0, len(self.game.move_history) - self.history_moves_per_page)
                 self.history_scroll = max(0, min(self.history_scroll, max_scroll))
 

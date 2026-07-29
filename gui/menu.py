@@ -434,12 +434,10 @@ class MenuScreen:
         value = self.font_medium.render(self.sims_text or "", True, label_fg)
         self.screen.blit(value, (box[0] + 12, box[1] + 8))
 
-        if enabled:
-            note = "1000 is the reported setting, about 3.5 s per move on CPU. 200 answers in under a second."
-        else:
+        if not enabled:
             note = "Simulation count does not apply to the policy-only mode."
-        surf = self.font_small.render(note, True, COLOR_TEXT_SECONDARY)
-        self.screen.blit(surf, (self.WINDOW_WIDTH // 2 - surf.get_width() // 2, 390))
+            surf = self.font_small.render(note, True, COLOR_TEXT_SECONDARY)
+            self.screen.blit(surf, (self.WINDOW_WIDTH // 2 - surf.get_width() // 2, 390))
 
         self._button((100, 460, 600, 70), "Continue", font=self.font_medium)
 
