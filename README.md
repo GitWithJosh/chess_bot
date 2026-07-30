@@ -1,7 +1,7 @@
 # Angelernt oder Autodidakt?
 
-Supervised Learning gegen Self-Play Reinforcement Learning mit MCTS in
-Schachagenten.
+Supervised Learning vs Self-Play Reinforcement Learning with MCTS in
+Chess-Agents.
 
 Student project for the module *Projekt Data Science und Künstliche
 Intelligenz*, DHBW Mannheim, course WDSKI23B. Danny Hoffmann, Tim Lehmann,
