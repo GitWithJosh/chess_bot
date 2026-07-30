@@ -9,7 +9,7 @@ Joshua Meyer, Philipp Meyer.
 
 Two chess agents share one network architecture and one search. The only thing
 that differs is where their knowledge came from. One learned from 23.5 million
-human positions, the other from nothing but games against itself. The report in
+human positions, the other from games against itself, starting on a checkpoint from supervised learning. The report in
 `LaTeX/` compares them.
 
 ## Results
