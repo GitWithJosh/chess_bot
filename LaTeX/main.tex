@@ -11,7 +11,7 @@
 \usepackage[german=quotes]{csquotes}
 \usepackage{graphicx}
 \usepackage{tikz}
-\usetikzlibrary{positioning, arrows.meta}
+\usetikzlibrary{positioning, arrows.meta, decorations.pathreplacing}
 \usepackage{microtype}
 \usepackage{booktabs}
 \usepackage{float}
@@ -206,7 +206,7 @@ Eine Stellung wird als Tensor der Form \(8\times8\times20\) dargestellt. Die ers
 zwölf Ebenen kodieren die Figuren beider Seiten (je eine Ebene pro Figurentyp),
 acht weitere die Zusatzinformationen einer Stellung, und eine konstante Ebene
 liefert eine positionsunabhängige Bias-Information. Tabelle~\ref{tab:planes}
-listet die Belegung vollständig auf.
+listet die Belegung der Ebenen auf.
 
 \begin{table}[htbp]
   \centering
@@ -227,6 +227,18 @@ listet die Belegung vollständig auf.
   \caption{Die 20 Ebenen des Brett-Tensors \(8\times8\times20\).}
   \label{tab:planes}
 \end{table}
+
+Die zwölf Figurenebenen sind rein binär, sie tragen je Feld eine Eins, wenn dort
+die betreffende Figur steht, und sonst eine Null. Eine solche Ebene wird als
+Bitboard bezeichnet. Andere Sonderebenen ohne Zielfeld sind entweder überall Null oder Eins.
+Abbildung~\ref{fig:bitboard} zeigt das beispielhaft für die Bauern beider Seiten.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{img/bitboard.pdf}
+  \caption{Stellung und die zugehörigen Bitboards der Bauern beider Seiten.}
+  \label{fig:bitboard}
+\end{figure}
 
 Kodiert wird ausschließlich die aktuelle Stellung, ohne Zughistorie. Die Gründe
 für diese Abweichung von AlphaZero und Leela werden in Abschnitt~\ref{sec:arch}
@@ -289,25 +301,62 @@ auf einer gemeinsamen Merkmalsbasis.
 \begin{figure}[htbp]
   \centering
   \begin{tikzpicture}[
-      box/.style={draw, rounded corners, align=center, minimum height=10mm,
-                  inner sep=5pt, font=\small},
-      >=Stealth, node distance=7mm and 13mm]
-    \node[box] (in) {Eingabe\\\(8\times8\times20\)};
-    \node[box, right=of in] (conv) {Initial-\\Conv};
-    \node[box, right=of conv] (tower) {SE-Residual-\\Tower (20 Blöcke)};
-    \node[box, above right=of tower] (policy) {Policy-Head\\\(\rightarrow\) 1858 Zug-Logits};
-    \node[box, below right=of tower] (value) {Value-Head\\\(\rightarrow\) WDL};
-    \draw[->] (in) -- (conv);
-    \draw[->] (conv) -- (tower);
-    \draw[->] (tower.east) -- (policy.west);
-    \draw[->] (tower.east) -- (value.west);
+      >=Stealth,
+      cell/.style={draw, minimum height=5.5mm, inner xsep=2pt, inner ysep=1pt,
+                   align=center, font=\scriptsize},
+      tcell/.style={cell, text width=28mm},
+      hcell/.style={cell, text width=29mm},
+      olab/.style={align=center, font=\scriptsize, text width=18mm},
+      lab/.style={font=\small}]
+
+    \node[cell, text width=15mm, minimum height=9mm] (in) at (0.85, 0)
+      {Eingabe\\\(8\times8\times20\)};
+
+    \node[cell, text width=21mm] (init) at (3.30, 0) {Conv \(3\times3\), 256};
+
+    \node[tcell] (r1) at (6.35,  0.55) {Conv \(3\times3\), 256};
+    \node[tcell] (r2) at (6.35,  0.00) {Conv \(3\times3\), 256};
+    \node[tcell] (r3) at (6.35, -0.55) {SE-Rekalibrierung};
+    \draw[decorate, decoration={brace, amplitude=4pt}] (4.85, 0.90) -- (7.85, 0.90);
+    \node[lab, above] at (6.35, 1.02) {\(20\times\) SE-Residual-Block};
+
+    \node[draw, circle, inner sep=1pt, font=\scriptsize] (add) at (8.42, -0.55) {\(+\)};
+
+    \node[hcell] (p1) at (11.00,  2.40) {Conv \(3\times3\), 256};
+    \node[hcell] (p2) at (11.00,  1.85) {Conv \(1\times1\), 73};
+    \node[hcell] (p3) at (11.00,  1.30) {Gather};
+    \node[lab] at (11.00, 3.05) {Policy-Head};
+
+    \node[hcell] (v1) at (11.00, -1.30) {Conv \(1\times1\), 32};
+    \node[hcell] (v2) at (11.00, -1.85) {Conv \(8\times8\), 128};
+    \node[hcell] (v3) at (11.00, -2.40) {Dense, Softmax};
+    \node[lab] at (11.00, -3.05) {Value-Head};
+
+    \node[olab] (pout) at (13.99,  1.30) {1858\\Zug-Logits};
+    \node[olab] (vout) at (13.99, -2.40) {WDL\\Sieg, Remis,\\Niederlage};
+
+    \draw[->] (in) -- (init);
+    \draw[->] (init) -- (r2.west);
+    \draw[->] (r3.east) -- (add.west);
+    \draw[->] (p3.east) -- (pout.west);
+    \draw[->] (v3.east) -- (vout.west);
+
+    \draw (add.east) -- (9.10, -0.55);
+    \draw[->, rounded corners=3pt] (9.10, -0.55) -- (9.10,  2.40) -- (p1.west);
+    \draw[->, rounded corners=3pt] (9.10, -0.55) -- (9.10, -1.30) -- (v1.west);
+
+    \draw[->, rounded corners=3pt]
+      (4.50, 0) -- (4.50, -1.45) -- (8.42, -1.45) -- (add.south);
+    \node[font=\scriptsize, below] at (6.45, -1.48) {Skip Connection};
   \end{tikzpicture}
   \caption{Leela-Architektur mit geteiltem Rumpf, Policy- und Value-Head.}
   \label{fig:architecture}
 \end{figure}
 
-Die konkrete Konfiguration dieses Netzes, also Anzahl der Blöcke, Filterzahl und
-der genaue Aufbau der Heads, wird in Abschnitt~\ref{sec:arch} beschrieben.
+Die Abbildung nennt bereits die hier verwendete Konfiguration, also 20 Blöcke mit
+256 Feature Maps. Batch-Normierung und ReLU sind darin nicht eigens dargestellt.
+Abschnitt~\ref{sec:arch} begründet diese Wahl und benennt die Abweichungen von
+Leela.
 
 \subsection{Supervised Learning im Schachkontext}\label{sec:sl-context}
 Beim Supervised Learning lernt das Netz die Abbildung einer
