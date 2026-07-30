@@ -15,7 +15,7 @@
 \usepackage{microtype}
 \usepackage{booktabs}
 \usepackage{float}
-\usepackage[style=numeric]{biblatex}
+\usepackage[style=numeric, sorting=none, maxbibnames=30]{biblatex}
 \usepackage[hidelinks=true]{hyperref}
 \usepackage{amsmath}
 
@@ -47,7 +47,7 @@
     \textbf{Modul:}   & Projekt Data Science und Künstliche Intelligenz \\
     \textbf{Kurs:}    & WDSKI 23 B \\
     \textbf{Dozent:}  & Prof.\ Dr.\ Maximilian Scherer \\
-    \textbf{Abgabe:}  & 30./31.\ Juli 2026 \\
+    \textbf{Abgabe:}  & 30.\ Juli 2026 \\
   \end{tabular}
 
     \vspace{0.5cm}
@@ -59,14 +59,15 @@
 
 \end{titlepage}
 
-\pagenumbering{arabic}
-
+\thispagestyle{empty}
 \tableofcontents
 \clearpage
+\setcounter{page}{1}
+\pagenumbering{arabic}
 
 \section{Einleitung}
 Um ein neuronales Netz Schach spielen zu lassen, gibt es zwei grundsätzlich
-verschiedene Wege, an Trainingsdaten zu gelangen. Entweder lernt das Netz aus
+verschiedene Wege, um an Trainingsdaten zu gelangen. Entweder lernt das Netz aus
 bereits vorhandenen Partien und ahmt die dort getroffenen Entscheidungen nach,
 oder es erzeugt seine Daten selbst, indem es gegen sich selbst spielt und aus dem
 Ausgang dieser Partien lernt. Beide Wege ergeben ein
@@ -93,7 +94,7 @@ menschlichen Partien, Taktikaufgaben und Endspieldatenbanken, der per
 Reinforcement Learning trainierte erzeugt seine Daten im Self-Play nach dem
 AlphaZero-Verfahren. Im Folgenden werden beide kurz als SL-Agent und RL-Agent
 bezeichnet. Sie werden anschließend in Matches gegeneinander
-und gegen Stockfish auf einer gemeinsamen Elo-Skala eingeordnet.
+und gegen Stockfish \autocite{stockfish2024} auf einer gemeinsamen Elo-Skala eingeordnet.
 
 \section{Theoretische Grundlagen}
 % ~8.5 S.
@@ -112,7 +113,7 @@ Schach ist ein endliches, deterministisches Zwei-Personen-Nullsummenspiel mit pe
     \item \textbf{Alternierende Züge} Es gibt keine simultanen Entscheidungen. Zusammen mit perfekter Information folgt daraus, dass für beide Seiten eine optimale Strategie existiert.
 \end{itemize}
 
-Von den Spielregeln selbst sind für das Weitere vor allem jene Details relevant: die Sonderzüge Rochade, en-passant und Bauernumwandlung sowie die Remisregeln. Sie erscheinen in Abschnitt~\ref{sec:encoding} als eigene Ebenen des Eingabetensors bzw.\ als eigene Gruppe im Ausgaberaum wieder.
+Von den Spielregeln selbst sind für das Weitere vor allem die Sonderzüge Rochade, en-passant und Bauernumwandlung sowie die Remisregeln relevant. Sie erscheinen in Abschnitt~\ref{sec:encoding} als eigene Ebenen des Eingabetensors bzw.\ als eigene Gruppe im Ausgaberaum wieder.
 
 \paragraph{Zustand, Zug und Spielbaum}
 Eine Stellung \(s\) umfasst mehr als die Belegung der 64 Felder. Zum Zustand gehören zusätzlich die Seite am Zug, die vier Rochaderechte, ein etwaiges en-passant-Zielfeld und der Halbzugzähler der 50-Züge-Regel. Genau dieses Tupel hält die Forsyth-Edwards-Notation (FEN) fest, und genau diese Bestandteile tauchen in Tabelle~\ref{tab:planes} als Ebenen des Brett-Tensors wieder auf.
@@ -127,7 +128,7 @@ Fasst man den Zustand $s$ so weit, wie es \textcite{shannon1950} für sein Stell
 Da jede Partie nach endlich vielen Zügen endet, lässt sich der Wert einer Stellung bestimmen, indem man vom Partieende rückwärts arbeitet \parencite{shannon1950}. 
 Die Kombinatorik macht diesen Weg unbegehbar. Shannon rechnet mit etwa $30$ legalen Zügen pro Stellung, also rund $10^{3}$ Fortsetzungen je Zugpaar, und bei einer typischen Partielänge von $40$ Zügen mit etwa $10^{120}$ zu prüfenden Varianten. Eine Maschine, die eine Variante pro Mikrosekunde abarbeitet, bräuchte nach Shannon also über $10^{90}$ Jahre für den ersten Zug.
 
-Zwei Beispiele verdeutlichen noch einmal die Komplexität. Erstens sind Endspieldatenbanken für Schach zwar exakt gelöst, aber nur bis sieben Figuren auf dem Brett. Allein diese Tabellen belegen rund 18\,TB. Zweitens gelang mit Dame 2007 die vollständige Lösung eines vergleichbaren Spiels. Bei einem Suchraum von etwa \(5\cdot10^{20}\) Stellungen konnte gezeigt werden, dass beidseitig optimales Spiel zum Remis führt \autocite{schaeffer2007}. Der Schachsuchraum liegt mehr als zwanzig Größenordnungen darüber.
+Zwei Beispiele verdeutlichen noch einmal die Komplexität. Erstens sind Endspieldatenbanken für Schach zwar exakt gelöst, aber nur bis sieben Figuren auf dem Brett. Allein diese Tabellen belegen rund 18\,TB. Zweitens gelang mit dem Spiel Dame im Jahr 2007 die vollständige Lösung eines vergleichbaren Spiels. Bei einem Suchraum von etwa \(5\cdot10^{20}\) Stellungen konnte gezeigt werden, dass beidseitig optimales Spiel zum Remis führt \autocite{schaeffer2007}. Der Schachsuchraum liegt mehr als zwanzig Größenordnungen darüber.
 
 \paragraph{Was ist ein guter Zug?}
 Aus dieser Lücke zwischen theoretischer Bestimmtheit und praktischer Unberechenbarkeit ergibt sich eine wichtige Fragestellung dieser Arbeit: \emph{"Was ist ein guter Zug?"}. Ein Zug ist \emph{objektiv} optimal, wenn er den spieltheoretischen Wert der Stellung nicht verschlechtert. Da dieser theoretische Wert aber unzugänglich ist, lässt sich diese Eigenschaft für keinen konkreten Zug nachweisen. In der Praxis wird ein Zug daher \emph{operativ} bewertet. Ein Zug ist gut, wenn er unter gegebener Rechenzeit die Gewinnerwartung gegen einen realen Gegner maximiert.
@@ -148,8 +149,14 @@ Für die Evaluation in Kapitel~\ref{sec:eval} wird die Beziehung invertiert: Aus
   \Delta R = 400 \cdot \log_{10}\!\left(\frac{S}{1-S}\right).
 \]
 Ist die Stärke des Gegners bekannt, ergibt sich daraus ein absoluter Wert. Das Elo-System liefert also stets nur Differenzen und benötigt einen Anker. In dieser Arbeit dienen dafür Stockfish-Skill-Level mit bekannter Referenzstärke.
- 
-Eine Einschränkung ist zu beachten. \(\Delta R\) ist eine Schätzung aus einer endlichen Stichprobe.
+ Als Einschränkung ist zu beachten, dass \(\Delta R\) eine Schätzung aus einer endlichen Stichprobe ist.
+
+Elo misst Spielstärke ausschließlich aggregiert über Partieausgänge und benötigt dafür viele Partien. Für eine granularere Bewertung greifen wir zusätzlich auf eine Kennzahl zurück, die jeden einzelnen Zug beurteilt und auf der Stellungsbewertung einer starken Referenzengine beruht. Eine solche Engine drückt den Vorteil einer Seite als eine einzige Zahl aus, die konventionell in \emph{Centipawns} (cp) angegeben wird. Ein Centipawn entspricht einem Hundertstel Bauern, sodass 100~cp den Wert eines Bauern haben \parencite{lichess_acpl}. Wie diese Bewertung zustande kommt, beschreibt Abschnitt~\ref{sec:minimax}.
+
+Der \emph{Centipawn-Loss} eines Zuges ist die nichtnegative Differenz zwischen der Bewertung des von der Referenzengine bevorzugten Zuges und der des tatsächlich gespielten Zuges. Spielt ein Spieler den besten Zug, ist sein Centipawn-Loss null. Jede Abweichung verschlechtert die Stellung um einen in Centipawns messbaren Betrag. Gemittelt über alle Züge einer Partie ergibt sich der \emph{durchschnittliche Centipawn-Loss} (average centipawn loss, ACPL) als Maß der Zuggenauigkeit. Je kleiner der Wert, desto näher spielt ein Agent am Referenzspiel \parencite{guid2006}. Guid und Bratko \autocite{guid2006} stellen das methodische Verfahren unter dem Namen \emph{Average difference between moves played and best evaluated moves} vor. Anders als Elo liefert diese Kennzahl bereits aus wenigen Partien ein dichtes Signal, da jeder Zug einen Messpunkt beiträgt.
+
+Beide Maße hängen eng zusammen. \textcite{leite2023} werten rund 7\,800 klassische Partien von zehn Großmeistern (Elo etwa 2200--2700) aus und zeigen, dass der durchschnittliche Centipawn-Loss mit steigender Spielstärke systematisch fällt und stark mit der Elo-Zahl korreliert. Der Centipawn-Loss lässt sich damit als per-Zug-Gegenstück zu Elo verstehen. Elo schätzt Stärke relativ aus Partieergebnissen, der Centipawn-Loss aus der Qualität der einzelnen Züge gegen eine feste Referenz.
+Zu beachten ist jedoch, dass der Centipawn-Loss die Übereinstimmung mit der Referenzengine misst (in dieser Arbeit Stockfish) und nicht die Nähe zum wahren spieltheoretischen Wert, der nach Abschnitt~\ref{sec:formal} unzugänglich bleibt. Ein niedriger Centipawn-Loss bedeutet also \enquote{spielt wie Stockfish}, nicht \enquote{spielt objektiv optimal}.
 
 \subsection{Klassische Engines: Minimax, Alpha-Beta, Stockfish/NNUE} % [Danny]
 \label{sec:minimax}
@@ -241,7 +248,7 @@ Abbildung~\ref{fig:bitboard} zeigt das beispielhaft für die Bauern beider Seite
 \end{figure}
 
 Kodiert wird ausschließlich die aktuelle Stellung, ohne Zughistorie. Die Gründe
-für diese Abweichung von AlphaZero und Leela werden in Abschnitt~\ref{sec:arch}
+für diese Abweichung von AlphaZero \autocite{silver2018} und Leela \autocite{lczero_nn} werden in Abschnitt~\ref{sec:arch}
 erläutert.
 
 \paragraph{Zugkodierung}
@@ -274,7 +281,7 @@ Abschnitt~\ref{sec:encoding} beschriebene Eingabetensor \(8\times8\times20\) die
 dabei als \enquote{Bild} mit 20 Kanälen.
 
 Um Stellungen ausreichend tief zu verarbeiten, werden viele Faltungsschichten
-gestapelt. Sehr tiefe Netze leiden jedoch unter verschwindenden Gradienten.
+gestapelt. Sehr tiefe Netze leiden jedoch unter Vanishing Gradients.
 Residual-Netze (ResNets) begegnen dem mit Skip Connections,
 die den Eingang eines Blocks direkt zu dessen Ausgang addieren, sodass der Block
 nur noch die Abweichung (das Residuum) lernen muss \parencite{he2016}. Die für
@@ -365,7 +372,7 @@ Stellung auf ihre Zielwerte, also eine Zugverteilung (Policy) und eine Bewertung
 Reinforcement Learning (Abschnitt~\ref{sec:alphazero}), das seine Trainingsdaten
 selbst erzeugt, ahmt ein so trainiertes Netz die im Datensatz enthaltenen
 Entscheidungen nach. Seine Spielstärke ist dadurch grundsätzlich durch die
-Qualität der Beschriftung begrenzt, denn das Netz kann seine Lehrerquelle
+Qualität der Daten begrenzt, denn das Netz kann seine Lehrerquelle
 nachbilden, sie aber kaum übertreffen. Prominent ist dieser Ansatz aus AlphaGo, dessen
 Policy-Netz zunächst per Supervised Learning aus menschlichen Meisterpartien lernte
 \parencite{silver2016}.
@@ -392,7 +399,7 @@ prägt, was das Netz lernt.
         Stellungen, sind aber untypisch und meist auf eine einzige Lösung sowie
         auf die Gewinnerseite ausgerichtet.
   \item \textbf{Endspieldatenbanken (Tablebases)} liefern exakte, fehlerfreie
-        Bewertungen, allerdings nur für die wenigen Steine eines Endspiels
+        Bewertungen, allerdings nur für die wenigen Figuren eines Endspiels
         (bis zu sieben Figuren).
 \end{itemize}
 Da unausgewogene Daten das Netz zu Abkürzungen verleiten, etwa stets
@@ -400,7 +407,7 @@ Da unausgewogene Daten das Netz zu Abkürzungen verleiten, etwa stets
 und Ausbalancierung von Klassen und Partiephasen ein zentrales methodisches Thema.
 
 Zwei Grenzen bleiben dem Supervised Learning eigen. Erstens die genannte
-Obergrenze durch die Lehrerquelle. Zweitens die Verteilungsverschiebung
+Obergrenze durch die Lehrerquelle und zweitens die Verteilungsverschiebung
 (Distribution Shift). Im Spiel trifft das Netz auf Stellungen, die aus seinen
 eigenen Zügen entstehen und im Trainingsdatensatz unterrepräsentiert sein können.
 Beide Grenzen motivieren Reinforcement Learning durch Self-Play, das seine Daten
@@ -464,7 +471,7 @@ Der Value-Head lernt also aus dem realen Partieergebnis, der Policy-Head aus der
   \ell = (z - v)^2 \;-\; \boldsymbol{\pi}^{\top} \log \mathbf{p}
          \;+\; c\,\lVert\theta\rVert^2 ,
 \]
-wobei \(\mathbf{p}\) und \(v\) die Ausgaben des Netzes bezeichnen und der letzte Term der Regularisierung dient. Bei der hier verwendeten WDL-Ausgabe (Abschnitt~\ref{sec:nn}) tritt an die Stelle des quadratischen Fehlers eine Kreuzentropie über die drei möglichen Partieausgänge.
+wobei \(\mathbf{p}\) und \(v\) die Ausgaben des Netzes bezeichnen und der letzte Term der Regularisierung dient. Bei der hier verwendeten WDL-Ausgabe (Abschnitt~\ref{sec:nn}) tritt an die Stelle des quadratischen Fehlers eine Cross-Entropy über die drei möglichen Partieausgänge.
 
 \paragraph{Iterationsschleife}
 Das Training verläuft in Iterationen aus drei Schritten:
@@ -539,7 +546,7 @@ erfolgt. Der Value-Head verdichtet das Brett über eine \(1\times1\)- und eine
 \(8\times8\)-Faltung zu einem Vektor der Länge 128 und gibt über eine
 Dense-Schicht mit Softmax die WDL-Wahrscheinlichkeiten aus.
 
-Insgesamt besitzt das Netz rund 25{,}0 Millionen trainierbare Parameter.
+Insgesamt besitzt das Netz rund 25 Millionen trainierbare Parameter.
 Tabelle~\ref{tab:params} zeigt ihre Verteilung. Über 96\,\% entfallen auf den
 Residual-Tower, während beide Heads zusammen unter 4\,\% ausmachen. Innerhalb eines
 Blocks dominieren die beiden \(3\times3\)-Faltungen, während die SE-Rekalibrierung
@@ -582,22 +589,22 @@ mit rund 25\,000 Parametern nur etwa 2\,\% je Block beiträgt.
   \label{tab:params}
 \end{table}
 
-\paragraph{Abweichungen von Leela.}
-Gegenüber der ursprünglichen Leela-Architektur wurde das Netz an drei Stellen
+\paragraph{Abweichungen von Leela}
+Gegenüber der ursprünglichen CNN Leela-Architektur wurde das Netz an drei Stellen
 vereinfacht.
 \begin{itemize}
-  \item \textbf{Keine Zughistorie.} Der Eingabetensor umfasst nur die aktuelle
+  \item \textbf{Keine Zughistorie} Der Eingabetensor umfasst nur die aktuelle
         Stellung (20 statt 112 Ebenen). Das verkleinert Netz und Rechenaufwand und
         macht die Kodierung eindeutig, denn dieselbe Stellung (FEN) wird stets auf
         denselben Tensor abgebildet. Eine historienbehaftete Kodierung erzeugte je
         nach Zugreihenfolge unterschiedliche Tensoren (Transpositionen), was die
         gezielte Untersuchung einzelner Stellungen, etwa bei der Fehlersuche am
         Value-Head, mehrdeutig machte.
-  \item \textbf{Kein Moves-Left-Head.} Leela besitzt optional einen dritten Head,
+  \item \textbf{Kein Moves-Left-Head} Leela besitzt optional einen dritten Head,
         der die verbleibende Partielänge schätzt. Er wurde weggelassen, um
         Parameterzahl und Komplexität zu senken, und ist als optionale Komponente
         für die Zugwahl verzichtbar.
-  \item \textbf{Gather statt Fully-Connected im Policy-Head.} Frühere Varianten,
+  \item \textbf{Gather statt Fully-Connected im Policy-Head} Frühere Varianten,
         sowohl bei Leela \parencite{lc0issue637} als auch in einer früheren Version
         dieses Projekts, bildeten das 73-Ebenen-Feld über eine voll verbundene
         Schicht auf die 1858 Züge ab. Der hier verwendete parameterfreie Gather
@@ -616,18 +623,18 @@ umfasst rund 23{,}5\,Mio.\ Positionen in 471 Chunks zu je 50\,000 Beispielen.
 Der Korpus speist sich aus drei Quellen mit unterschiedlichen Stärken
 (Abschnitt~\ref{sec:sl-context}), zusammengefasst in Tabelle~\ref{tab:sources}.
 
-\emph{Spiele.} Aus etwa 2\,TB Lichess-Rohdaten (rund 910\,Mio.\ Partien)
-verbleiben nach Filterung auf beidseitig mindestens 2700\,Elo und Ausschluss von
-Bullet-Partien 324\,000 Partien mit bekanntem Ausgang. Jede Stellung einer Partie
+\emph{Spiele} Aus etwa 2\,TB Lichess-Rohdaten (rund 910\,Mio.\ Partien)
+verbleiben, nach Filterung auf mindestens 2700\,Elo (beide Spieler) und Ausschluss von
+Bullet-Partien, 324\,000 Partien mit bekanntem Ausgang. Jede Stellung einer Partie
 liefert ein Trainingsbeispiel. Policy-Ziel ist der tatsächlich gespielte
 (menschliche) Zug als One-Hot-Vektor.
 
-\emph{Puzzles.} Aus der Lichess-Puzzle-Datenbank werden Matt- und Endspielthemen
+\emph{Puzzles} Aus der Lichess-Puzzle-Datenbank werden Matt- und Endspielthemen
 bevorzugt, da menschliches Material diese Situationen durch Aufgabe vor dem Matt
 nur dünn abdeckt. Die lösende Seite liefert Sieg-Positionen mit dem Lösungszug als Ziel, die
 verteidigende Seite Niederlage-Positionen mit dem jeweiligen Verteidigungszug.
 
-\emph{Tablebase.} Aus den Syzygy-Endspieldatenbanken (bis fünf Steine) wird von
+\emph{Tablebase} Aus den Syzygy-Endspieldatenbanken (bis fünf Figuren) wird von
 zufälligen Stellungen aus die tablebase-optimale Linie gespielt und aufgezeichnet,
 also die gewinnende Seite mit dem schnellsten Fortschritt zum Matt und die
 verlierende mit dem längsten Widerstand. Ergänzt werden exakt remise Stellungen ohne Policy-Ziel.
@@ -664,7 +671,7 @@ den Ausgang verrät.
         (mit Niederlage-Label), sodass \enquote{sieht aus wie ein Puzzle} nicht länger
         \enquote{Seite am Zug gewinnt} bedeutet.
   \item Die Tablebase steuert neben entscheidenden auch exakt remise Stellungen
-        bei, sodass wenige Steine auf dem Brett nicht pauschal als
+        bei, sodass wenige Figuren auf dem Brett nicht pauschal als
         \enquote{entscheidend} gelernt werden.
 \end{itemize}
 Ohne diese Ergänzungen lernte das Netz die Quelle als Abkürzung, statt die Stellung
@@ -684,8 +691,7 @@ Partieausgang \(z\) ergibt sich das Soft-Target als konvexe Mischung
   t = \lambda\, z + (1-\lambda)\, q, \qquad \lambda = 0{,}5 .
 \]
 Der Wert \(\lambda = 0{,}5\) gewichtet Partieausgang und Stellungsbewertung gleich
-und entspricht damit der gleichgewichtigen Mischung aus Ausgang und Suchbewertung,
-wie sie auch Leela verwendet. Tablebase-Positionen bleiben one-hot, da die
+und entspricht damit der gleichgewichtigen Mischung aus Ausgang und Suchbewertung. Tablebase-Positionen bleiben one-hot, da die
 Syzygy-Bewertung exakt ist und keiner Glättung bedarf.
 
 \paragraph{Chunking und Training}
@@ -712,7 +718,7 @@ behandelt.
     Optimierer     & AdamW (Weight Decay \(10^{-4}\), nur Kernel) \\
     Lernrate       & \(10^{-4} \to 10^{-5}\) (70\,\%) \(\to 10^{-6}\) (90\,\%) \\
     Batch-Größe    & 512 \\
-    Epochen        & 1 \\
+    Epochen        & 1 (über 469 Chunks, jeweils 50\,000 Positionen)\\
     Policy-Loss & Cross-Entropy (aus Logits) \\
     Value-Loss  & Cross-Entropy (WDL) \\
     \bottomrule
@@ -813,7 +819,7 @@ Tabelle~\ref{tab:sl-chunk-mix} zeigt die Zusammensetzung eines Chunks. Das Netz
 konnte nun mattsetzen, lernte aber eine neue Abkürzung. In v2 sind \emph{alle}
 Puzzle-Positionen Siege und die Tablebase kennt keine Remisen, sodass die Quelle
 einer Stellung ihren Ausgang verrät. Statt die Stellung zu bewerten, lernte das
-Netz \enquote{Puzzle bzw.\ wenige Steine \(\Rightarrow\) entschieden} und
+Netz \enquote{Puzzle bzw.\ wenige Figuren \(\Rightarrow\) entschieden} und
 verallgemeinerte dies zu \enquote{Materialungleichgewicht \(\Rightarrow\)
 entschieden}, unabhängig davon, wem das Material fehlt. Die Probes belegen dies.
 Auf beweisbar remisen Stellungen mit
@@ -956,7 +962,7 @@ monoton, und die verbleibende Reststreuung gegen die stärksten Stufen fällt ka
 ins Gewicht, sodass der Anker eine belastbare Schätzung liefert. Zur Veranschaulichung
 dieser Größenordnung lässt sich der Anker auf die wöchentliche Blitz-Ratingverteilung
 von Lichess beziehen \parencite{lichess_blitz_dist}. Rund 1920\,Elo liegt dort oberhalb
-von etwa 80\,\% der aktiven Spieler. Der Vergleich ist allerdings nur illustrativ,
+von etwa 80\,\% der aktiven Spieler. Der Vergleich ist allerdings nicht exakt,
 da die hier verwendete Stockfish-verankerte Elo-Näherung nicht auf derselben Skala wie das
 Glicko-2-System von Lichess liegt.
 
@@ -986,7 +992,8 @@ Stockfish~1900 (knapp darunter, Punktanteil 0{,}48) und Stockfish~2000 (knapp
 darüber, Punktanteil 0{,}33).
 Jede Stellung aller je zwanzig Partien wurde dazu von Stockfish bei voller Stärke
 (Tiefe~16) bewertet. Die Centipawn-Bewertung \(c\) einer Stellung (aus Sicht des
-Anziehenden) wurde anschließend über eine logistische Funktion in einen
+Anziehenden) wurde anschließend über die von Lichess an eigenen Partien
+angepasste logistische Funktion \autocite{lichess_accuracy} in einen
 Gewinnvorteil überführt,
 \[
   V(c) = 100 \cdot \left(\frac{1}{1 + e^{-0{,}00368\,c}} - \tfrac{1}{2}\right)
@@ -1130,8 +1137,6 @@ enden meist vor dem Matt, während Self-Play seine Partien stets zu Ende spielt,
 ohne jedes Eröffnungswissen beginnt.
 
 \subsection{Rechenaufwand \& Inferenzzeit}\label{sec:compute}
-Der Rechenaufwand wird vom Reinforcement Learning mit seiner Self-Play-Schleife
-dominiert. Aus Sicht des Supervised Learnings fallen die Kosten in drei Posten an.
 
 \paragraph{Datenaufbereitung und Training (SL)}
 Der teuerste Posten war die Datengrundlage. Der Lichess-Partiendump umfasst rund
@@ -1163,7 +1168,7 @@ den besten Kompromiss und wurde für alle Messungen gewählt.
      1 &  108 &  9{,}1 \\
      8 &  573 &  9{,}2 \\
     16 &  882 &  9{,}2 \\
-    32 & 1147 &  9{,}1 \\
+    \textbf{32} & \textbf{1147} &  \textbf{9{,}1} \\
     64 & 1368 & 11{,}3 \\
     \bottomrule
   \end{tabular}
@@ -1172,7 +1177,7 @@ den besten Kompromiss und wurde für alle Messungen gewählt.
 \end{table}
 
 \paragraph{Kosten je Partie}
-Bei Batch~32 benötigt das Netz für einen Zug (1000 Simulationen) rund 0{,}75\,s.
+Bei Batch~32 benötigt das Netz für einen Zug (1000 Simulationen) ungefähr 0{,}75\,s.
 Stockfish wurde daher mit 0{,}75\,s/Zug ungefähr dieselbe Bedenkzeit zugestanden,
 was einen fairen Zeitvergleich für den Anker sicherstellt
 (Abschnitt~\ref{sec:eval-setup}). Eine vollständige Partie zweier Netze mit je
@@ -1230,14 +1235,10 @@ Stockfish mit gedrosseltem \texttt{UCI\_Elo}, was eine künstlich geschwächte
 Spielweise erzeugt und keine auf menschliche Spieler geeichte Skala darstellt. Für
 rl\_4 kommt hinzu, dass der Übergang zum ausgeglichenen Match unterhalb der
 niedrigsten einstellbaren Stufe liegt und der Wert daher extrapoliert bleibt
-(Abschnitt~\ref{sec:sl-vs-rl}). Schließlich wurde jede Konfiguration nur einmal
-trainiert. Ohne Wiederholungen mit verschiedenen Zufallsstartwerten lässt sich nicht
-trennen, welcher Teil der beobachteten Unterschiede auf die Konfiguration und
-welcher auf die Streuung einzelner Läufe entfällt.
+(Abschnitt~\ref{sec:sl-vs-rl}).
 
 \paragraph{Grenzen des Vergleichs}
-Verglichen werden zwei konkrete Umsetzungen unter einem festen Budget und nicht die
-beiden Paradigmen im Allgemeinen. Auf der Seite des Reinforcement Learnings wurden in
+Auf der Seite des Reinforcement Learnings wurden in
 der funktionierenden Konfiguration zwei Faktoren gleichzeitig verändert, die Zahl
 der Spiele und die Wahl eines schwächeren Seeds, sodass ihr jeweiliger Anteil offen
 bleibt (Abschnitt~\ref{sec:rl-results}). Vor allem aber unterscheiden sich die
@@ -1265,7 +1266,18 @@ es jede Trainingsposition durch eine eigene Suche erzeugen muss, während
 Supervised Learning auf einem bereits vorhandenen Korpus aufsetzt. Da dieser Korpus
 zugleich dessen Obergrenze bildet, ist zu erwarten, dass sich das
 Verhältnis mit wachsendem Rechenbudget umkehrt.
+Der Code, der in dieser Arbeit produziert und verwendet wurde, kann auf Github \autocite{gitwithJosh2026chessbot} und die Demo in einem öffentlichen Kaggle Notebook \autocite{hoffmann2026chessnn} eingesehen werden.
 
+\section*{KI-Offenlegung}
+
+Im Rahmen dieser Arbeit wurde das KI-Sprachmodell \textit{Claude Opus} 4.8 (Anthropic) unterstützend eingesetzt. 
+Der Einsatz umfasste die Ausformulierung von Textpassagen auf Basis eigener Notizen und Gliederungen sowie die Überarbeitung 
+und Verbesserung bestehender Formulierungen. 
+Darüber hinaus wurde das Modell bei der Entwicklung von Code (GitHub, Kaggle Notebook) sowie bei der initialen 
+Erstellung von PowerPoint-Folien eingesetzt, die anschließend inhaltlich und gestalterisch überarbeitet wurden.
+
+Sämtliche KI-generierten Inhalte wurden kritisch geprüft, überarbeitet und eigenverantwortlich in die Arbeit integriert. 
+Die inhaltliche Verantwortung für alle Aussagen, Ergebnisse und Schlussfolgerungen liegt vollständig bei den Verfassern.
 
 \printbibliography
 
