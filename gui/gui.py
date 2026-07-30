@@ -13,6 +13,13 @@ from engines.human_engine import HumanInputEngine
 from utils.coordinates import indices_to_algebraic
 from gui.assets import load_image, load_icon, ui_font
 
+try:
+    # Only used to name moves in SAN. The game itself runs on this repo's own
+    # move generator, so a missing python-chess costs the notation, nothing more.
+    import chess
+except ImportError:
+    chess = None
+
 
 # Short names for the draw conditions. The enum values are long snake_case and
 # do not fit the game over box at its largest font.
@@ -363,6 +370,13 @@ class ChessGUI:
         # sticks to the newest move until the user scrolls away from the bottom.
         self.history_scroll = 0
         self.history_follow = True
+
+        # Reviewing an earlier position: the number of plies the board shows,
+        # or None while it shows the live game. The game itself keeps running.
+        self.review_ply: Optional[int] = None
+        self._review_board: Optional[tuple[int, BoardState]] = None
+        self._san_cache: list[str] = []
+
         self.game_over_shown = False
         self.board_flipped = False
         self.last_engine_polled_position: Optional[str] = None
@@ -454,16 +468,25 @@ class ChessGUI:
                 # event.y is positive when scrolling up, and history_scroll is
                 # the index of the first visible row, so it has to go the other
                 # way or the list moves against the wheel.
-                max_scroll = self._history_max_scroll()
-                self.history_scroll = max(
-                    0, min(self.history_scroll - event.y, max_scroll)
-                )
-                # Scrolling back down to the end re-arms following.
-                self.history_follow = self.history_scroll >= max_scroll
+                self._scroll_history(-event.y)
 
             elif event.type == pygame.KEYDOWN:
+                # Left and right step through the game, up and down scroll the
+                # list without moving the board.
                 if event.key == pygame.K_ESCAPE:
                     self._request_menu()
+                elif event.key == pygame.K_LEFT:
+                    self._set_review(self._view_index() - 1)
+                elif event.key == pygame.K_RIGHT:
+                    self._set_review(self._view_index() + 1)
+                elif event.key == pygame.K_HOME:
+                    self._set_review(0)
+                elif event.key == pygame.K_END:
+                    self._set_review(len(self.game.move_history))
+                elif event.key == pygame.K_UP:
+                    self._scroll_history(-1)
+                elif event.key == pygame.K_DOWN:
+                    self._scroll_history(1)
 
     def _is_human_turn(self) -> bool:
         """Return True if the active player is a human."""
@@ -480,6 +503,19 @@ class ChessGUI:
         # Flip board button (far right, below menu)
         if 1030 <= pos[0] <= 1080 and 90 <= pos[1] <= 140:
             self.board_flipped = not self.board_flipped
+            return
+
+        # A move in the list jumps to the position it produced. Clicking the
+        # newest one lands on the live game, which is also how you leave review.
+        for rect, ply in self._history_cell_rects():
+            if rect.collidepoint(pos):
+                self._set_review(ply + 1)
+                return
+
+        if self._is_reviewing():
+            # Anywhere else returns to the live position, so a game can never be
+            # left stranded in review with no obvious way back.
+            self._set_review(len(self.game.move_history))
             return
 
         if not self._is_human_turn():
@@ -635,6 +671,7 @@ class ChessGUI:
 
     def _draw_board(self):
         """Draw chessboard."""
+        last_move = self._display_last_move()
         for row in range(8):
             for col in range(8):
                 display_row = (7 - row) if self.board_flipped else row
@@ -646,9 +683,9 @@ class ChessGUI:
                 is_light = (row + col) % 2 == 0
                 color = COLOR_BOARD_LIGHT if is_light else COLOR_BOARD_DARK
 
-                if self.last_move:
-                    if ((row, col) == (self.last_move.from_row, self.last_move.from_col) or
-                        (row, col) == (self.last_move.to_row, self.last_move.to_col)):
+                if last_move:
+                    if ((row, col) == (last_move.from_row, last_move.from_col) or
+                        (row, col) == (last_move.to_row, last_move.to_col)):
                         color = (200, 190, 100)
 
                 pygame.draw.rect(self.screen, color, (x, y, self.SQUARE_SIZE, self.SQUARE_SIZE))
@@ -667,12 +704,13 @@ class ChessGUI:
 
     def _draw_pieces(self):
         """Draw chess pieces."""
+        board = self._display_board()
         for row in range(8):
             for col in range(8):
                 if self.dragging and (row, col) == self.drag_from_square:
                     continue
 
-                piece = self.game.board.get_piece(row, col)
+                piece = board.get_piece(row, col)
                 if piece:
                     display_row = (7 - row) if self.board_flipped else row
                     display_col = (7 - col) if self.board_flipped else col
@@ -683,7 +721,7 @@ class ChessGUI:
                         self.screen.blit(self.piece_images[piece], (x, y))
 
         if self.dragging and self.drag_from_square:
-            piece = self.game.board.get_piece(self.drag_from_square[0], self.drag_from_square[1])
+            piece = board.get_piece(self.drag_from_square[0], self.drag_from_square[1])
             if piece and piece in self.piece_images:
                 mouse_x, mouse_y = pygame.mouse.get_pos()
                 x = mouse_x - self.SQUARE_SIZE // 2
@@ -846,6 +884,124 @@ class ChessGUI:
         else:
             self.history_scroll = max(0, min(self.history_scroll, max_scroll))
 
+    def _scroll_history(self, rows: int):
+        """Move the list by `rows`, positive downwards. Reaching the bottom
+        re-arms following, so the list resumes tracking the game."""
+        max_scroll = self._history_max_scroll()
+        self.history_scroll = max(0, min(self.history_scroll + rows, max_scroll))
+        self.history_follow = self.history_scroll >= max_scroll
+
+    def _scroll_to_ply(self, ply: int):
+        """Scroll the least amount that brings `ply` into view."""
+        if ply < 0:
+            return
+        row = ply // 2
+        page = self._history_rows_per_page()
+        if row < self.history_scroll:
+            self.history_scroll = row
+        elif row >= self.history_scroll + page:
+            self.history_scroll = row - page + 1
+        self.history_follow = self.history_scroll >= self._history_max_scroll()
+
+    # ---------------------------------------------------------------- notation
+
+    def _san_history(self) -> list[str]:
+        """The move history in SAN, named once per move and remembered.
+
+        SAN needs the position a move was played from, which position_history
+        already keeps, so each name costs one FEN parse the first time the move
+        appears and nothing on the frames after that.
+        """
+        moves = self.game.move_history
+        if len(self._san_cache) > len(moves):
+            self._san_cache = []          # a new game in the same window
+        while len(self._san_cache) < len(moves):
+            self._san_cache.append(self._name_move(len(self._san_cache)))
+        return self._san_cache
+
+    def _name_move(self, i: int) -> str:
+        move = self.game.move_history[i]
+        plain = f"{move.from_square}-{move.to_square}"
+        if chess is None or i >= len(self.game.position_history):
+            return plain
+        try:
+            board = chess.Board(self.game.position_history[i])
+            return board.san(board.parse_uci(move.to_uci()))
+        except (ValueError, AssertionError, IndexError):
+            return plain                  # never let notation break the board
+
+    # ----------------------------------------------------------------- review
+
+    def _view_index(self) -> int:
+        """How many plies of the game the board is currently showing."""
+        if self.review_ply is None:
+            return len(self.game.move_history)
+        return max(0, min(self.review_ply, len(self.game.move_history)))
+
+    def _is_reviewing(self) -> bool:
+        return self.review_ply is not None
+
+    def _set_review(self, index: int):
+        """Show the position after `index` plies. The live game is the last one,
+        and landing there leaves review mode rather than pinning to a position
+        the engines are about to move on from."""
+        total = len(self.game.move_history)
+        index = max(0, min(index, total))
+        self.review_ply = None if index == total else index
+        self.selected_square = None
+        self.legal_moves_from_selected = []
+        self.dragging = False
+        self.drag_from_square = None
+        if self.review_ply is not None:
+            self._scroll_to_ply(index - 1)
+
+    def _display_board(self) -> BoardState:
+        """The board to draw: the live one, or a reviewed position rebuilt from
+        its FEN and kept until the reviewed ply changes."""
+        if not self._is_reviewing():
+            return self.game.board
+        index = self._view_index()
+        if self._review_board is None or self._review_board[0] != index:
+            self._review_board = (
+                index, BoardState.from_fen(self.game.position_history[index])
+            )
+        return self._review_board[1]
+
+    def _display_last_move(self) -> Optional[Move]:
+        """The move to highlight on the board, i.e. the one that led here."""
+        if not self._is_reviewing():
+            return self.last_move
+        index = self._view_index()
+        return self.game.move_history[index - 1] if index else None
+
+    def _history_cell_rects(self) -> list[tuple[pygame.Rect, int]]:
+        """(rect, ply) for every move on screen.
+
+        Drawing and hit-testing both read this, so a click can never land on a
+        different move than the one under the cursor.
+        """
+        self._clamp_history_scroll()
+        moves = len(self.game.move_history)
+        white_x = self.HISTORY_START_X + 62
+        black_x = self.HISTORY_START_X + int(self.HISTORY_WIDTH * 0.60)
+        right = self.HISTORY_START_X + self.HISTORY_WIDTH - 8
+        columns = ((white_x, black_x - 6), (black_x, right))
+
+        y = self._history_top() + self.HISTORY_HEADER_H
+        cells = []
+        start = self.history_scroll
+        end = min(start + self._history_rows_per_page(), self._history_total_rows())
+        for row in range(start, end):
+            for col, (x, x_end) in enumerate(columns):
+                ply = row * 2 + col
+                if ply < moves:
+                    cells.append(
+                        (pygame.Rect(x - 4, y - 2, x_end - x + 4, self.HISTORY_ROW_H),
+                         ply)
+                    )
+            y += self.HISTORY_ROW_H
+        return cells
+
     def _draw_move_history(self):
         """Draw move history panel."""
         top = self._history_top()
@@ -866,40 +1022,31 @@ class ChessGUI:
         title = self.font_medium.render("Moves", True, COLOR_TEXT_PRIMARY)
         self.screen.blit(title, (self.HISTORY_START_X + 10, top + 10))
 
-        # Moves - display pairs (white and black) side-by-side.
-        moves = self.game.move_history
-        self._clamp_history_scroll()
-
-        # Three evenly spaced columns, the number and then the two plies, so the
-        # rows reach across the panel instead of bunching up on the left.
+        # Moves in SAN, pairs side by side, one row per full move. The move that
+        # produced the position on the board is boxed, so stepping through the
+        # game shows where you are.
+        san = self._san_history()
         num_x = self.HISTORY_START_X + 14
-        white_x = self.HISTORY_START_X + 62
-        black_x = self.HISTORY_START_X + int(self.HISTORY_WIDTH * 0.60)
+        current = self._view_index() - 1
 
-        y_offset = top + self.HISTORY_HEADER_H
-        start_row = self.history_scroll
-        end_row = min(start_row + self._history_rows_per_page(), self._history_total_rows())
+        numbered = set()
+        for rect, ply in self._history_cell_rects():
+            row = ply // 2
+            if row not in numbered:
+                numbered.add(row)
+                num_surf = self.font_move.render(f"{row + 1}.", True, COLOR_TEXT_SECONDARY)
+                self.screen.blit(num_surf, (num_x, rect.y + 2))
 
-        for row in range(start_row, end_row):
-            i = row * 2
-
-            num_surf = self.font_move.render(f"{row + 1}.", True, COLOR_TEXT_SECONDARY)
-            self.screen.blit(num_surf, (num_x, y_offset))
-
-            white_move = moves[i]
-            white_text = f"{white_move.from_square}-{white_move.to_square}"
-            white_surf = self.font_move.render(white_text, True, COLOR_TEXT_PRIMARY)
-            self.screen.blit(white_surf, (white_x, y_offset))
-
-            if i + 1 < len(moves):
-                black_move = moves[i + 1]
-                black_text = f"{black_move.from_square}-{black_move.to_square}"
-                black_surf = self.font_move.render(black_text, True, COLOR_TEXT_SECONDARY)
-                self.screen.blit(black_surf, (black_x, y_offset))
-
-            y_offset += self.HISTORY_ROW_H
+            if ply == current:
+                pygame.draw.rect(self.screen, COLOR_BUTTON, rect)
+                colour = COLOR_TEXT_PRIMARY
+            else:
+                colour = COLOR_TEXT_PRIMARY if ply % 2 == 0 else COLOR_TEXT_SECONDARY
+            self.screen.blit(self.font_move.render(san[ply], True, colour),
+                             (rect.x + 4, rect.y + 2))
 
         # Tell the reader there is more above, since the list follows the game.
+        start_row = self.history_scroll
         if start_row > 0:
             more = self.font_small.render(f"{start_row} more above", True, COLOR_TEXT_SECONDARY)
             self.screen.blit(more, (num_x, top + self.HISTORY_HEADER_H - 22))
@@ -911,6 +1058,8 @@ class ChessGUI:
         status_text = f"Turn: {self.game.board.active_color.upper()}"
         if status != GameStatus.ONGOING:
             status_text = "Game Over"
+        if self._is_reviewing():
+            status_text = f"Review {self._view_index()}/{len(self.game.move_history)}"
 
         status_surf = self.font_medium.render(status_text, True, COLOR_TEXT_PRIMARY)
         self.screen.blit(status_surf, (self.BOARD_START_X + 700, 30))

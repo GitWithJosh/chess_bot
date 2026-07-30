@@ -39,17 +39,8 @@ from monte_carlo_tree_search.nodes_and_edges_v2 import Node
 
 
 _PROMO_WORD = {"q": "queen", "r": "rook", "b": "bishop", "n": "knight"}
-_PROMO_CHAR = {"queen": "q", "rook": "r", "bishop": "b", "knight": "n"}
 
 DEFAULT_SIMS = 200
-
-
-def _custom_move_to_uci(move: Move) -> str:
-    """Custom Move -> UCI string (e.g. e2e4, e7e8q, e1g1 for castling)."""
-    uci = move.from_square + move.to_square
-    if move.promotion_piece:
-        uci += _PROMO_CHAR.get(move.promotion_piece, "")
-    return uci
 
 
 class BigNetworkEngine(ChessEngine):
@@ -199,7 +190,7 @@ class BigNetworkEngine(ChessEngine):
         board = chess.Board()
         try:
             for m in move_history:
-                board.push_uci(_custom_move_to_uci(m))
+                board.push_uci(m.to_uci())
         except ValueError:
             return target            # a move failed to convert/replay
         if board.board_fen() != target.board_fen():

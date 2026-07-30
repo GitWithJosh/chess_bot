@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from utils.coordinates import indices_to_algebraic
 
 
+_UCI_PROMOTION = {"queen": "q", "rook": "r", "bishop": "b", "knight": "n"}
+
+
 @dataclass
 class Move:
     """Represents a chess move."""
@@ -23,6 +26,17 @@ class Move:
     def to_square(self) -> str:
         """Get target square in algebraic notation."""
         return indices_to_algebraic(self.to_row, self.to_col)
+
+    def to_uci(self) -> str:
+        """Return move in UCI (e.g. 'e2e4', 'e7e8q', 'e1g1' for castling).
+
+        Unlike __str__, which spells the promotion out, this is the form
+        python-chess parses.
+        """
+        uci = f"{self.from_square}{self.to_square}"
+        if self.promotion_piece:
+            uci += _UCI_PROMOTION.get(self.promotion_piece, "")
+        return uci
 
     def __str__(self) -> str:
         """Return move in standard notation (e.g., 'e2e4')."""
