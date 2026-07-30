@@ -79,7 +79,7 @@ stärksten Programme, ohne je eine menschliche Partie gesehen zu haben
 \parencite{silver2018}. Diese Antwort setzt allerdings einen Rechenaufwand voraus,
 der für die Datenerzeugung mehrere tausend TPUs parallel beschäftigt. Unter
 deutlich kleineren Verhältnissen ist die Frage erneut offen, denn Self-Play muss
-seine Trainingsdaten erst selbst erzeugen, während supervised Learning auf einem
+seine Trainingsdaten erst selbst erzeugen, während Supervised Learning auf einem
 bereits vorhandenen Korpus aufsetzt. Genau diese Verschiebung untersucht die
 vorliegende Arbeit. Sie fragt, welches Trainingssignal den stärkeren Agenten
 liefert, wenn die verfügbare Rechenzeit nicht die eines Rechenzentrums ist,
@@ -87,11 +87,12 @@ sondern die einzelner GPU-Stunden auf frei verfügbaren Plattformen.
 
 Dazu wurden zwei Agenten entwickelt, die sich ausschließlich im Trainingssignal
 unterscheiden. Sie teilen sich Netzarchitektur, Zustandskodierung und
-Monte-Carlo-Tree-Search, sodass ein Vergleich zwischen ihnen allein das
-Trainingsparadigma misst. Der überwacht
-trainierte Agent lernt aus menschlichen Partien, Taktikaufgaben und
-Endspieldatenbanken, der bestärkend trainierte erzeugt seine Daten im Self-Play
-nach dem AlphaZero-Verfahren. Beide werden anschließend in Matches gegeneinander
+Monte Carlo Tree Search, sodass ein Vergleich zwischen ihnen allein das
+Trainingsparadigma misst. Der per Supervised Learning trainierte Agent lernt aus
+menschlichen Partien, Taktikaufgaben und Endspieldatenbanken, der per
+Reinforcement Learning trainierte erzeugt seine Daten im Self-Play nach dem
+AlphaZero-Verfahren. Im Folgenden werden beide kurz als SL-Agent und RL-Agent
+bezeichnet. Sie werden anschließend in Matches gegeneinander
 und gegen Stockfish auf einer gemeinsamen Elo-Skala eingeordnet.
 
 \section{Theoretische Grundlagen}
@@ -118,7 +119,7 @@ Eine Stellung \(s\) umfasst mehr als die Belegung der 64 Felder. Zum Zustand geh
 
 Diese Zustandsdefinition ist so gewählt, dass sie die Markov-Eigenschaft erfüllt. Sowohl die Menge der legalen Fortsetzungen als auch der spieltheoretische Wert einer Stellung hängen ausschließlich von \(s\) ab und nicht davon, über welche Zugfolge \(s\) erreicht wurde. Zwei durch unterschiedliche Zugreihenfolgen entstandene, ansonsten identische Stellungen (Transpositionen) sind für die Zugwahl dasselbe Objekt. Streng genommen bildet die Regel zur dreifachen Stellungswiederholung hiervon eine Ausnahme, da sie auf die Partiehistorie zurückgreift. Sie wird in der Suche gesondert behandelt und geht nicht in die Stellungsbewertung ein. Diese Eigenschaft ist die Grundlage für die in Abschnitt~\ref{sec:encoding} gewählte historienfreie Kodierung.
 
-Bezeichnet \(A(s)\) die Menge der in \(s\) legalen Züge und \(s\cdot a\) die Stellung, die aus \(s\) durch Ausführung von \(a \in A(s)\) hervorgeht, so lässt sich das gesamte Spiel als Baum darstellen: Die Wurzel ist die Ausgangsstellung, jede Kante entspricht einem Halbzug, die Knoten einer Ebene gehören abwechselnd der einen und der anderen Seite, und die Blätter sind terminale Stellungen mit bekanntem Ergebnis \(z(s)\). Sowohl die klassische Alpha-Beta-Search (Abschnitt~\ref{sec:minimax}) als auch die Monte-Carlo-Tree-Search (Abschnitt~\ref{sec:mcts}) operieren auf genau diesem Baum. Sie unterscheiden sich lediglich darin, welchen Ausschnitt davon sie betrachten.
+Bezeichnet \(A(s)\) die Menge der in \(s\) legalen Züge und \(s\cdot a\) die Stellung, die aus \(s\) durch Ausführung von \(a \in A(s)\) hervorgeht, so lässt sich das gesamte Spiel als Baum darstellen: Die Wurzel ist die Ausgangsstellung, jede Kante entspricht einem Halbzug, die Knoten einer Ebene gehören abwechselnd der einen und der anderen Seite, und die Blätter sind terminale Stellungen mit bekanntem Ergebnis \(z(s)\). Sowohl die klassische Alpha-Beta-Search (Abschnitt~\ref{sec:minimax}) als auch die Monte Carlo Tree Search (Abschnitt~\ref{sec:mcts}) operieren auf genau diesem Baum. Sie unterscheiden sich lediglich darin, welchen Ausschnitt davon sie betrachten.
 
 \paragraph{Theoretisch lösbar, praktisch unlösbar}
 Fasst man den Zustand $s$ so weit, wie es \textcite{shannon1950} für sein Stellungsformat vorsieht (Figurenstellung, Zugrecht, Rochaderechte, letzter Zug sowie der Zähler seit dem letzten Bauernzug oder Schlagfall), so besitzt jede Stellung genau einen der drei Werte \emph{gewonnen für Weiß}, \emph{remis} oder \emph{gewonnen für Schwarz}. 
@@ -301,7 +302,7 @@ auf einer gemeinsamen Merkmalsbasis.
     \draw[->] (tower.east) -- (policy.west);
     \draw[->] (tower.east) -- (value.west);
   \end{tikzpicture}
-  \caption{Leela-Architektur: geteilter Rumpf, darauf Policy- und Value-Head.}
+  \caption{Leela-Architektur mit geteiltem Rumpf, Policy- und Value-Head.}
   \label{fig:architecture}
 \end{figure}
 
@@ -309,15 +310,15 @@ Die konkrete Konfiguration dieses Netzes, also Anzahl der Blöcke, Filterzahl un
 der genaue Aufbau der Heads, wird in Abschnitt~\ref{sec:arch} beschrieben.
 
 \subsection{Supervised Learning im Schachkontext}\label{sec:sl-context}
-Beim überwachten Lernen (Supervised Learning) lernt das Netz die Abbildung einer
+Beim Supervised Learning lernt das Netz die Abbildung einer
 Stellung auf ihre Zielwerte, also eine Zugverteilung (Policy) und eine Bewertung
-(Value), aus einem festen, bereits beschrifteten Datensatz. Anders als das
-bestärkende Lernen (Abschnitt~\ref{sec:alphazero}), das seine Trainingsdaten
-selbst erzeugt, ahmt ein überwacht trainiertes Netz die im Datensatz enthaltenen
+(Value), aus einem festen, bereits beschrifteten Datensatz. Anders als
+Reinforcement Learning (Abschnitt~\ref{sec:alphazero}), das seine Trainingsdaten
+selbst erzeugt, ahmt ein so trainiertes Netz die im Datensatz enthaltenen
 Entscheidungen nach. Seine Spielstärke ist dadurch grundsätzlich durch die
 Qualität der Beschriftung begrenzt, denn das Netz kann seine Lehrerquelle
 nachbilden, sie aber kaum übertreffen. Prominent ist dieser Ansatz aus AlphaGo, dessen
-Policy-Netz zunächst überwacht aus menschlichen Meisterpartien lernte
+Policy-Netz zunächst per Supervised Learning aus menschlichen Meisterpartien lernte
 \parencite{silver2016}.
 
 Für beide Heads werden Zielwerte benötigt. Das Policy-Ziel kann der tatsächlich
@@ -349,11 +350,11 @@ Da unausgewogene Daten das Netz zu Abkürzungen verleiten, etwa stets
 \enquote{Remis} vorherzusagen, wenn dieses Ergebnis überwiegt, sind Abdeckung
 und Ausbalancierung von Klassen und Partiephasen ein zentrales methodisches Thema.
 
-Zwei Grenzen bleiben dem überwachten Ansatz eigen. Erstens die genannte
+Zwei Grenzen bleiben dem Supervised Learning eigen. Erstens die genannte
 Obergrenze durch die Lehrerquelle. Zweitens die Verteilungsverschiebung
 (Distribution Shift). Im Spiel trifft das Netz auf Stellungen, die aus seinen
 eigenen Zügen entstehen und im Trainingsdatensatz unterrepräsentiert sein können.
-Beide Grenzen motivieren das bestärkende Lernen durch Self-Play, das seine Daten
+Beide Grenzen motivieren Reinforcement Learning durch Self-Play, das seine Daten
 aus dem eigenen Spiel gewinnt und so die Lehrerquelle hinter sich lassen kann
 (Abschnitt~\ref{sec:alphazero}).
 
@@ -432,7 +433,7 @@ Das Training verläuft in Iterationen aus drei Schritten:
 \end{enumerate}
 Dieses Aussieben (\emph{Gating}) verhindert, dass eine verschlechterte Version die Datengenerierung übernimmt. AlphaGo Zero verwendete hierfür eine Schwelle von 55\,\% über 400 Partien \parencite{silver2017mastering}. Der Nachfolger AlphaZero verzichtete auf diesen Schritt und trainierte ein einziges, fortlaufend aktualisiertes Netz \parencite{silver2018}.
 
-Damit unterscheidet sich dieser Ansatz vom überwachten Lernen im Trainingssignal. Statt aus vorgegebenen Zielwerten (Abschnitt~\ref{sec:sl-context}) stammen beide Ziele aus dem System selbst, die Policy aus der eigenen Suche, der Value aus dem eigenen Spielergebnis.
+Damit unterscheidet sich dieser Ansatz vom Supervised Learning im Trainingssignal. Statt aus vorgegebenen Zielwerten (Abschnitt~\ref{sec:sl-context}) stammen beide Ziele aus dem System selbst, die Policy aus der eigenen Suche, der Value aus dem eigenen Spielergebnis.
 
 Ein zweiter Unterschied betrifft die Herkunft der Daten. Lernt ein Netz, den Zug eines menschlichen Spielers vorherzusagen, approximiert es dessen Spielweise, einschließlich der darin enthaltenen systematischen Verzerrungen. Etablierte Eröffnungstheorie, positionelle Faustregeln und stilistische Vorlieben sind gewachsene Konventionen, deren Optimalität nicht bewiesen ist. Da sie im gesamten Korpus geteilt werden, mitteln sie sich auch mit wachsender Datenmenge nicht heraus, sondern gehen als systematischer Fehler in das Modell ein. 
 Hinzu kommt eine ungleichmäßige Abdeckung des Stellungsraums. Menschliche Partien konzentrieren sich stark auf bekannte Theorie, sodass gerade jene Stellungen unterrepräsentiert sind, die eine Suche später dennoch betritt. 
@@ -452,9 +453,9 @@ Königsstellung.
 % ~5.0 S.
 
 \subsection{Modellarchitektur}\label{sec:arch} % [gemeinsam]
-Beide Agenten, der überwacht und der bestärkend trainierte, verwenden
+Beide Agenten, der SL- und der RL-Agent, verwenden
 dasselbe neuronale Netz, dieselbe Kodierung (Abschnitt~\ref{sec:encoding}) und zur
-Zugwahl dieselbe Monte-Carlo-Baumsuche (Abschnitt~\ref{sec:mcts}, Umsetzung in
+Zugwahl dieselbe Monte Carlo Tree Search (Abschnitt~\ref{sec:mcts}, Umsetzung in
 Abschnitt~\ref{sec:rl-impl}). Sie unterscheiden sich einzig im Trainingssignal.
 Damit misst der Vergleich in Kapitel~\ref{sec:eval} allein den Effekt des
 Trainingsparadigmas und nicht den unterschiedlicher Architekturen.
@@ -463,7 +464,7 @@ Das Netz folgt dem Residual-Tower-Entwurf von Leela Chess Zero
 \parencite{lczero_nn, klein2022neural} und ist in Abbildung~\ref{fig:architecture}
 skizziert. Den Eingang bildet der Tensor \(8\times8\times20\)
 (Abschnitt~\ref{sec:encoding}), wobei Leela hier 112 Ebenen verwendet, da es
-zusätzlich acht vorangehende Halbzüge stapelt. Eine Initial-Faltung
+die sieben vorangehenden Halbzüge mitstapelt. Eine Initial-Faltung
 (\(3\times3\), Schrittweite 1) projiziert den Eingang auf 256 Feature Maps,
 gefolgt von Batch-Normierung und ReLU. Darauf folgt der Tower aus 20
 Squeeze-and-Excitation-Residualblöcken und schließlich die beiden Heads. Als
@@ -557,13 +558,10 @@ vereinfacht.
 \end{itemize}
 
 \subsection{Supervised Learning: Datenpipeline, Modell, Training}\label{sec:sl-impl} % [Danny]
-Der überwacht trainierte Agent verwendet dasselbe Netz (Abschnitt~\ref{sec:arch})
-und dieselbe Suche (Abschnitt~\ref{sec:mcts}) wie der bestärkend trainierte und
-unterscheidet sich allein im Trainingssignal. Dieses Signal stammt aus einem
-festen, beschrifteten Korpus, dessen Aufbau dieser Abschnitt von den Rohquellen
-über die Ausbalancierung und die Stockfish-Annotation bis zum Trainingslauf
-beschreibt. Der fertige Datensatz umfasst rund 23{,}5\,Mio.\ Positionen in 471
-Chunks zu je 50\,000 Beispielen.
+Das Trainingssignal des SL-Agenten stammt aus einem festen, beschrifteten Korpus,
+dessen Aufbau dieser Abschnitt von den Rohquellen über die Ausbalancierung und die
+Stockfish-Annotation bis zum Trainingslauf beschreibt. Der fertige Datensatz
+umfasst rund 23{,}5\,Mio.\ Positionen in 471 Chunks zu je 50\,000 Beispielen.
 
 \paragraph{Datenquellen und Zielwerte}
 Der Korpus speist sich aus drei Quellen mit unterschiedlichen Stärken
@@ -576,9 +574,8 @@ liefert ein Trainingsbeispiel. Policy-Ziel ist der tatsächlich gespielte
 (menschliche) Zug als One-Hot-Vektor.
 
 \emph{Puzzles.} Aus der Lichess-Puzzle-Datenbank werden Matt- und Endspielthemen
-bevorzugt, da sie Matt- und Endspielsituationen gezielt abdecken, die im
-menschlichen Material, durch Aufgabe vor dem Matt, unterrepräsentiert sind.
-Die lösende Seite liefert Sieg-Positionen mit dem Lösungszug als Ziel, die
+bevorzugt, da menschliches Material diese Situationen durch Aufgabe vor dem Matt
+nur dünn abdeckt. Die lösende Seite liefert Sieg-Positionen mit dem Lösungszug als Ziel, die
 verteidigende Seite Niederlage-Positionen mit dem jeweiligen Verteidigungszug.
 
 \emph{Tablebase.} Aus den Syzygy-Endspieldatenbanken (bis fünf Steine) wird von
@@ -627,9 +624,9 @@ Abschnitt~\ref{sec:sl-results}.
 
 \paragraph{Stockfish-Annotation (Soft-Targets)}
 Das Value-Ziel für Spiel- und Puzzle-Positionen ist nicht der reine Partieausgang.
-Dieser ist verrauscht, da jede Stellung einer gewonnenen Partie pauschal als Sieg
-gilt (Abschnitt~\ref{sec:sl-context}), auch wenn die Stellung selbst ausgeglichen
-oder unterlegen ist. Jede dieser Positionen wird daher zusätzlich von Stockfish
+Dieser ist verrauscht (Abschnitt~\ref{sec:sl-context}), da jede Stellung einer
+gewonnenen Partie pauschal als Sieg gilt, auch wenn sie selbst ausgeglichen oder
+unterlegen ist. Jede dieser Positionen wird daher zusätzlich von Stockfish
 bewertet. Aus einer Suche bis Tiefe~12, einem festen Kompromiss zwischen
 Bewertungsqualität und dem Aufwand, rund 22{,}4\,Mio.\ Positionen zu annotieren,
 liefert Stockfish eine WDL-Verteilung \(q\). Mit dem als One-Hot kodierten
@@ -671,7 +668,7 @@ behandelt.
     Value-Loss  & Cross-Entropy (WDL) \\
     \bottomrule
   \end{tabular}
-  \caption{Trainingskonfiguration des überwachten Trainings.}
+  \caption{Trainingskonfiguration des SL-Trainings.}
   \label{tab:sl-train}
 \end{table}
 
@@ -696,13 +693,10 @@ Jede Iteration durchläuft drei Schritte. Zuerst erzeugt das beste Netz eine fes
 % ~4.0 S.
 
 \subsection{Versuchsaufbau}\label{sec:eval-setup}
-Beide Agenten teilen sich Netzarchitektur (Abschnitt~\ref{sec:arch}),
-Zugkodierung (Abschnitt~\ref{sec:encoding}) und Suche (Abschnitt~\ref{sec:mcts})
-und unterscheiden sich allein im Trainingssignal. Damit die Ergebnisse auf einer
-gemeinsamen Skala vergleichbar bleiben, folgen alle Spielstärkemessungen dieses
-Kapitels demselben Messverfahren. Die ansatzspezifischen Details, also welche
-Varianten gegen welche Gegner antreten, benennen die jeweiligen
-Ergebnisabschnitte (für das überwachte Lernen Abschnitt~\ref{sec:sl-results}).
+Damit die Ergebnisse beider Agenten auf einer gemeinsamen Skala vergleichbar
+bleiben, folgen alle Spielstärkemessungen dieses Kapitels demselben Messverfahren.
+Die ansatzspezifischen Details, also welche Varianten gegen welche Gegner antreten,
+benennen die jeweiligen Ergebnisabschnitte.
 
 \paragraph{Spielprotokoll}
 Eine Messung besteht aus einem farbausgeglichenen Match zwischen zwei Gegnern.
@@ -710,7 +704,7 @@ Als Eröffnungen dienen zufällig erzeugte Sequenzen von je drei Halbzügen. Jed
 Eröffnung wird zweimal gespielt, einmal mit vertauschten Farben. Der Farbtausch
 hebt den Vorteil des Anziehenden auf, und die zufälligen Eröffnungen verhindern,
 dass zwei deterministisch spielende Netze wiederholt dieselbe Partie austragen.
-Ein Netz wählt seine Züge über die Monte-Carlo-Baumsuche
+Ein Netz wählt seine Züge über MCTS
 (Abschnitt~\ref{sec:mcts}) mit 1000 Simulationen pro Zug. Partien, die nach 400
 Halbzügen nicht entschieden sind, werden als Remis gewertet. Der Umfang eines
 Matches ist bei den jeweiligen Ergebnissen angegeben. Als Referenzgegner und für
@@ -743,7 +737,7 @@ Eröffnungen. Aus dem Punktverlauf über die Stufen wird die absolute Elo des Ne
 per logistischer Anpassung der Erwartungsscore-Kurve geschätzt.
 
 \subsection{Ergebnisse Supervised Learning}\label{sec:sl-results}
-Der überwacht trainierte Agent entstand in vier Iterationen, die sich allein in
+Der SL-Agent entstand in vier Iterationen, die sich allein in
 der Zusammensetzung und Beschriftung der Trainingsdaten unterscheiden
 (Abschnitt~\ref{sec:sl-impl}). Dasselbe Netz wurde also viermal auf jeweils
 verbessertem Datenmaterial trainiert, und jede Iteration war durch das Versagen
@@ -904,7 +898,7 @@ sich damit durchgängig in Spielstärke.
 \paragraph{Absolute Spielstärke}
 Zur Einordnung auf eine absolute Skala tritt v4 gegen die zehn Stockfish-Stufen des
 Ankers an (Abschnitt~\ref{sec:eval-setup}). Tabelle~\ref{tab:sl-anchor} zeigt den
-über zwei Durchläufe (zwanzig Partien je Stufe) gemittelten Punktverlauf. Der
+Punktverlauf über je zwanzig Partien. Der
 Übergang zum ausgeglichenen Match (Punktanteil 0{,}5) liegt bei etwa 1900\,Elo. Eine
 logistische Anpassung der Erwartungsscore-Kurve an alle zehn Stufen schätzt die
 absolute Spielstärke von v4 auf rund \(1920\)\,Elo (95\,\%-Likelihood-Intervall etwa
@@ -914,7 +908,7 @@ ins Gewicht, sodass der Anker eine belastbare Schätzung liefert. Zur Veranschau
 dieser Größenordnung lässt sich der Anker auf die wöchentliche Blitz-Ratingverteilung
 von Lichess beziehen \parencite{lichess_blitz_dist}. Rund 1920\,Elo liegt dort oberhalb
 von etwa 80\,\% der aktiven Spieler. Der Vergleich ist allerdings nur illustrativ,
-da unsere Stockfish-verankerte Elo-Näherung nicht auf derselben Skala wie das
+da die hier verwendete Stockfish-verankerte Elo-Näherung nicht auf derselben Skala wie das
 Glicko-2-System von Lichess liegt.
 
 \begin{table}[htbp]
@@ -955,8 +949,8 @@ jedoch deutlich früher und tiefer. Gegen Stockfish~1900
 hält v4 bis weit ins Mittelspiel einen Vorteil (Mittelwert +3{,}9 in der Eröffnung,
 +11{,}7 im Mittelspiel) und gibt erst spät nach (+7{,}0 im Endspiel). Gegen
 Stockfish~2000 bleibt es früh nur ausgeglichen (+1{,}2 bzw.\ +0{,}7) und wird schon ab
-etwa Zug~23 klar überspielt (\(-22{,}3\) im Endspiel). Die Schwäche des überwacht
-trainierten Netzes liegt somit nicht in der Eröffnungs- oder Mittelspielbehandlung,
+etwa Zug~23 klar überspielt (\(-22{,}3\) im Endspiel). Die Schwäche des SL-Netzes
+liegt somit nicht in der Eröffnungs- oder Mittelspielbehandlung,
 sondern in der Verwertung und Endspieltechnik, konsistent damit, dass menschliche
 Partien selten bis zum Matt gespielt werden und der Datensatz das Endspiel daher nur
 dünn abdeckt. Gegen den stärkeren Gegner, der Ungenauigkeiten konsequenter bestraft,
@@ -978,7 +972,7 @@ Stufen gleich skaliert. Die Kurven enden dort, wo weniger als drei Partien beitr
 \label{sec:rl-results}% [Tim]
 % Konvergenz; Staerke gegen Random und Stockfish-Level; Elo.  (~1.0 S.)
 Dieser Abschnitt verfolgt die Entwicklung des mit RL trainierten Agenten über mehrere Self-Play-Läufe und leitet daraus die Konfiguration ab, die unter einem studentischen Rechenbudget zu konsequentem Lernen führte. 
-Die Messungen sind hier intern, Candidate gegen das vorige beste Netz oder Checkpoint gegen Checkpoint, und dienen dem Vergleich der RL-Konfigurationen untereinander. Ihre Einstellungen weichen teils vom Protokoll in Abschnitt~\ref{sec:eval-setup} ab und werden je Lauf benannt. Die Einordnung auf die absolute Stockfish-Skala und der direkte Vergleich mit dem überwachten Agenten folgen in Abschnitt~\ref{sec:sl-vs-rl}.
+Die Messungen sind hier intern, Candidate gegen das vorige beste Netz oder Checkpoint gegen Checkpoint, und dienen dem Vergleich der RL-Konfigurationen untereinander. Ihre Einstellungen weichen teils vom Protokoll in Abschnitt~\ref{sec:eval-setup} ab und werden je Lauf benannt. Die Einordnung auf die absolute Stockfish-Skala und der direkte Vergleich mit dem SL-Agenten folgen in Abschnitt~\ref{sec:sl-vs-rl}.
 \paragraph{Warum nicht from scratch?}
 Ein Agent von zufälligen Gewichten aus zu trainieren erwies sich unter dem verfügbaren Budget als aussichtslos. Nach rund 24\,h Self-Play holte das Netz gegen einen Random-Mover nur 26 von 50 Punkten. Ein Netz, das gegen zufällige Züge kaum über Zufallsniveau kommt, stellt im Mittel etwa so häufig Figuren ein wie der Gegner selbst. 
 Daraus folgt die Grundentscheidung des RL-Teils, nicht \emph{from scratch} zu lernen, sondern ein per Supervised Learning vortrainiertes Netz als Seed zu verwenden und dieses per Self-Play zu verbessern.
@@ -995,7 +989,7 @@ Ein weiterer Lauf prüfte den umgekehrten Fall mit sehr vielen Spielen bei schwa
 
 \paragraph{Die funktionierende Konfiguration}
 Erst die Kombination aus ausreichend starker Suche und ausreichend vielen Spielen führte zu konsequentem Lernen. In der Konfiguration mit 800 Simulationen und 100 Spiele je Iteration, aus einem bewusst schwächer gewählten Seed und mit Gate, wurden vier von sechs Candidates promotet, die Kette klettert also mehrfach in Folge nach oben. Anders als die zuvor genannten Läufe erzeugt diese Konfiguration ein echtes Aufwärtssignal.
-Die vier nacheinander promoteten Netze bezeichnen wir als rl\_1 bis rl\_4, ihren Ausgangspunkt (den SL-Checkpoint sl\_160) als rl\_0. Das finale Netz rl\_4 vertritt im Folgenden den bestärkend trainierten Agenten.
+Die vier nacheinander promoteten Netze bezeichnen wir als rl\_1 bis rl\_4, ihren Ausgangspunkt (den SL-Checkpoint sl\_160) als rl\_0. Das finale Netz rl\_4 vertritt im Folgenden den RL-Agenten.
 Einschränkend gilt, dass hier zwei Faktoren zusammenwirken, die höhere Game-Zahl und der schwächere Seed, der der Suche mehr Spielraum über dem Netz lässt. Der nachgewiesene Fortschritt ist damit ein Aufstieg von einer schwachen
 Basis. Dass das trainierte Netz auch das starke SL-Netz übertrifft, ist dadurch nicht belegt und wird in Abschnitt~\ref{sec:sl-vs-rl} geprüft.
 
@@ -1032,16 +1026,15 @@ Die Gegenüberstellung mit dem entgegengesetzten Schwächeprofil des SL-Agenten 
   \label{fig:rl-phase}
 \end{figure}
 
-\subsection{Direktvergleich: SL vs. RL}\label{sec:headtohead}\label{sec:sl-vs-rl}
+\subsection{Direktvergleich: SL vs. RL}\label{sec:sl-vs-rl}
 Der abschließende Vergleich stellt die besten Netze beider Ansätze gegenüber, also
-das überwacht trainierte v4 (Abschnitt~\ref{sec:sl-results}) und das im Self-Play
-trainierte rl\_4 (Abschnitt~\ref{sec:rl-results}).
+das per Supervised Learning trainierte v4 (Abschnitt~\ref{sec:sl-results}) und das
+im Self-Play trainierte rl\_4 (Abschnitt~\ref{sec:rl-results}).
 
 \paragraph{Direktes Match}
 Unter dem Protokoll aus Abschnitt~\ref{sec:eval-setup} erreicht rl\_4 über 50
 Partien mit je 1000 Simulationen gegen v4 einen Punktanteil von 0{,}07
-(1\,--\,5\,--\,44), was einer Differenz von rund \(-449\) Elo entspricht. Von
-fünfzig Partien gewann der mit RL trainierte Agent eine einzige.
+(1\,--\,5\,--\,44), was einer Differenz von rund \(-449\) Elo entspricht.
 
 \paragraph{Einordnung über den Anker}
 Beide Netze wurden unabhängig voneinander gegen dieselben zehn Stockfish-Stufen
@@ -1083,7 +1076,7 @@ ohne jedes Eröffnungswissen beginnt.
 
 \subsection{Rechenaufwand \& Inferenzzeit}\label{sec:compute}
 Der Rechenaufwand wird vom Reinforcement Learning mit seiner Self-Play-Schleife
-dominiert. Aus Sicht des überwachten Lernens fallen die Kosten in drei Posten an.
+dominiert. Aus Sicht des Supervised Learnings fallen die Kosten in drei Posten an.
 
 \paragraph{Datenaufbereitung und Training (SL)}
 Der teuerste Posten war die Datengrundlage. Der Lichess-Partiendump umfasst rund
@@ -1095,7 +1088,7 @@ die 469 Chunks dauerte anschließend rund 8 Stunden auf einer Kaggle-GPU (P100).
 
 \paragraph{Blattauswertung und Batch-Größe}
 Zur Laufzeit dominiert die Auswertung der Suchbaum-Blätter durch das Netz die
-Kosten. Da die MCTS die Blätter stapelweise auf der GPU auswertet, wurde die
+Kosten. Da MCTS die Blätter stapelweise auf der GPU auswertet, wurde die
 Batch-Größe über 50 Teststellungen bei fester Bedenkzeit von 1{,}0\,s je Zug
 variiert (Tabelle~\ref{tab:mcts-batch}). Der Durchsatz steigt bis Batch~32 auf das
 rund Zehnfache (108 auf 1147 Simulationen/s), während die Zugqualität, gemessen
@@ -1140,23 +1133,23 @@ Der Zusatzlauf mit 2000 Spielen bei nur 100 Simulationen verdeutlicht die multip
 \section{Diskussion}
 
 \paragraph{Einordnung der Ergebnisse}
-Unter den hier gewählten Bedingungen ist der überwacht trainierte Agent dem im
-Self-Play trainierten deutlich überlegen. Er erreicht rund 1920 gegenüber rund
+Unter den hier gewählten Bedingungen ist der SL-Agent dem RL-Agenten deutlich
+überlegen. Er erreicht rund 1920 gegenüber rund
 1330\,Elo und gewinnt das direkte Match mit einem Punktanteil von 0{,}93
 (Abschnitt~\ref{sec:sl-vs-rl}). Dieses Ergebnis ist allerdings kein Beleg dafür,
 dass Self-Play als Verfahren versagt. Gegen sein eigenes Ausgangsnetz gewinnt
-rl\_4 klar und hat dessen Spielstärke um gut 200\,Elo angehoben. Das Verfahren
+rl\_4 klar und hat dessen Spielstärke um 150 bis 200\,Elo angehoben. Das Verfahren
 lernt also auch in diesem Rahmen, es startete nur von einem deutlich niedrigeren
 Niveau und konnte den Abstand im verfügbaren Budget nicht aufholen.
 
 \paragraph{Der entscheidende Faktor ist der Rechenaufwand}
 Der Grund für diesen Abstand liegt weniger im Lernverfahren als in den Kosten der
 Datenbeschaffung. Beide Agenten trainierten auf derselben Hardware, einer
-Kaggle-GPU vom Typ P100. Das überwachte Training benötigte davon rund acht
+Kaggle-GPU vom Typ P100. Das SL-Training benötigte davon rund acht
 GPU-Stunden, denen eine einmalige, GPU-freie Aufbereitung von etwa 31 Stunden
-vorausging. Das bestärkende Lernen verbrauchte dagegen rund 120 GPU-Stunden und
+vorausging. Das Reinforcement Learning verbrauchte dagegen rund 120 GPU-Stunden und
 blieb dabei fast 600\,Elo zurück (Abschnitt~\ref{sec:compute}). Der Unterschied
-folgt unmittelbar aus der Herkunft der Daten. Überwachtes Lernen greift auf einen
+folgt unmittelbar aus der Herkunft der Daten. Supervised Learning greift auf einen
 Korpus zu, in dem die Spielstärke von Millionen menschlicher Partien bereits
 enthalten ist, und muss diesen nur noch aufbereiten. Self-Play muss jede einzelne
 Trainingsposition selbst erzeugen, und zwar über eine hinreichend starke Baumsuche,
@@ -1165,14 +1158,10 @@ denn nur dann liefert die Suche ein besseres Ziel als das Netz selbst und es gib
 macht die Datenerzeugung teuer und ist unter kleinem Budget der bindende Engpass.
 
 \paragraph{Das Trainingssignal prägt die Schwächen}
-Beide Agenten teilen Architektur, Kodierung und Suche und unterscheiden sich allein
-im Trainingssignal. Dass sie dennoch an entgegengesetzten Stellen scheitern, ist
-daher unmittelbar auf die Daten zurückzuführen. Der überwacht trainierte Agent
-spielt Eröffnung und Mittelspiel ausgeglichen und verliert erst im Endspiel, weil
-menschliche Partien diese frühen Phasen dicht abdecken, aber meist vor dem Matt
-enden. Der bestärkend trainierte Agent zeigt das umgekehrte Bild, da Self-Play jede
-Partie zu Ende spielt, aber ohne jedes Eröffnungswissen beginnt. Auf der Seite des
-überwachten Lernens bestätigt sich derselbe Zusammenhang noch einmal im Kleinen.
+Dass beide Agenten trotz identischer Architektur, Kodierung und Suche an
+entgegengesetzten Stellen scheitern (Abschnitt~\ref{sec:sl-vs-rl}), ist unmittelbar
+auf die Herkunft ihrer Daten zurückzuführen. Auf der Seite des Supervised Learnings
+bestätigt sich derselbe Zusammenhang noch einmal im Kleinen.
 Zwischen v1 und v4 wurden weder Architektur noch Suche verändert, sondern
 ausschließlich Zusammensetzung und Beschriftung der Daten, und allein daraus
 entstand der Unterschied zwischen einem Netz, das nicht mattsetzen konnte, und dem
@@ -1193,13 +1182,14 @@ welcher auf die Streuung einzelner Läufe entfällt.
 
 \paragraph{Grenzen des Vergleichs}
 Verglichen werden zwei konkrete Umsetzungen unter einem festen Budget und nicht die
-beiden Paradigmen im Allgemeinen. Auf der Seite des bestärkenden Lernens wurden in
+beiden Paradigmen im Allgemeinen. Auf der Seite des Reinforcement Learnings wurden in
 der funktionierenden Konfiguration zwei Faktoren gleichzeitig verändert, die Zahl
 der Spiele und die Wahl eines schwächeren Seeds, sodass ihr jeweiliger Anteil offen
 bleibt (Abschnitt~\ref{sec:rl-results}). Vor allem aber unterscheiden sich die
-beiden Ansätze in ihrer oberen Schranke. Ein überwacht trainiertes Netz kann seine
-Lehrerquelle nachbilden, sie aber kaum übertreffen, und diese besteht hier aus
-Partien menschlicher Spieler und einer Stockfish-Bewertung bis Tiefe~12. Self-Play
+beiden Ansätze in ihrer oberen Schranke. Supervised Learning ist durch seine
+Lehrerquelle nach oben begrenzt (Abschnitt~\ref{sec:sl-context}), und diese besteht
+hier aus Partien menschlicher Spieler und einer Stockfish-Bewertung bis
+Tiefe~12. Self-Play
 kennt diese Schranke nicht. Mit wachsendem Rechenbudget verschiebt sich der hier
 gemessene Vorteil daher voraussichtlich, und die Reihenfolge beider Ansätze ist
 nicht als allgemeingültig zu verstehen.
@@ -1207,18 +1197,18 @@ nicht als allgemeingültig zu verstehen.
 \section{Fazit}
 Die Arbeit ist der Frage nachgegangen, welches Trainingssignal den stärkeren
 Schachagenten liefert, wenn nur studentische Rechenzeit zur Verfügung steht. Unter
-diesen Bedingungen fällt die Antwort eindeutig aus. Der überwacht trainierte Agent
-erreicht rund 1920\,Elo und gewinnt das direkte Match gegen den im Self-Play
-trainierten Agenten mit einem Punktanteil von 0{,}93, wobei er dafür nur einen
+diesen Bedingungen fällt die Antwort eindeutig aus. Der SL-Agent
+erreicht rund 1920\,Elo und gewinnt das direkte Match gegen den RL-Agenten
+mit einem Punktanteil von 0{,}93, wobei er dafür nur einen
 Bruchteil der Rechenzeit benötigte. Bezogen auf die Titelfrage bleibt unter diesen
 Bedingungen also der angelernte Agent vorn.
 
 Diese Antwort gilt jedoch unter einer wesentlichen Bedingung. Self-Play hat sein
-Ausgangsnetz um gut 200\,Elo verbessert und damit gezeigt, dass es auch in diesem
-Rahmen lernt. Sein Nachteil liegt nicht im Lernprinzip, sondern darin, dass es jede
-Trainingsposition durch eine eigene Suche erzeugen muss, während das überwachte
-Lernen auf einem bereits vorhandenen Korpus aufsetzt. Da dieser Korpus zugleich die
-Obergrenze des überwachten Ansatzes bildet, ist zu erwarten, dass sich das
+Ausgangsnetz um 150 bis 200\,Elo verbessert und damit gezeigt, dass es auch in
+diesem Rahmen lernt. Sein Nachteil liegt nicht im Lernprinzip, sondern darin, dass
+es jede Trainingsposition durch eine eigene Suche erzeugen muss, während
+Supervised Learning auf einem bereits vorhandenen Korpus aufsetzt. Da dieser Korpus
+zugleich dessen Obergrenze bildet, ist zu erwarten, dass sich das
 Verhältnis mit wachsendem Rechenbudget umkehrt.
 
 
