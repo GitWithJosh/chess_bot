@@ -108,7 +108,7 @@ Schach ist ein endliches, deterministisches Zwei-Personen-Nullsummenspiel mit pe
 \begin{itemize}
     \item \textbf{Perfekte Information und Determinismus} Beiden Spielern ist zu jedem Zeitpunkt der vollständige Spielzustand bekannt, und jeder Zug führt genau zu einer Folgestellung. Der Spielbaum ist damit von jeder Stellung aus prinzipiell vollständig expandierbar. Anders als etwa beim Poker müssen keine Annahmen über verdeckte Information getroffen werden und anders als beim Backgammon verbreitern keine Zufallsknoten den Baum.
     \item \textbf{Nullsumme} Der Gewinn der einen Seite ist exakt der Verlust der anderen. Eine einzige Bewertungsgröße aus Sicht der Seite am Zug genügt daher, um die Präferenzen beider Spieler zu beschreiben. Das rechtfertigt sowohl das Minimax-Prinzip (Abschnitt~\ref{sec:minimax}) als auch die Eigenschaft, dass das Netz mit einem einzigen Value-Head auskommt (Abschnitt~\ref{sec:nn}).
-    \item \textbf{Endlichkeit} Die 50-Züge-Regel (eine Partie ist Remis wenn 50 Züge lang kein Bauer bewegt und keine Figur geschlagen wurde) und die Stellungswiederholungsregel (eine Partie ist Remis wenn dreimal die gleiche Stellung auf dem Brett steht) stellen sicher, dass jede Partie nach endlich vielen Zügen terminiert. Der Ausgang ist eines von drei Ergebnissen, formal \(z \in \{1, \tfrac{1}{2}, 0\}\) für Sieg, Remis und Niederlage.
+    \item \textbf{Endlichkeit} Die 50-Züge-Regel (eine Partie ist Remis wenn 50 Züge lang kein Bauer bewegt und keine Figur geschlagen wurde) und die Stellungswiederholungsregel (eine Partie ist Remis wenn dreimal die gleiche Stellung auf dem Brett steht) stellen sicher, dass jede Partie nach endlich vielen Zügen terminiert. Der Ausgang ist eines von drei Ergebnissen, formal \(z \in \{1, \tfrac{1}{2}, 0\}\) für Sieg, Remis und Niederlage (kurz WDL).
     \item \textbf{Alternierende Züge} Es gibt keine simultanen Entscheidungen. Zusammen mit perfekter Information folgt daraus, dass für beide Seiten eine optimale Strategie existiert.
 \end{itemize}
 
@@ -946,8 +946,8 @@ sich damit durchgängig in Spielstärke.
 
 \paragraph{Absolute Spielstärke}
 Zur Einordnung auf eine absolute Skala tritt v4 gegen die zehn Stockfish-Stufen des
-Ankers an (Abschnitt~\ref{sec:eval-setup}). Tabelle~\ref{tab:sl-anchor} zeigt den
-Punktverlauf über je zwanzig Partien. Der
+Ankers an (Abschnitt~\ref{sec:eval-setup}). Tabelle~\ref{tab:sl-anchor} zeigt
+Bilanz und Punktverlauf über je zwanzig Partien. Der
 Übergang zum ausgeglichenen Match (Punktanteil 0{,}5) liegt bei etwa 1900\,Elo. Eine
 logistische Anpassung der Erwartungsscore-Kurve an alle zehn Stufen schätzt die
 absolute Spielstärke von v4 auf rund \(1920\)\,Elo (95\,\%-Likelihood-Intervall etwa
@@ -967,11 +967,14 @@ Glicko-2-System von Lichess liegt.
     \toprule
     Stockfish-Elo  & 1400 & 1500 & 1600 & 1700 & 1800 & 1900 & 2000 & 2100 & 2200 & 2300 \\
     \midrule
+    Siege          &     20 &     17 &     18 &     11 &     13 &      8 &      2 &      0 &      1 &      1 \\
+    Remisen        &      0 &      3 &      1 &      5 &      1 &      3 &      9 &      7 &      5 &      8 \\
+    Niederlagen    &      0 &      0 &      1 &      4 &      6 &      9 &      9 &     13 &     14 &     11 \\
+    \addlinespace
     Punktanteil~v4 & 1{,}00 & 0{,}93 & 0{,}93 & 0{,}68 & 0{,}68 & 0{,}48 & 0{,}33 & 0{,}18 & 0{,}18 & 0{,}25 \\
     \bottomrule
   \end{tabular}
-  \caption{Punktanteil von v4 gegen die zehn Stockfish-Anker-Stufen (je zwanzig
-    Partien, 0{,}75\,s/Zug).}
+  \caption{Bilanz und Punktanteil von v4 gegen die zehn Stockfish-Anker-Stufen.}
   \label{tab:sl-anchor}
 \end{table}
 
@@ -1059,11 +1062,14 @@ Die Gegenüberstellung mit dem entgegengesetzten Schwächeprofil des SL-Agenten 
     \toprule
     Stockfish-Elo     & 1400 & 1500 & 1600 & 1700 & 1800 & 1900 & 2000 & 2100 & 2200 & 2300 \\
     \midrule
+    Siege             &      7 &      5 &      2 &      0 &      0 &      1 &      0 &      0 &      0 &      0 \\
+    Remisen           &      1 &      3 &      2 &      3 &      3 &      1 &      1 &      2 &      2 &      2 \\
+    Niederlagen       &     12 &     12 &     16 &     17 &     17 &     18 &     19 &     18 &     18 &     18 \\
+    \addlinespace
     Punktanteil rl\_4 & 0{,}38 & 0{,}33 & 0{,}15 & 0{,}08 & 0{,}08 & 0{,}08 & 0{,}03 & 0{,}05 & 0{,}05 & 0{,}05 \\
     \bottomrule
   \end{tabular}
-  \caption{Punktanteil von rl\_4 gegen die zehn Stockfish-Anker-Stufen (je zwanzig
-    Partien, 0{,}75\,s/Zug).}
+  \caption{Bilanz und Punktanteil von rl\_4 gegen die zehn Stockfish-Anker-Stufen.}
   \label{tab:rl-anchor}
 \end{table}
 
